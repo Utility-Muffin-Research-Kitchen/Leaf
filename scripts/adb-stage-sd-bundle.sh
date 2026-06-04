@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Payload location. Defaults to this repo's own build output, but the workspace
+# orchestrator overrides it to stage a centrally-assembled payload.
+BUNDLE_ROOT="${BUNDLE_ROOT:-$ROOT_DIR/build/package}"
+SYSTEM_DIR="$BUNDLE_ROOT/.system/leaf"
+BUNDLE_DIR="$SYSTEM_DIR/launcher"
+PLATFORM_DIR="$SYSTEM_DIR/platforms"
+REQUESTED_REMOTE_SDCARD_PATH="${REMOTE_SDCARD_PATH:-auto}"
+MARKER_MODE="keep"
+PLATFORM_MODE="replace"
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --marker)
+            MARKER_MODE="on"
+            ;;
+        --no-marker)
+            MARKER_MODE="off"
+            ;;
+        --merge-platform)
+            PLATFORM_MODE="merge"
+            ;;
+        *)
+            echo "usage: $0 [--marker|--no-marker] [--merge-platform]" >&2
+            exit 1
+            ;;
+    esac
+    shift
+done
+
+if [ ! -x "$BUNDLE_DIR/bin/loong_pangu" ]; then
+    echo "missing launcher bundle: $BUNDLE_DIR" >&2
+    echo "run: make package" >&2
+    exit 1
+fi
+
+if [ -n "${ADB_SERIAL:-}" ]; then
+    serial="$ADB_SERIAL"
+else
+    serial="$(adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')"
+    if [ -z "${serial:-}" ]; then
+        echo "No online adb device found." >&2
+        exit 1
+    fi
+fi
+ADB=(adb -s "$serial")
+
+echo "Using adb device: $("${ADB[@]}" get-serialno)"
+
+REMOTE_SDCARD_PATH="$(REMOTE_SDCARD_PATH="$REQUESTED_REMOTE_SDCARD_PATH" ADB_SERIAL="$serial" "$ROOT_DIR/scripts/adb-resolve-umrk-sd.sh")"
+REMOTE_SYSTEM_PATH="${REMOTE_SYSTEM_PATH:-${REMOTE_LEAF_SYSTEM:-$REMOTE_SDCARD_PATH/.system/leaf}}"
+REMOTE_LAUNCHER_PATH="${REMOTE_LAUNCHER_PATH:-${REMOTE_BUNDLE:-$REMOTE_SYSTEM_PATH/launcher}}"
+REMOTE_PLATFORM_ROOT="${REMOTE_PLATFORM_ROOT:-$REMOTE_SYSTEM_PATH/platforms}"
+REMOTE_PLATFORM_PATH="${REMOTE_PLATFORM_PATH:-$REMOTE_PLATFORM_ROOT/mlp1}"
+MARKER="${UMRK_MARKER_PATH:-$REMOTE_SYSTEM_PATH/enabled}"
+
+echo "Deploying bundle to $REMOTE_LAUNCHER_PATH"
+"${ADB[@]}" shell "mkdir -p '$REMOTE_SYSTEM_PATH' && rm -rf '$REMOTE_LAUNCHER_PATH' && mkdir -p '$REMOTE_LAUNCHER_PATH'"
+"${ADB[@]}" push "$BUNDLE_DIR/." "$REMOTE_LAUNCHER_PATH/" >/dev/null
+"${ADB[@]}" shell "chmod 755 '$REMOTE_LAUNCHER_PATH/bin/loong_pangu' 2>/dev/null || true"
+
+if [ -d "$PLATFORM_DIR" ]; then
+    echo "Deploying platform payload to $REMOTE_PLATFORM_ROOT ($PLATFORM_MODE)"
+    if [ "$PLATFORM_MODE" = "replace" ]; then
+        "${ADB[@]}" shell "mkdir -p '$REMOTE_PLATFORM_ROOT' && rm -rf '$REMOTE_PLATFORM_PATH'"
+    else
+        "${ADB[@]}" shell "mkdir -p '$REMOTE_PLATFORM_ROOT'"
+    fi
+    "${ADB[@]}" push "$PLATFORM_DIR/." "$REMOTE_PLATFORM_ROOT/" >/dev/null
+fi
+
+case "$MARKER_MODE" in
+    on)
+        "${ADB[@]}" shell "mkdir -p '${MARKER%/*}'"
+        "${ADB[@]}" shell "touch '$MARKER'"
+        echo "Marker enabled: $MARKER"
+        ;;
+    off)
+        "${ADB[@]}" shell "rm -f '$MARKER'"
+        echo "Marker removed: $MARKER"
+        ;;
+    keep)
+        echo "Marker unchanged."
+        ;;
+esac
+
+"${ADB[@]}" shell sync
+echo "SD bundle staged."

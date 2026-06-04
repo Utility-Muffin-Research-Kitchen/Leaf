@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Clone any missing sibling repos into Leaf's parent workspace.
+# Usage: LEAF_WORKSPACE_DIR=/path scripts/bootstrap.sh <repo> [<repo> ...]
+set -euo pipefail
+
+LEAF_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+WORKSPACE_DIR="${LEAF_WORKSPACE_DIR:-${WORKSPACE_DIR:-$(cd "$LEAF_ROOT/.." && pwd)}}"
+
+# repo name -> clone URL
+url_for() {
+    case "$1" in
+        umrk-workspace)              echo "https://github.com/Utility-Muffin-Research-Kitchen/umrk-workspace.git" ;;
+        Catastrophe)                 echo "https://github.com/Helaas/Catastrophe.git" ;;
+        Jawaka)                      echo "https://github.com/Helaas/Jawaka.git" ;;
+        Thing-File)                  echo "https://github.com/Utility-Muffin-Research-Kitchen/Thing-File.git" ;;
+        ssh-server)                  echo "https://github.com/Helaas/ssh-server.git" ;;
+        retroarch-builds)            echo "https://github.com/Utility-Muffin-Research-Kitchen/retroarch-builds.git" ;;
+        Cores-spruce)                echo "https://github.com/Utility-Muffin-Research-Kitchen/Cores-spruce.git" ;;
+        mlp1-toolchain)              echo "https://github.com/Utility-Muffin-Research-Kitchen/mlp1-toolchain.git" ;;
+        miniloong-launcher-switcher) echo "https://github.com/Helaas/miniloong-launcher-switcher.git" ;;
+        miniloong-adb-keeper)        echo "https://github.com/Helaas/miniloong-adb-keeper.git" ;;
+        *) echo "" ;;
+    esac
+}
+
+for repo in "$@"; do
+    dest="$WORKSPACE_DIR/$repo"
+    if [ -d "$dest/.git" ]; then
+        echo "ok      $repo (present)"
+        continue
+    fi
+    if [ -e "$dest" ]; then
+        echo "warn    $repo ($dest exists but is not a git repo; leaving untouched)" >&2
+        continue
+    fi
+    url="$(url_for "$repo")"
+    if [ -z "$url" ]; then
+        echo "skip    $repo (no known remote)" >&2
+        continue
+    fi
+    echo "clone   $repo <- $url"
+    git clone "$url" "$dest"
+done

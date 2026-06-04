@@ -1,0 +1,8 @@
+# Local build and staging output
+/build/
+
+# Workspace-local scratch / OS noise
+/.tmp/
+.DS_Store
+__pycache__/
+*.pyc
