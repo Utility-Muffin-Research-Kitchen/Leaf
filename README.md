@@ -61,10 +61,68 @@ make stage-jawaka DEVICE=mlp1               # launcher payload only
 make stage-retroarch DEVICE=mlp1            # RetroArch binary + cores + info
 make stage-app APP=ssh-server DEVICE=mlp1   # stage one app
 make stage-app APP=Thing-File DEVICE=mlp1
+
+make release-zips DEVICE=mlp1               # build end-user install + recovery ZIPs
+make release-sd-zip DEVICE=mlp1             # build end-user install ZIP only
+make release-recovery-zip DEVICE=mlp1       # build end-user recovery ZIP only
 ```
 
 `make bootstrap` is idempotent. Existing sibling repos are reported as present
 and left untouched. Missing repos are cloned into `Leaf/..`.
+
+## End-User SD Install Package
+
+Leaf can build root-extractable ZIPs for installing Leaf on a Miniloong Pocket
+1 without requiring ADB first. This is the preferred path for making a device
+installation package for end users.
+
+From the `Leaf` repo:
+
+```sh
+make bootstrap
+make -C ../mlp1-toolchain image
+make release-zips DEVICE=mlp1
+```
+
+The release command builds missing MLP1 components, assembles the launcher and
+platform payload, packages the first-party apps, and asks
+`miniloong-launcher-switcher` to generate the stock `loong_upgrade` install and
+recovery payloads.
+
+Output is written to:
+
+```text
+build/release/leaf-mlp1-sd-<release_id>.zip
+build/release/leaf-mlp1-recovery-<release_id>.zip
+```
+
+`<release_id>` defaults to the current date plus the Leaf git short SHA. To
+choose it explicitly:
+
+```sh
+make release-zips DEVICE=mlp1 RELEASE_ID=2026-06-05-test1
+```
+
+The install ZIP is extracted directly to the SD-card root. It must not be
+placed inside another folder. The SD card should be FAT32 or ext4; do not use
+exFAT because the MLP1 stock update path ignores exFAT media.
+
+End-user flow:
+
+1. Extract `leaf-mlp1-sd-<release_id>.zip` to the SD-card root.
+2. Boot the MLP1 with the SD card inserted.
+3. Wait on the stock update screen while the installer runs. The progress
+   indicator may sit at 50 percent while files are copying.
+4. Wait for the device to reboot by itself.
+5. Boot normally with the SD card inserted; Leaf should start automatically.
+
+The install package does not silently enable or pin ADB. ADB can be enabled
+later from Leaf/Jawaka settings.
+
+To return a device to stock boot without ADB, extract
+`leaf-mlp1-recovery-<release_id>.zip` to the SD-card root and boot the device
+once with that card inserted. Wait for the device to reboot by itself.
+Recovery removes the Leaf hook/session and leaves SD-card user content intact.
 
 ## Ownership
 
@@ -78,6 +136,7 @@ Leaf owns deployment and orchestration:
 - ADB staging.
 - Activation marker control.
 - Launcher restart and log-tail helpers.
+- End-user SD install/recovery ZIP generation.
 
 Sibling repos own their build/package outputs:
 

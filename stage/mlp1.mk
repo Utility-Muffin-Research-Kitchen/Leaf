@@ -26,7 +26,7 @@ LEAF_SYSTEM_PAYLOAD_DIR := $(PAYLOAD_ROOT)/.system/leaf
 PAYLOAD_DIR          := $(LEAF_SYSTEM_PAYLOAD_DIR)/launcher
 PLATFORM_PAYLOAD_DIR := $(LEAF_SYSTEM_PAYLOAD_DIR)/platforms/mlp1
 
-.PHONY: stage stage-app stage-public-root stage-retroarch stage-refresh refresh-jawaka jawaka-build assemble-jawaka stage-jawaka
+.PHONY: stage stage-app stage-public-root stage-retroarch stage-refresh refresh-jawaka jawaka-build assemble-jawaka stage-jawaka release-zips release-sd-zip release-recovery-zip
 
 # Build the Jawaka MLP1 binaries (cross-compile via its own Docker target).
 jawaka-build:
@@ -223,3 +223,42 @@ stage-app:
 	"$${ADB[@]}" push "$$package_dir/." "$$remote_dir/" >/dev/null; \
 	"$${ADB[@]}" shell "chmod 755 '$$remote_dir/launch.sh' '$$remote_dir/bin/'* 2>/dev/null || true"; \
 	"$${ADB[@]}" shell "find '$$remote_dir' -maxdepth 3 -type f | sort"
+
+release-zips:
+	DEVICE="$(DEVICE)" \
+	LEAF_WORKSPACE_DIR="$(WORKSPACE_DIR)" \
+	RELEASE_ID="$(RELEASE_ID)" \
+	STAGE_APPS="$(STAGE_APPS)" \
+	PUBLIC_ROOT_DIRS="$(PUBLIC_ROOT_DIRS)" \
+	CATASTROPHE_DIR="$(CATASTROPHE_DIR)" \
+	JAWAKA_DIR="$(JAWAKA_DIR)" \
+	RETROARCH_BUILDS_DIR="$(RETROARCH_BUILDS_DIR)" \
+	CORES_SPRUCE_DIR="$(CORES_SPRUCE_DIR)" \
+	LAUNCHER_SWITCHER_DIR="$(LAUNCHER_SWITCHER_DIR)" \
+	MLP1_RETROARCH_BIN="$(MLP1_RETROARCH_BIN)" \
+	MLP1_CORES_DIR="$(MLP1_CORES_DIR)" \
+	MLP1_RETROARCH_PATCH_SET="$(MLP1_RETROARCH_PATCH_SET)" \
+	"$(LEAF_ROOT)/scripts/make-sd-release-zip.sh" both
+
+release-sd-zip:
+	DEVICE="$(DEVICE)" \
+	LEAF_WORKSPACE_DIR="$(WORKSPACE_DIR)" \
+	RELEASE_ID="$(RELEASE_ID)" \
+	STAGE_APPS="$(STAGE_APPS)" \
+	PUBLIC_ROOT_DIRS="$(PUBLIC_ROOT_DIRS)" \
+	CATASTROPHE_DIR="$(CATASTROPHE_DIR)" \
+	JAWAKA_DIR="$(JAWAKA_DIR)" \
+	RETROARCH_BUILDS_DIR="$(RETROARCH_BUILDS_DIR)" \
+	CORES_SPRUCE_DIR="$(CORES_SPRUCE_DIR)" \
+	LAUNCHER_SWITCHER_DIR="$(LAUNCHER_SWITCHER_DIR)" \
+	MLP1_RETROARCH_BIN="$(MLP1_RETROARCH_BIN)" \
+	MLP1_CORES_DIR="$(MLP1_CORES_DIR)" \
+	MLP1_RETROARCH_PATCH_SET="$(MLP1_RETROARCH_PATCH_SET)" \
+	"$(LEAF_ROOT)/scripts/make-sd-release-zip.sh" install
+
+release-recovery-zip:
+	DEVICE="$(DEVICE)" \
+	LEAF_WORKSPACE_DIR="$(WORKSPACE_DIR)" \
+	RELEASE_ID="$(RELEASE_ID)" \
+	LAUNCHER_SWITCHER_DIR="$(LAUNCHER_SWITCHER_DIR)" \
+	"$(LEAF_ROOT)/scripts/make-sd-release-zip.sh" recovery
