@@ -168,8 +168,8 @@ stage: stage-public-root stage-retroarch stage-jawaka
 # Full device stage, then restart the Loong/Jawaka launcher stack.
 stage-refresh: stage refresh-jawaka
 
-# Restart the active MLP1 GUI stack. The switcher wrapper handles stale
-# Jawaka child cleanup before launching the staged custom bundle.
+# Restart the active MLP1 GUI stack. Under the init-hook model, a reboot is the
+# normal way to exercise a newly staged Leaf bundle.
 refresh-jawaka:
 	"$(LEAF_ROOT)/scripts/adb-restart-loong.sh"
 

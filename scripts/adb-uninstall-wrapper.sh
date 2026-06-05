@@ -36,5 +36,4 @@ echo "Uninstall log:"
 "${ADB[@]}" shell "tail -80 '$REMOTE_LOGS_PATH/umrk-launcher-uninstall.log' 2>/dev/null || true"
 
 echo
-echo "Stock binary restored. Restart the Loong stack or reboot to use it:"
-echo "  adb shell '/etc/init.d/S50loong restart'"
+echo "Leaf init hook removed. Reboot to use stock boot cleanly."

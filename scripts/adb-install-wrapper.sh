@@ -26,6 +26,10 @@ echo "Using adb device: $("${ADB[@]}" get-serialno)"
 
 python3 "$LAUNCHER_SWITCHER_DIR/make_launcher_switcher_sd.py" --force "$BUILD_DIR" >/dev/null
 
+echo "ADB safety preflight:"
+"${ADB[@]}" shell 'printf "  /etc/.usb_config="; cat /etc/.usb_config 2>/dev/null || true; printf "  lsattr="; lsattr /etc/.usb_config 2>/dev/null || true'
+echo "Installer will refuse unless /etc/.usb_config is usb_adb_en and immutable."
+
 echo "Pushing installer to $REMOTE_INSTALLER"
 "${ADB[@]}" push "$INSTALLER" "$REMOTE_INSTALLER" >/dev/null
 "${ADB[@]}" shell "chmod 755 '$REMOTE_INSTALLER'"
@@ -37,5 +41,4 @@ echo "Installer log:"
 "${ADB[@]}" shell "tail -80 '$REMOTE_LOGS_PATH/umrk-launcher-install.log' 2>/dev/null || true"
 
 echo
-echo "Wrapper installed. Restart the Loong stack or reboot to exercise it:"
-echo "  adb shell '/etc/init.d/S50loong restart'"
+echo "Leaf init hook installed. Reboot to exercise the rcS interrupt path."

@@ -20,14 +20,16 @@ help:
 	@echo "  make doctor                               preflight: adb / docker / toolchain / device"
 	@echo "  make status                               git status across all siblings"
 	@echo "  make stage DEVICE=mlp1                    full: launcher payload + all apps"
-	@echo "  make stage-refresh DEVICE=mlp1            full stage, then restart Jawaka GUI"
-	@echo "  make refresh-jawaka DEVICE=mlp1           restart Jawaka/Loong GUI stack only"
+	@echo "  make stage-refresh DEVICE=mlp1            full stage, then run refresh helper"
+	@echo "  make refresh-jawaka DEVICE=mlp1           refresh helper (reboot advised with init hook)"
 	@echo "  make stage-jawaka DEVICE=mlp1             launcher payload only"
 	@echo "  make stage-retroarch DEVICE=mlp1          RetroArch binary + cores + info"
 	@echo "  make stage-app APP=ssh-server DEVICE=mlp1 stage a single app repo"
 	@echo "  make adb-enable-marker                    enable Leaf launcher marker"
 	@echo "  make adb-disable-marker                   disable Leaf launcher marker"
 	@echo "  make adb-tail-logs                        tail launcher logs"
+	@echo "  make adb-install-wrapper                  install Leaf init hook (compat alias)"
+	@echo "  make adb-uninstall-wrapper                remove Leaf init hook (compat alias)"
 
 bootstrap:
 	@LEAF_WORKSPACE_DIR="$(WORKSPACE_DIR)" scripts/bootstrap.sh $(ALL_REPOS)
