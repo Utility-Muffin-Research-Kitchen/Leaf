@@ -6,12 +6,12 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # orchestrator overrides it to stage a centrally-assembled payload.
 BUNDLE_ROOT="${BUNDLE_ROOT:-$ROOT_DIR/build/package}"
 SYSTEM_DIR="$BUNDLE_ROOT/.system/leaf"
-BUNDLE_DIR="$SYSTEM_DIR/launcher"
-PLATFORM_DIR="$SYSTEM_DIR/platforms"
 REQUESTED_REMOTE_SDCARD_PATH="${REMOTE_SDCARD_PATH:-auto}"
 MARKER_MODE="keep"
 PLATFORM_MODE="replace"
 PLATFORM_ID="${PLATFORM_ID:-${DEVICE:-mlp1}}"
+PLATFORM_DIR="$SYSTEM_DIR/platforms/$PLATFORM_ID"
+BUNDLE_DIR="$PLATFORM_DIR/launcher"
 
 case "$PLATFORM_ID" in
     mlp1|tg5040|tg5050|my355|mac) ;;
@@ -42,7 +42,7 @@ done
 
 if [ ! -x "$BUNDLE_DIR/bin/loong_pangu" ]; then
     echo "missing launcher bundle: $BUNDLE_DIR" >&2
-    echo "run: make package" >&2
+    echo "run: make DEVICE=$PLATFORM_ID assemble-jawaka" >&2
     exit 1
 fi
 
@@ -59,30 +59,42 @@ ADB=(adb -s "$serial")
 
 echo "Using adb device: $("${ADB[@]}" get-serialno)"
 
-REMOTE_SDCARD_PATH="$(REMOTE_SDCARD_PATH="$REQUESTED_REMOTE_SDCARD_PATH" ADB_SERIAL="$serial" "$ROOT_DIR/scripts/adb-resolve-umrk-sd.sh")"
+REMOTE_SDCARD_PATH="$(PLATFORM_ID="$PLATFORM_ID" REMOTE_SDCARD_PATH="$REQUESTED_REMOTE_SDCARD_PATH" ADB_SERIAL="$serial" "$ROOT_DIR/scripts/adb-resolve-umrk-sd.sh")"
 REMOTE_SYSTEM_PATH="${REMOTE_SYSTEM_PATH:-${REMOTE_LEAF_SYSTEM:-$REMOTE_SDCARD_PATH/.system/leaf}}"
-REMOTE_LAUNCHER_PATH="${REMOTE_LAUNCHER_PATH:-${REMOTE_BUNDLE:-$REMOTE_SYSTEM_PATH/launcher}}"
 REMOTE_PLATFORM_ROOT="${REMOTE_PLATFORM_ROOT:-$REMOTE_SYSTEM_PATH/platforms}"
 REMOTE_PLATFORM_PATH="${REMOTE_PLATFORM_PATH:-$REMOTE_PLATFORM_ROOT/$PLATFORM_ID}"
-MARKER="${UMRK_MARKER_PATH:-$REMOTE_SYSTEM_PATH/enabled}"
+REMOTE_LAUNCHER_PATH="${REMOTE_LAUNCHER_PATH:-${REMOTE_BUNDLE:-$REMOTE_PLATFORM_PATH/launcher}}"
+MARKER="${UMRK_MARKER_PATH:-$REMOTE_PLATFORM_PATH/enabled}"
 
 echo "Deploying bundle to $REMOTE_LAUNCHER_PATH"
-"${ADB[@]}" shell "mkdir -p '$REMOTE_SYSTEM_PATH' && rm -rf '$REMOTE_LAUNCHER_PATH' && mkdir -p '$REMOTE_LAUNCHER_PATH'"
+"${ADB[@]}" shell "mkdir -p '$REMOTE_PLATFORM_PATH' && rm -rf '$REMOTE_LAUNCHER_PATH' && mkdir -p '$REMOTE_LAUNCHER_PATH'"
 "${ADB[@]}" push "$BUNDLE_DIR/." "$REMOTE_LAUNCHER_PATH/" >/dev/null
 "${ADB[@]}" shell "chmod 755 '$REMOTE_LAUNCHER_PATH/bin/loong_pangu' 2>/dev/null || true"
 
 if [ -d "$PLATFORM_DIR" ]; then
-    if [ ! -d "$PLATFORM_DIR/$PLATFORM_ID" ]; then
-        echo "missing platform payload: $PLATFORM_DIR/$PLATFORM_ID" >&2
-        exit 1
-    fi
-    echo "Deploying platform payload to $REMOTE_PLATFORM_ROOT ($PLATFORM_MODE)"
+    echo "Deploying platform payload to $REMOTE_PLATFORM_PATH ($PLATFORM_MODE)"
+    "${ADB[@]}" shell "mkdir -p '$REMOTE_PLATFORM_PATH'"
     if [ "$PLATFORM_MODE" = "replace" ]; then
-        "${ADB[@]}" shell "mkdir -p '$REMOTE_PLATFORM_ROOT' && rm -rf '$REMOTE_PLATFORM_PATH'"
-    else
-        "${ADB[@]}" shell "mkdir -p '$REMOTE_PLATFORM_ROOT'"
+        for name in bin cores info defaults platform.d autoconfig boot-animation manifest.json; do
+            "${ADB[@]}" shell "rm -rf '$REMOTE_PLATFORM_PATH/$name'"
+        done
     fi
-    "${ADB[@]}" push "$PLATFORM_DIR/." "$REMOTE_PLATFORM_ROOT/" >/dev/null
+    shopt -s nullglob
+    for entry in "$PLATFORM_DIR"/*; do
+        name="$(basename "$entry")"
+        case "$name" in
+            launcher|state|userdata|enabled)
+                continue
+                ;;
+        esac
+        remote_entry="$REMOTE_PLATFORM_PATH/$name"
+        if [ -d "$entry" ]; then
+            "${ADB[@]}" shell "mkdir -p '$remote_entry'"
+            "${ADB[@]}" push "$entry/." "$remote_entry/" >/dev/null
+        elif [ -f "$entry" ]; then
+            "${ADB[@]}" push "$entry" "$remote_entry" >/dev/null
+        fi
+    done
 fi
 
 case "$MARKER_MODE" in

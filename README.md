@@ -155,12 +155,14 @@ The runtime stock-firmware switcher mechanism remains in
 Leaf stages launcher-owned internals under one hidden SD root:
 
 ```text
-$SDCARD_PATH/.system/leaf/enabled
-$SDCARD_PATH/.system/leaf/launcher/env.sh
-$SDCARD_PATH/.system/leaf/launcher/bin/...
-$SDCARD_PATH/.system/leaf/platforms/mlp1/...
-$SDCARD_PATH/.system/leaf/state/
-$SDCARD_PATH/.system/leaf/userdata/mlp1/logs/
+$SDCARD_PATH/.system/leaf/platforms/mlp1/enabled
+$SDCARD_PATH/.system/leaf/platforms/mlp1/launcher/env.sh
+$SDCARD_PATH/.system/leaf/platforms/mlp1/launcher/bin/...
+$SDCARD_PATH/.system/leaf/platforms/mlp1/bin/
+$SDCARD_PATH/.system/leaf/platforms/mlp1/cores/
+$SDCARD_PATH/.system/leaf/platforms/mlp1/state/
+$SDCARD_PATH/.system/leaf/platforms/mlp1/userdata/logs/
+$SDCARD_PATH/.system/leaf/shared/userdata/
 ```
 
 User-facing content folders remain at the SD root:

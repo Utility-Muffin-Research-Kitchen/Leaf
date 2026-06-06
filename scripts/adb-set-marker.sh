@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MODE="${1:-}"
 REQUESTED_REMOTE_SDCARD_PATH="${REMOTE_SDCARD_PATH:-auto}"
+PLATFORM_ID="${PLATFORM_ID:-${DEVICE:-mlp1}}"
 
 case "$MODE" in
     on|--on|enable|--enable)
@@ -31,9 +32,10 @@ ADB=(adb -s "$serial")
 
 echo "Using adb device: $("${ADB[@]}" get-serialno)"
 
-REMOTE_SDCARD_PATH="$(REMOTE_SDCARD_PATH="$REQUESTED_REMOTE_SDCARD_PATH" ADB_SERIAL="$serial" "$ROOT_DIR/scripts/adb-resolve-umrk-sd.sh")"
+REMOTE_SDCARD_PATH="$(PLATFORM_ID="$PLATFORM_ID" REMOTE_SDCARD_PATH="$REQUESTED_REMOTE_SDCARD_PATH" ADB_SERIAL="$serial" "$ROOT_DIR/scripts/adb-resolve-umrk-sd.sh")"
 REMOTE_SYSTEM_PATH="${REMOTE_SYSTEM_PATH:-$REMOTE_SDCARD_PATH/.system/leaf}"
-MARKER="${UMRK_MARKER_PATH:-$REMOTE_SYSTEM_PATH/enabled}"
+REMOTE_PLATFORM_PATH="${REMOTE_PLATFORM_PATH:-$REMOTE_SYSTEM_PATH/platforms/$PLATFORM_ID}"
+MARKER="${UMRK_MARKER_PATH:-$REMOTE_PLATFORM_PATH/enabled}"
 
 if [ "$MODE" = "on" ]; then
     "${ADB[@]}" shell "mkdir -p '${MARKER%/*}' && touch '$MARKER' && sync"

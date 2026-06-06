@@ -8,6 +8,15 @@ set -euo pipefail
 
 REQUESTED_REMOTE_SDCARD_PATH="${REMOTE_SDCARD_PATH:-auto}"
 REMOTE_SDCARD_CANDIDATES="${REMOTE_SDCARD_CANDIDATES:-/mnt/sdcard /media/sdcard1}"
+PLATFORM_ID="${PLATFORM_ID:-${DEVICE:-mlp1}}"
+
+case "$PLATFORM_ID" in
+    mlp1|tg5040|tg5050|my355|mac) ;;
+    *)
+        echo "unsupported PLATFORM_ID: $PLATFORM_ID" >&2
+        exit 1
+        ;;
+esac
 
 if [ -n "${ADB_SERIAL:-}" ]; then
     serial="$ADB_SERIAL"
@@ -38,10 +47,22 @@ is_mounted() {
 has_marker() {
     path="$1"
     validate_remote_path "$path"
-    "${ADB[@]}" shell "[ -e '$path/.system/leaf/enabled' ]" >/dev/null 2>&1
+    "${ADB[@]}" shell "[ -e '$path/.system/leaf/platforms/$PLATFORM_ID/enabled' ]" >/dev/null 2>&1
 }
 
 has_bundle() {
+    path="$1"
+    validate_remote_path "$path"
+    "${ADB[@]}" shell "[ -f '$path/.system/leaf/platforms/$PLATFORM_ID/launcher/bin/loong_pangu' ]" >/dev/null 2>&1
+}
+
+has_legacy_marker() {
+    path="$1"
+    validate_remote_path "$path"
+    "${ADB[@]}" shell "[ -e '$path/.system/leaf/enabled' ]" >/dev/null 2>&1
+}
+
+has_legacy_bundle() {
     path="$1"
     validate_remote_path "$path"
     "${ADB[@]}" shell "[ -f '$path/.system/leaf/launcher/bin/loong_pangu' ]" >/dev/null 2>&1
@@ -66,6 +87,9 @@ mounted=()
 ready=()
 marked=()
 bundled=()
+legacy_ready=()
+legacy_marked=()
+legacy_bundled=()
 
 for path in $REMOTE_SDCARD_CANDIDATES; do
     validate_remote_path "$path"
@@ -86,6 +110,19 @@ for path in $REMOTE_SDCARD_CANDIDATES; do
     fi
     if [ "$marker" -eq 1 ] && [ "$bundle" -eq 1 ]; then
         ready+=("$path")
+    fi
+    legacy_marker=0
+    legacy_bundle=0
+    if has_legacy_marker "$path"; then
+        legacy_marker=1
+        legacy_marked+=("$path")
+    fi
+    if has_legacy_bundle "$path"; then
+        legacy_bundle=1
+        legacy_bundled+=("$path")
+    fi
+    if [ "$legacy_marker" -eq 1 ] && [ "$legacy_bundle" -eq 1 ]; then
+        legacy_ready+=("$path")
     fi
 done
 
@@ -133,6 +170,51 @@ case "${#bundled[@]}" in
         ;;
 esac
 
+case "${#legacy_ready[@]}" in
+    1)
+        echo "warning: using legacy global Leaf marker and launcher bundle for $PLATFORM_ID: ${legacy_ready[0]}" >&2
+        printf '%s\n' "${legacy_ready[0]}"
+        exit 0
+        ;;
+    0)
+        ;;
+    *)
+        echo "Ambiguous legacy Leaf SD: global marker and launcher bundle found on: $(join_paths "${legacy_ready[@]}")" >&2
+        echo "Set REMOTE_SDCARD_PATH=/mnt/sdcard or REMOTE_SDCARD_PATH=/media/sdcard1." >&2
+        exit 2
+        ;;
+esac
+
+case "${#legacy_marked[@]}" in
+    1)
+        echo "warning: using SD with legacy global UMRK marker but no platform marker for $PLATFORM_ID: ${legacy_marked[0]}" >&2
+        printf '%s\n' "${legacy_marked[0]}"
+        exit 0
+        ;;
+    0)
+        ;;
+    *)
+        echo "Ambiguous legacy Leaf SD: global marker found on: $(join_paths "${legacy_marked[@]}")" >&2
+        echo "Set REMOTE_SDCARD_PATH=/mnt/sdcard or REMOTE_SDCARD_PATH=/media/sdcard1." >&2
+        exit 2
+        ;;
+esac
+
+case "${#legacy_bundled[@]}" in
+    1)
+        echo "warning: using SD with legacy global launcher bundle but no platform launcher for $PLATFORM_ID: ${legacy_bundled[0]}" >&2
+        printf '%s\n' "${legacy_bundled[0]}"
+        exit 0
+        ;;
+    0)
+        ;;
+    *)
+        echo "Ambiguous legacy Leaf SD: global launcher bundle found on: $(join_paths "${legacy_bundled[@]}")" >&2
+        echo "Set REMOTE_SDCARD_PATH=/mnt/sdcard or REMOTE_SDCARD_PATH=/media/sdcard1." >&2
+        exit 2
+        ;;
+esac
+
 case "${#mounted[@]}" in
     1)
         echo "warning: no UMRK marker or launcher bundle found; using only mounted SD: ${mounted[0]}" >&2
@@ -145,7 +227,7 @@ case "${#mounted[@]}" in
         ;;
     *)
         echo "Could not identify active Leaf SD. Mounted candidates: $(join_paths "${mounted[@]}")" >&2
-        echo "Expected exactly one mounted card with .system/leaf/enabled and/or .system/leaf/launcher/bin/loong_pangu." >&2
+        echo "Expected exactly one mounted card with .system/leaf/platforms/$PLATFORM_ID/enabled and/or .system/leaf/platforms/$PLATFORM_ID/launcher/bin/loong_pangu." >&2
         echo "Set REMOTE_SDCARD_PATH=/mnt/sdcard or REMOTE_SDCARD_PATH=/media/sdcard1." >&2
         exit 3
         ;;

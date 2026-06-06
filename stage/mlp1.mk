@@ -23,8 +23,8 @@ REMOTE_APPS_PATH ?=
 STAGE_BUILD          ?= $(LEAF_ROOT)/build/stage/mlp1
 PAYLOAD_ROOT         := $(STAGE_BUILD)/package
 LEAF_SYSTEM_PAYLOAD_DIR := $(PAYLOAD_ROOT)/.system/leaf
-PAYLOAD_DIR          := $(LEAF_SYSTEM_PAYLOAD_DIR)/launcher
 PLATFORM_PAYLOAD_DIR := $(LEAF_SYSTEM_PAYLOAD_DIR)/platforms/mlp1
+PAYLOAD_DIR          := $(PLATFORM_PAYLOAD_DIR)/launcher
 
 .PHONY: stage stage-app stage-public-root stage-retroarch stage-refresh refresh-jawaka jawaka-build assemble-jawaka stage-jawaka release-zips release-sd-zip release-recovery-zip
 
@@ -117,7 +117,7 @@ stage-retroarch:
 	fi; \
 	ADB=(adb -s "$$serial"); \
 	echo "Using adb device: $$serial"; \
-	remote_sd="$$(REMOTE_SDCARD_PATH="$(REMOTE_SDCARD_PATH)" ADB_SERIAL="$$serial" "$(LEAF_ROOT)/scripts/adb-resolve-umrk-sd.sh")"; \
+	remote_sd="$$(PLATFORM_ID="mlp1" REMOTE_SDCARD_PATH="$(REMOTE_SDCARD_PATH)" ADB_SERIAL="$$serial" "$(LEAF_ROOT)/scripts/adb-resolve-umrk-sd.sh")"; \
 	remote_system="$(REMOTE_SYSTEM_PATH)"; \
 	if [ -z "$$remote_system" ]; then remote_system="$$remote_sd/.system/leaf"; fi; \
 	remote_platform="$(REMOTE_PLATFORM_PATH)"; \
@@ -147,7 +147,7 @@ stage-public-root:
 	fi; \
 	ADB=(adb -s "$$serial"); \
 	echo "Using adb device: $$serial"; \
-	remote_sd="$$(REMOTE_SDCARD_PATH="$(REMOTE_SDCARD_PATH)" ADB_SERIAL="$$serial" "$(LEAF_ROOT)/scripts/adb-resolve-umrk-sd.sh")"; \
+	remote_sd="$$(PLATFORM_ID="mlp1" REMOTE_SDCARD_PATH="$(REMOTE_SDCARD_PATH)" ADB_SERIAL="$$serial" "$(LEAF_ROOT)/scripts/adb-resolve-umrk-sd.sh")"; \
 	mkdirs=""; \
 	for dir in $(PUBLIC_ROOT_DIRS); do \
 		mkdirs="$$mkdirs '$$remote_sd/$$dir'"; \
@@ -198,7 +198,7 @@ stage-app:
 	fi; \
 	ADB=(adb -s "$$serial"); \
 	echo "Using adb device: $$serial"; \
-	remote_sd="$$(REMOTE_SDCARD_PATH="$(REMOTE_SDCARD_PATH)" ADB_SERIAL="$$serial" "$(LEAF_ROOT)/scripts/adb-resolve-umrk-sd.sh")"; \
+	remote_sd="$$(PLATFORM_ID="mlp1" REMOTE_SDCARD_PATH="$(REMOTE_SDCARD_PATH)" ADB_SERIAL="$$serial" "$(LEAF_ROOT)/scripts/adb-resolve-umrk-sd.sh")"; \
 	remote_apps="$(REMOTE_APPS_PATH)"; \
 	if [ -z "$$remote_apps" ]; then remote_apps="$$remote_sd/Apps"; fi; \
 	remote_dir="$$remote_apps/$$destination_platform/$$package_name"; \

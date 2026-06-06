@@ -132,7 +132,7 @@ settings if needed.
 
 Logs are written under:
 
-  .system/leaf/userdata/mlp1/logs/
+  .system/leaf/platforms/mlp1/userdata/logs/
 
 To return to stock boot, extract the matching Leaf recovery ZIP to the SD-card
 root and boot the device once with that card inserted.
@@ -175,7 +175,7 @@ build_install_zip() {
     build_missing_platform_bits
 
     make -C "$LEAF_ROOT" DEVICE=mlp1 assemble-jawaka
-    [ -d "$PAYLOAD_ROOT/.system/leaf/launcher" ] || die "missing assembled launcher payload"
+    [ -d "$PAYLOAD_ROOT/.system/leaf/platforms/mlp1/launcher" ] || die "missing assembled launcher payload"
     [ -d "$PAYLOAD_ROOT/.system/leaf/platforms/mlp1" ] || die "missing assembled MLP1 platform payload"
 
     rm -rf "$INSTALL_STAGE"
@@ -189,7 +189,6 @@ build_install_zip() {
     MANAGED_APPS_FILE="$RELEASE_ROOT/managed-apps.txt"
     : >"$MANAGED_APPS_FILE"
 
-    cp -R "$PAYLOAD_ROOT/.system/leaf/launcher" "$RELEASE_ROOT/launcher"
     cp -R "$PAYLOAD_ROOT/.system/leaf/platforms/mlp1" "$RELEASE_ROOT/platforms/mlp1"
 
     for app in $STAGE_APPS; do
