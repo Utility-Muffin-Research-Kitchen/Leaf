@@ -169,11 +169,17 @@ User-facing content folders remain at the SD root:
 Roms/
 Images/
 Apps/
+  mlp1/<Name>.pak/
+  shared/<Name>.pak/
 BIOS/
 Saves/
 States/
 Cheats/
 ```
+
+`Apps/` is a namespace root. Leaf stages native apps under `Apps/<platform>/`
+and wrapper/runtime-delegating apps under `Apps/shared/`; flat
+`Apps/<Name>.pak/` entries are not part of the Jawaka discovery contract.
 
 This is a hard cutover from the old `umrk-launcher`, `UMRK`, `.umrk`,
 `.userdata`, and `.umrk-launcher` layout. Leaf does not migrate or delete old

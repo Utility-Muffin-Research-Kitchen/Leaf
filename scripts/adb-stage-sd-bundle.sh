@@ -11,6 +11,15 @@ PLATFORM_DIR="$SYSTEM_DIR/platforms"
 REQUESTED_REMOTE_SDCARD_PATH="${REMOTE_SDCARD_PATH:-auto}"
 MARKER_MODE="keep"
 PLATFORM_MODE="replace"
+PLATFORM_ID="${PLATFORM_ID:-${DEVICE:-mlp1}}"
+
+case "$PLATFORM_ID" in
+    mlp1|tg5040|tg5050|my355|mac) ;;
+    *)
+        echo "unsupported PLATFORM_ID: $PLATFORM_ID" >&2
+        exit 1
+        ;;
+esac
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -24,7 +33,7 @@ while [ "$#" -gt 0 ]; do
             PLATFORM_MODE="merge"
             ;;
         *)
-            echo "usage: $0 [--marker|--no-marker] [--merge-platform]" >&2
+            echo "usage: PLATFORM_ID=<id> $0 [--marker|--no-marker] [--merge-platform]" >&2
             exit 1
             ;;
     esac
@@ -54,7 +63,7 @@ REMOTE_SDCARD_PATH="$(REMOTE_SDCARD_PATH="$REQUESTED_REMOTE_SDCARD_PATH" ADB_SER
 REMOTE_SYSTEM_PATH="${REMOTE_SYSTEM_PATH:-${REMOTE_LEAF_SYSTEM:-$REMOTE_SDCARD_PATH/.system/leaf}}"
 REMOTE_LAUNCHER_PATH="${REMOTE_LAUNCHER_PATH:-${REMOTE_BUNDLE:-$REMOTE_SYSTEM_PATH/launcher}}"
 REMOTE_PLATFORM_ROOT="${REMOTE_PLATFORM_ROOT:-$REMOTE_SYSTEM_PATH/platforms}"
-REMOTE_PLATFORM_PATH="${REMOTE_PLATFORM_PATH:-$REMOTE_PLATFORM_ROOT/mlp1}"
+REMOTE_PLATFORM_PATH="${REMOTE_PLATFORM_PATH:-$REMOTE_PLATFORM_ROOT/$PLATFORM_ID}"
 MARKER="${UMRK_MARKER_PATH:-$REMOTE_SYSTEM_PATH/enabled}"
 
 echo "Deploying bundle to $REMOTE_LAUNCHER_PATH"
@@ -63,6 +72,10 @@ echo "Deploying bundle to $REMOTE_LAUNCHER_PATH"
 "${ADB[@]}" shell "chmod 755 '$REMOTE_LAUNCHER_PATH/bin/loong_pangu' 2>/dev/null || true"
 
 if [ -d "$PLATFORM_DIR" ]; then
+    if [ ! -d "$PLATFORM_DIR/$PLATFORM_ID" ]; then
+        echo "missing platform payload: $PLATFORM_DIR/$PLATFORM_ID" >&2
+        exit 1
+    fi
     echo "Deploying platform payload to $REMOTE_PLATFORM_ROOT ($PLATFORM_MODE)"
     if [ "$PLATFORM_MODE" = "replace" ]; then
         "${ADB[@]}" shell "mkdir -p '$REMOTE_PLATFORM_ROOT' && rm -rf '$REMOTE_PLATFORM_PATH'"

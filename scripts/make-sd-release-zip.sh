@@ -91,37 +91,24 @@ build_missing_platform_bits() {
 
 package_app() {
     local app="$1"
-    local package_target package_dir package_name
+    local package_target package_platform package_dir package_name destination_platform supported_devices
 
-    case "$app" in
-        ssh-server)
-            package_target="package-mlp1"
-            package_dir="$WORKSPACE_DIR/ssh-server/build/mlp1/package/SSHServer.pak"
-            package_name="SSHServer.pak"
-            ;;
-        Thing-File)
-            package_target="package-mlp1"
-            package_dir="$WORKSPACE_DIR/Thing-File/build/mlp1/package/Thing-File.pak"
-            package_name="Thing-File.pak"
-            ;;
-        retroarch-builds)
-            package_target="package-mlp1"
-            package_dir="$WORKSPACE_DIR/retroarch-builds/build/package/RetroArch.pak"
-            package_name="RetroArch.pak"
-            ;;
-        *)
-            die "unsupported release app repo: $app"
-            ;;
-    esac
+    # shellcheck source=scripts/app-package-policy.sh
+    . "$LEAF_ROOT/scripts/app-package-policy.sh"
+    leaf_app_policy "$app" "$WORKSPACE_DIR" "$DEVICE" || die "unsupported release app policy: $app for DEVICE=$DEVICE"
 
     [ -d "$WORKSPACE_DIR/$app" ] || die "missing app repo: $WORKSPACE_DIR/$app"
-    make -C "$WORKSPACE_DIR/$app" "$package_target"
+    local make_args=("$package_target")
+    if [ -n "${package_platform:-}" ]; then
+        make_args+=("PLATFORM=$package_platform")
+    fi
+    make -C "$WORKSPACE_DIR/$app" "${make_args[@]}"
     [ -d "$package_dir" ] || die "missing package dir: $package_dir"
 
-    mkdir -p "$RELEASE_APPS_DIR"
-    rm -rf "$RELEASE_APPS_DIR/$package_name"
-    cp -R "$package_dir" "$RELEASE_APPS_DIR/$package_name"
-    printf '%s\n' "$package_name" >>"$MANAGED_APPS_FILE"
+    mkdir -p "$RELEASE_APPS_DIR/$destination_platform"
+    rm -rf "$RELEASE_APPS_DIR/$destination_platform/$package_name"
+    cp -R "$package_dir" "$RELEASE_APPS_DIR/$destination_platform/$package_name"
+    printf '%s/%s\n' "$destination_platform" "$package_name" >>"$MANAGED_APPS_FILE"
 }
 
 write_install_readme() {

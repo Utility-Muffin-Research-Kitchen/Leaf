@@ -50,6 +50,7 @@ assemble-jawaka: jawaka-build
 	@cp -f "$(JAWAKA_BUILD_DIR)/bin/jawaka-platformctl" "$(PAYLOAD_DIR)/bin/jawaka-platformctl"
 	@cp -f "$(JAWAKA_BUILD_DIR)/bin/jawaka-retroarchctl" "$(PAYLOAD_DIR)/bin/jawaka-retroarchctl"
 	@cp -f "$(JAWAKA_BUILD_DIR)/bin/jawaka-retroarch-runner" "$(PAYLOAD_DIR)/bin/jawaka-retroarch-runner"
+	@cp -f "$(JAWAKA_BUILD_DIR)/bin/jawaka-ledd" "$(PAYLOAD_DIR)/bin/jawaka-ledd"
 	@chmod 755 "$(PAYLOAD_DIR)/bin/"*
 	@cp -f "$(UMRK_ENV_SCRIPT)" "$(PAYLOAD_DIR)/env.sh"
 	@chmod 644 "$(PAYLOAD_DIR)/env.sh"
@@ -89,7 +90,7 @@ assemble-jawaka: jawaka-build
 # Assemble + stage the launcher payload to the device via Leaf's ADB script
 # (BUNDLE_ROOT points at the centrally-assembled payload).
 stage-jawaka: assemble-jawaka
-	REMOTE_SDCARD_PATH="$(REMOTE_SDCARD_PATH)" REMOTE_SYSTEM_PATH="$(REMOTE_SYSTEM_PATH)" REMOTE_PLATFORM_PATH="$(REMOTE_PLATFORM_PATH)" BUNDLE_ROOT="$(PAYLOAD_ROOT)" "$(LEAF_ROOT)/scripts/adb-stage-sd-bundle.sh" --marker
+	DEVICE="$(DEVICE)" PLATFORM_ID="mlp1" REMOTE_SDCARD_PATH="$(REMOTE_SDCARD_PATH)" REMOTE_SYSTEM_PATH="$(REMOTE_SYSTEM_PATH)" REMOTE_PLATFORM_PATH="$(REMOTE_PLATFORM_PATH)" BUNDLE_ROOT="$(PAYLOAD_ROOT)" "$(LEAF_ROOT)/scripts/adb-stage-sd-bundle.sh" --marker
 
 # Build or reuse the current MLP1 RetroArch/core outputs, then refresh only the
 # platform runtime folders on the SD card.
@@ -180,28 +181,11 @@ stage-app:
 	@test -n "$(APP)" || { echo "usage: make stage-app APP=<repo> DEVICE=mlp1" >&2; exit 1; }
 	@test -d "$(WORKSPACE_DIR)/$(APP)" || { echo "missing repo: $(WORKSPACE_DIR)/$(APP) (run: make bootstrap)" >&2; exit 1; }
 	@set -euo pipefail; \
-	case "$(APP)" in \
-		ssh-server) \
-			package_target="package-mlp1"; \
-			package_dir="$(WORKSPACE_DIR)/ssh-server/build/mlp1/package/SSHServer.pak"; \
-			package_name="SSHServer.pak"; \
-			;; \
-		Thing-File) \
-			package_target="package-mlp1"; \
-			package_dir="$(WORKSPACE_DIR)/Thing-File/build/mlp1/package/Thing-File.pak"; \
-			package_name="Thing-File.pak"; \
-			;; \
-		retroarch-builds) \
-			package_target="package-mlp1"; \
-			package_dir="$(WORKSPACE_DIR)/retroarch-builds/build/package/RetroArch.pak"; \
-			package_name="RetroArch.pak"; \
-			;; \
-		*) \
-			echo "unsupported app repo: $(APP)" >&2; \
-			exit 1; \
-			;; \
-	esac; \
-	$(MAKE) -C "$(WORKSPACE_DIR)/$(APP)" "$$package_target"; \
+	. "$(LEAF_ROOT)/scripts/app-package-policy.sh"; \
+	leaf_app_policy "$(APP)" "$(WORKSPACE_DIR)" "$(DEVICE)" || { echo "unsupported app policy: $(APP) for DEVICE=$(DEVICE)" >&2; exit 1; }; \
+	make_args=("$$package_target"); \
+	if [ -n "$${package_platform:-}" ]; then make_args+=("PLATFORM=$$package_platform"); fi; \
+	$(MAKE) -C "$(WORKSPACE_DIR)/$(APP)" "$${make_args[@]}"; \
 	test -d "$$package_dir" || { echo "missing package dir: $$package_dir" >&2; exit 1; }; \
 	if [ -n "$${ADB_SERIAL:-}" ]; then \
 		serial="$$ADB_SERIAL"; \
@@ -217,7 +201,7 @@ stage-app:
 	remote_sd="$$(REMOTE_SDCARD_PATH="$(REMOTE_SDCARD_PATH)" ADB_SERIAL="$$serial" "$(LEAF_ROOT)/scripts/adb-resolve-umrk-sd.sh")"; \
 	remote_apps="$(REMOTE_APPS_PATH)"; \
 	if [ -z "$$remote_apps" ]; then remote_apps="$$remote_sd/Apps"; fi; \
-	remote_dir="$$remote_apps/$$package_name"; \
+	remote_dir="$$remote_apps/$$destination_platform/$$package_name"; \
 	echo "Deploying $$package_name to $$remote_dir"; \
 	"$${ADB[@]}" shell "rm -rf '$$remote_dir' && mkdir -p '$$remote_dir'"; \
 	"$${ADB[@]}" push "$$package_dir/." "$$remote_dir/" >/dev/null; \
