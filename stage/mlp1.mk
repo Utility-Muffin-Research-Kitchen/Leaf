@@ -42,7 +42,7 @@ assemble-jawaka: jawaka-build
 		test -f "$$asset" || { echo "missing generated Catastrophe asset: $$asset" >&2; exit 1; }; \
 	done
 	@rm -rf "$(PAYLOAD_ROOT)"
-	@mkdir -p "$(PAYLOAD_DIR)/bin" "$(PAYLOAD_DIR)/res" "$(PLATFORM_PAYLOAD_DIR)"
+	@mkdir -p "$(PAYLOAD_DIR)/bin" "$(PAYLOAD_DIR)/lib" "$(PAYLOAD_DIR)/res" "$(PLATFORM_PAYLOAD_DIR)"
 	@cp -f "$(JAWAKA_BUILD_DIR)/bin/jawakad" "$(PAYLOAD_DIR)/bin/loong_pangu"
 	@cp -f "$(JAWAKA_BUILD_DIR)/bin/jawaka-launcher" "$(PAYLOAD_DIR)/bin/jawaka-launcher"
 	@cp -f "$(JAWAKA_BUILD_DIR)/bin/jawaka-menu" "$(PAYLOAD_DIR)/bin/jawaka-menu"
@@ -50,8 +50,11 @@ assemble-jawaka: jawaka-build
 	@cp -f "$(JAWAKA_BUILD_DIR)/bin/jawaka-platformctl" "$(PAYLOAD_DIR)/bin/jawaka-platformctl"
 	@cp -f "$(JAWAKA_BUILD_DIR)/bin/jawaka-retroarchctl" "$(PAYLOAD_DIR)/bin/jawaka-retroarchctl"
 	@cp -f "$(JAWAKA_BUILD_DIR)/bin/jawaka-retroarch-runner" "$(PAYLOAD_DIR)/bin/jawaka-retroarch-runner"
+	@cp -f "$(JAWAKA_BUILD_DIR)/bin/jawaka-update-runner" "$(PAYLOAD_DIR)/bin/jawaka-update-runner"
 	@cp -f "$(JAWAKA_BUILD_DIR)/bin/jawaka-ledd" "$(PAYLOAD_DIR)/bin/jawaka-ledd"
 	@chmod 755 "$(PAYLOAD_DIR)/bin/"*
+	@docker run --rm -v "$(PAYLOAD_DIR)/lib":/out "$(TOOLCHAIN_IMAGE)" bash -lc 'set -euo pipefail; for lib in libcurl.so.4 libssl.so.3 libcrypto.so.3 libz.so.1 libatomic.so.1; do src=""; for dir in "$$SYSROOT/usr/lib" "$$SYSROOT/lib"; do if [ -e "$$dir/$$lib" ]; then src="$$dir/$$lib"; break; fi; done; test -n "$$src" || { echo "missing SDK runtime library: $$lib" >&2; exit 1; }; cp -Lf "$$src" "/out/$$lib"; done'
+	@chmod 755 "$(PAYLOAD_DIR)/lib/"*.so*
 	@cp -f "$(UMRK_ENV_SCRIPT)" "$(PAYLOAD_DIR)/env.sh"
 	@chmod 644 "$(PAYLOAD_DIR)/env.sh"
 	@cp -Rf "$(JAWAKA_DIR)/res/themes" "$(PAYLOAD_DIR)/res/"

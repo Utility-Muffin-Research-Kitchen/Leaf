@@ -76,6 +76,186 @@ INSTALL_STAGE="$RELEASE_BUILD/sd-$RELEASE_ID"
 RECOVERY_STAGE="$RELEASE_BUILD/recovery-$RELEASE_ID"
 INSTALL_ZIP="$RELEASE_BUILD/leaf-mlp1-sd-$RELEASE_ID.zip"
 RECOVERY_ZIP="$RELEASE_BUILD/leaf-mlp1-recovery-$RELEASE_ID.zip"
+UPDATE_MANIFEST="$RELEASE_BUILD/leaf-update.json"
+SHA256SUMS_FILE="$RELEASE_BUILD/SHA256SUMS"
+LEAF_RELEASE_VERSION="${LEAF_RELEASE_VERSION:-${VERSION:-$RELEASE_ID}}"
+LEAF_RELEASE_CHANNEL="${LEAF_RELEASE_CHANNEL:-stable}"
+BUILT_INSTALL=0
+BUILT_RECOVERY=0
+
+validate_json_scalar() {
+    local name="$1"
+    local value="$2"
+    case "$value" in
+        *'"'*|*\\*|*$'\n'*|*$'\r'*)
+            die "$name contains characters unsupported by release metadata: $value"
+            ;;
+    esac
+}
+
+file_size() {
+    wc -c <"$1" | tr -d '[:space:]'
+}
+
+file_sha256() {
+    if command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$1" | awk '{print $1}'
+    elif command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+    else
+        die "shasum or sha256sum command not found"
+    fi
+}
+
+tree_size() {
+    find "$1" -type f -exec sh -c '
+        for f do
+            wc -c <"$f"
+        done
+    ' sh {} + | awk '{ total += $1 } END { print total + 0 }'
+}
+
+validate_managed_app_path() {
+    local app="$1"
+    local platform_dir app_name
+
+    case "$app" in
+        ''|'#'*|*\\*|/*|*//*|.|..|*'"'*)
+            die "unsafe managed app path: $app"
+            ;;
+    esac
+    platform_dir="${app%%/*}"
+    app_name="${app#*/}"
+    if [ "$platform_dir" = "$app" ] || [ -z "$platform_dir" ] || [ -z "$app_name" ]; then
+        die "managed app path must be <platform>/<pak>: $app"
+    fi
+    case "$platform_dir" in
+        .|..|.*|*/*) die "unsafe managed app platform: $app" ;;
+    esac
+    case "$app_name" in
+        .|..|.*|*/*) die "unsafe managed app name: $app" ;;
+    esac
+}
+
+write_managed_apps_json_items() {
+    local file="$1"
+    local first=1
+    local app
+
+    if [ ! -f "$file" ]; then
+        return 0
+    fi
+
+    while IFS= read -r app || [ -n "$app" ]; do
+        case "$app" in
+            ''|'#'*) continue ;;
+        esac
+        validate_managed_app_path "$app"
+        if [ "$first" -eq 0 ]; then
+            printf ',\n'
+        fi
+        printf '        "%s"' "$app"
+        first=0
+    done <"$file"
+}
+
+write_checksum_line() {
+    local path="$1"
+    printf '%s  %s\n' "$(file_sha256 "$path")" "$(basename "$path")" >>"$SHA256SUMS_FILE"
+}
+
+write_release_manifest() {
+    [ "$BUILT_INSTALL" -eq 1 ] || return 0
+
+    validate_json_scalar "LEAF_RELEASE_VERSION" "$LEAF_RELEASE_VERSION"
+    validate_json_scalar "LEAF_RELEASE_CHANNEL" "$LEAF_RELEASE_CHANNEL"
+    validate_json_scalar "RELEASE_ID" "$RELEASE_ID"
+
+    local install_name recovery_name published_at install_size install_installed_size install_sha
+    install_name="$(basename "$INSTALL_ZIP")"
+    install_size="$(file_size "$INSTALL_ZIP")"
+    install_installed_size="$(tree_size "$INSTALL_STAGE")"
+    install_sha="$(file_sha256 "$INSTALL_ZIP")"
+    published_at="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+
+    {
+        cat <<EOF
+{
+  "schema": 1,
+  "product": "leaf",
+  "channel": "$LEAF_RELEASE_CHANNEL",
+  "version": "$LEAF_RELEASE_VERSION",
+  "release_id": "$RELEASE_ID",
+  "published_at": "$published_at",
+  "platforms": {
+    "mlp1": {
+      "min_installed_schema": 1,
+      "managed_apps": [
+EOF
+        write_managed_apps_json_items "$MANAGED_APPS_FILE"
+        cat <<EOF
+
+      ],
+      "migrations": [],
+      "handoff": {
+        "type": "stock_loong_upgrade",
+        "completion": "reboot",
+        "trigger_file": "loong_upgrade"
+      },
+      "artifact": {
+        "kind": "sd_root_zip",
+        "name": "$install_name",
+        "size": $install_size,
+        "installed_size": $install_installed_size,
+        "sha256": "$install_sha"
+EOF
+        if [ "$BUILT_RECOVERY" -eq 1 ]; then
+            recovery_name="$(basename "$RECOVERY_ZIP")"
+            cat <<EOF
+      },
+      "recovery_zip": {
+        "name": "$recovery_name",
+        "size": $(file_size "$RECOVERY_ZIP"),
+        "sha256": "$(file_sha256 "$RECOVERY_ZIP")"
+      }
+EOF
+        else
+            cat <<EOF
+      }
+EOF
+        fi
+        cat <<EOF
+    }
+  },
+  "notes": {
+    "summary": "Leaf $RELEASE_ID",
+    "url": "https://github.com/Utility-Muffin-Research-Kitchen/Leaf/releases/tag/$RELEASE_ID"
+  }
+}
+EOF
+    } >"$UPDATE_MANIFEST"
+
+    echo "Wrote $UPDATE_MANIFEST"
+}
+
+write_release_checksums() {
+    rm -f "$SHA256SUMS_FILE"
+
+    if [ "$BUILT_INSTALL" -eq 1 ]; then
+        write_checksum_line "$INSTALL_ZIP"
+        [ -f "$UPDATE_MANIFEST" ] && write_checksum_line "$UPDATE_MANIFEST"
+    fi
+    if [ "$BUILT_RECOVERY" -eq 1 ]; then
+        write_checksum_line "$RECOVERY_ZIP"
+    fi
+
+    [ -f "$SHA256SUMS_FILE" ] && echo "Wrote $SHA256SUMS_FILE"
+}
+
+write_release_metadata() {
+    write_release_manifest
+    write_release_checksums
+}
 
 build_missing_platform_bits() {
     if [ ! -f "$MLP1_RETROARCH_BIN" ]; then
@@ -205,6 +385,7 @@ build_install_zip() {
 
     write_install_readme
     zip_stage "$INSTALL_STAGE" "$INSTALL_ZIP"
+    BUILT_INSTALL=1
 }
 
 build_recovery_zip() {
@@ -220,6 +401,7 @@ build_recovery_zip() {
 
     write_recovery_readme
     zip_stage "$RECOVERY_STAGE" "$RECOVERY_ZIP"
+    BUILT_RECOVERY=1
 }
 
 mkdir -p "$RELEASE_BUILD"
@@ -236,3 +418,5 @@ case "$MODE" in
         build_recovery_zip
         ;;
 esac
+
+write_release_metadata
