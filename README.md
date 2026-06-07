@@ -161,9 +161,14 @@ $SDCARD_PATH/.system/leaf/platforms/mlp1/launcher/bin/...
 $SDCARD_PATH/.system/leaf/platforms/mlp1/bin/
 $SDCARD_PATH/.system/leaf/platforms/mlp1/cores/
 $SDCARD_PATH/.system/leaf/platforms/mlp1/state/
+$SDCARD_PATH/.system/leaf/platforms/mlp1/state/adb-enabled
 $SDCARD_PATH/.system/leaf/platforms/mlp1/userdata/logs/
 $SDCARD_PATH/.system/leaf/shared/userdata/
 ```
+
+`state/adb-enabled` is Jawaka's durable request for the Leaf init hook to
+restore the stock ADB pin at boot. The launcher activation marker is separate:
+`platforms/mlp1/enabled`.
 
 User-facing content folders remain at the SD root:
 
@@ -182,6 +187,14 @@ Cheats/
 `Apps/` is a namespace root. Leaf stages native apps under `Apps/<platform>/`
 and wrapper/runtime-delegating apps under `Apps/shared/`; flat
 `Apps/<Name>.pak/` entries are not part of the Jawaka discovery contract.
+
+The current first-party app policies are:
+
+```text
+ssh-server        -> Apps/mlp1/SSHServer.pak/
+Thing-File        -> Apps/mlp1/Thing-File.pak/
+retroarch-builds  -> Apps/shared/RetroArch.pak/
+```
 
 This is a hard cutover from the old `umrk-launcher`, `UMRK`, `.umrk`,
 `.userdata`, and `.umrk-launcher` layout. Leaf does not migrate or delete old
