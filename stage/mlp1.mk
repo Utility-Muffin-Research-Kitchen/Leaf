@@ -59,6 +59,7 @@ assemble-jawaka: jawaka-build
 	@chmod 644 "$(PAYLOAD_DIR)/env.sh"
 	@cp -Rf "$(JAWAKA_DIR)/res/themes" "$(PAYLOAD_DIR)/res/"
 	@if [ -d "$(JAWAKA_DIR)/res/system_icons" ]; then cp -Rf "$(JAWAKA_DIR)/res/system_icons" "$(PAYLOAD_DIR)/res/"; fi
+	@if [ -f "$(JAWAKA_DIR)/res/certs/cacert.pem" ]; then mkdir -p "$(PAYLOAD_DIR)/res/certs"; cp -f "$(JAWAKA_DIR)/res/certs/cacert.pem" "$(PAYLOAD_DIR)/res/certs/cacert.pem"; fi
 	@cp -Rf "$(CATASTROPHE_DIR)/res/fonts" "$(PAYLOAD_DIR)/res/"
 	@cp -f "$(CATASTROPHE_DIR)/res/font.ttf" "$(PAYLOAD_DIR)/res/font.ttf"
 	@cp -Rf "$(CATASTROPHE_ASSETS_DIR)" "$(PAYLOAD_DIR)/res/assets"
