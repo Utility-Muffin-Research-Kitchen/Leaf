@@ -68,6 +68,24 @@ has_legacy_bundle() {
     "${ADB[@]}" shell "[ -f '$path/.system/leaf/launcher/bin/loong_pangu' ]" >/dev/null 2>&1
 }
 
+active_runtime_sdcard_path() {
+    "${ADB[@]}" shell '
+for name in loong_pangu jawakad jawaka-launcher; do
+    for pid in $(pidof "$name" 2>/dev/null); do
+        [ -r "/proc/$pid/environ" ] || continue
+        value="$(tr "\000" "\n" <"/proc/$pid/environ" |
+            sed -n "s/^SDCARD_PATH=//p" |
+            head -n 1)"
+        if [ -n "$value" ]; then
+            printf "%s\n" "$value"
+            exit 0
+        fi
+    done
+done
+exit 0
+' 2>/dev/null | tr -d '\r' | head -n 1
+}
+
 join_paths() {
     local IFS=' '
     printf '%s' "$*"
@@ -81,6 +99,15 @@ if [ -n "$REQUESTED_REMOTE_SDCARD_PATH" ] && [ "$REQUESTED_REMOTE_SDCARD_PATH" !
     fi
     printf '%s\n' "$REQUESTED_REMOTE_SDCARD_PATH"
     exit 0
+fi
+
+runtime_sd="$(active_runtime_sdcard_path)"
+if [ -n "$runtime_sd" ]; then
+    validate_remote_path "$runtime_sd"
+    if is_mounted "$runtime_sd"; then
+        printf '%s\n' "$runtime_sd"
+        exit 0
+    fi
 fi
 
 mounted=()
