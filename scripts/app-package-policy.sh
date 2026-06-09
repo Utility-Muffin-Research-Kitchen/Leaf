@@ -46,6 +46,14 @@ leaf_app_policy() {
             destination_platform="mlp1"
             supported_devices="mlp1"
             ;;
+        CentralScrutinizer)
+            package_target="package-platform"
+            package_platform="mlp1"
+            package_dir="$workspace_dir/CentralScrutinizer/build/mlp1/package/CentralScrutinizer.pak"
+            package_name="CentralScrutinizer.pak"
+            destination_platform="mlp1"
+            supported_devices="mlp1"
+            ;;
         retroarch-builds)
             package_target="package-platform"
             package_platform="mlp1"
