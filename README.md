@@ -1,4 +1,12 @@
-# Leaf
+<p align="center">
+  <img src=".github/social-preview.png" alt="Leaf — custom firmware for the Miniloong Pocket 1" width="760">
+</p>
+
+<p align="center">
+  <a href="https://github.com/Utility-Muffin-Research-Kitchen/Leaf/releases"><img alt="release" src="https://img.shields.io/github/v/release/Utility-Muffin-Research-Kitchen/Leaf?color=7FB069&labelColor=0F160E"></a>
+  <a href="https://github.com/Utility-Muffin-Research-Kitchen/Leaf/releases"><img alt="downloads" src="https://img.shields.io/github/downloads/Utility-Muffin-Research-Kitchen/Leaf/total?color=7FB069&labelColor=0F160E"></a>
+  <img alt="last commit" src="https://img.shields.io/github/last-commit/Utility-Muffin-Research-Kitchen/Leaf?color=7FB069&labelColor=0F160E">
+</p>
 
 Leaf is the developer command surface for the UMRK launcher workspace. It owns
 workspace bootstrap, cross-repo status/preflight, payload assembly, and SD-card
