@@ -3,10 +3,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Utility-Muffin-Research-Kitchen/Leaf/releases"><img alt="release" src="https://img.shields.io/github/v/release/Utility-Muffin-Research-Kitchen/Leaf?color=7FB069&labelColor=0F160E"></a>
-  <a href="https://github.com/Utility-Muffin-Research-Kitchen/Leaf/releases"><img alt="downloads" src="https://img.shields.io/github/downloads/Utility-Muffin-Research-Kitchen/Leaf/total?color=7FB069&labelColor=0F160E"></a>
-  <a href="LICENSE"><img alt="license" src="https://img.shields.io/github/license/Utility-Muffin-Research-Kitchen/Leaf?color=7FB069&labelColor=0F160E"></a>
-  <img alt="last commit" src="https://img.shields.io/github/last-commit/Utility-Muffin-Research-Kitchen/Leaf?color=7FB069&labelColor=0F160E">
+  <a href="https://github.com/Utility-Muffin-Research-Kitchen/Leaf/releases"><img alt="release" src="https://img.shields.io/github/v/release/Utility-Muffin-Research-Kitchen/Leaf?color=7FB069&labelColor=0F160E&cacheSeconds=3600"></a>
+  <a href="https://github.com/Utility-Muffin-Research-Kitchen/Leaf/releases"><img alt="downloads" src="https://img.shields.io/github/downloads/Utility-Muffin-Research-Kitchen/Leaf/total?color=7FB069&labelColor=0F160E&cacheSeconds=3600"></a>
+  <a href="LICENSE"><img alt="license" src="https://img.shields.io/github/license/Utility-Muffin-Research-Kitchen/Leaf?color=7FB069&labelColor=0F160E&cacheSeconds=3600"></a>
+  <img alt="last commit" src="https://img.shields.io/github/last-commit/Utility-Muffin-Research-Kitchen/Leaf?color=7FB069&labelColor=0F160E&cacheSeconds=3600">
 </p>
 
 Leaf is the developer command surface for the UMRK launcher workspace. It owns
