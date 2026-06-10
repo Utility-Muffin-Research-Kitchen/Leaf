@@ -2,7 +2,7 @@
 # Dispatches to each sibling repo's own targets — does not reimplement builds.
 
 # Apps staged by `make stage`.
-STAGE_APPS ?= ssh-server Thing-File CentralScrutinizer retroarch-builds
+STAGE_APPS ?= ssh-server Thing-File CentralScrutinizer Fugazi retroarch-builds
 PUBLIC_ROOT_DIRS ?= Roms Images Apps BIOS Saves States Cheats
 
 # --- Launcher payload assembly inputs --------------------------------------
