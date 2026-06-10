@@ -27,6 +27,6 @@ LAUNCHER_SWITCHER_DIR  ?= $(WORKSPACE_DIR)/miniloong-launcher-switcher
 TOOLCHAIN_IMAGE ?= ghcr.io/utility-muffin-research-kitchen/mlp1-toolchain:local
 
 # All sibling repos, used by bootstrap/status.
-ALL_REPOS := umrk-workspace Catastrophe Jawaka Thing-File ssh-server CentralScrutinizer retroarch-builds \
+ALL_REPOS := umrk-workspace Catastrophe Jawaka Thing-File ssh-server CentralScrutinizer Fugazi retroarch-builds \
              Cores-spruce mlp1-toolchain miniloong-launcher-switcher \
              miniloong-adb-keeper

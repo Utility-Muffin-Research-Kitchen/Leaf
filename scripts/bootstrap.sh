@@ -15,6 +15,7 @@ url_for() {
         Thing-File)                  echo "https://github.com/Utility-Muffin-Research-Kitchen/Thing-File.git" ;;
         ssh-server)                  echo "https://github.com/Helaas/ssh-server.git" ;;
         CentralScrutinizer)          echo "https://github.com/Utility-Muffin-Research-Kitchen/CentralScrutinizer.git" ;;
+        Fugazi)                      echo "https://github.com/Utility-Muffin-Research-Kitchen/Fugazi.git" ;;
         retroarch-builds)            echo "https://github.com/Utility-Muffin-Research-Kitchen/retroarch-builds.git" ;;
         Cores-spruce)                echo "https://github.com/Utility-Muffin-Research-Kitchen/Cores-spruce.git" ;;
         mlp1-toolchain)              echo "https://github.com/Utility-Muffin-Research-Kitchen/mlp1-toolchain.git" ;;

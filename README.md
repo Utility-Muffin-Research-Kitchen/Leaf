@@ -42,6 +42,7 @@ By default Leaf treats its parent directory as the workspace root:
   Thing-File/
   ssh-server/
   CentralScrutinizer/
+  Fugazi/
   retroarch-builds/
   Cores-spruce/
   mlp1-toolchain/
@@ -72,6 +73,7 @@ make stage-retroarch DEVICE=mlp1            # RetroArch binary + cores + info
 make stage-app APP=ssh-server DEVICE=mlp1   # stage one app
 make stage-app APP=Thing-File DEVICE=mlp1
 make stage-app APP=CentralScrutinizer DEVICE=mlp1
+make stage-app APP=Fugazi DEVICE=mlp1
 
 make release-zips DEVICE=mlp1               # build end-user install + recovery ZIPs
 make release-sd-zip DEVICE=mlp1             # build end-user install ZIP only
@@ -205,6 +207,7 @@ The current first-party app policies are:
 ssh-server        -> Apps/mlp1/SSHServer.pak/
 Thing-File        -> Apps/mlp1/Thing-File.pak/
 CentralScrutinizer -> Apps/mlp1/CentralScrutinizer.pak/
+Fugazi            -> Apps/mlp1/Fugazi.pak/
 retroarch-builds  -> Apps/shared/RetroArch.pak/
 ```
 

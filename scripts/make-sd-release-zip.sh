@@ -8,7 +8,7 @@ LEAF_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 WORKSPACE_DIR="${LEAF_WORKSPACE_DIR:-$(cd "$LEAF_ROOT/.." && pwd)}"
 
 DEVICE="${DEVICE:-mlp1}"
-STAGE_APPS="${STAGE_APPS-ssh-server Thing-File CentralScrutinizer retroarch-builds}"
+STAGE_APPS="${STAGE_APPS-ssh-server Thing-File CentralScrutinizer Fugazi retroarch-builds}"
 PUBLIC_ROOT_DIRS="${PUBLIC_ROOT_DIRS-Roms Images Apps BIOS Saves States Cheats}"
 RELEASE_BUILD="${RELEASE_BUILD:-$LEAF_ROOT/build/release}"
 STAGE_BUILD="${STAGE_BUILD:-$LEAF_ROOT/build/stage/mlp1}"
@@ -31,7 +31,7 @@ Environment:
   DEVICE=mlp1
   RELEASE_ID=<filesystem-safe id>
   LEAF_WORKSPACE_DIR=<workspace root>
-  STAGE_APPS="ssh-server Thing-File CentralScrutinizer retroarch-builds"
+  STAGE_APPS="ssh-server Thing-File CentralScrutinizer Fugazi retroarch-builds"
 EOF
 }
 
