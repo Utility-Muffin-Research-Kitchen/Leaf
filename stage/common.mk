@@ -18,6 +18,7 @@ UMRK_WORKSPACE_DIR     ?= $(WORKSPACE_DIR)/umrk-workspace
 CATASTROPHE_DIR        ?= $(WORKSPACE_DIR)/Catastrophe
 JAWAKA_DIR             ?= $(WORKSPACE_DIR)/Jawaka
 CENTRAL_SCRUTINIZER_DIR ?= $(WORKSPACE_DIR)/CentralScrutinizer
+PPSSPP_SPRUCE_DIR     ?= $(WORKSPACE_DIR)/PPSSPP-spruce
 RETROARCH_BUILDS_DIR   ?= $(WORKSPACE_DIR)/retroarch-builds
 CORES_SPRUCE_DIR       ?= $(WORKSPACE_DIR)/Cores-spruce
 TOOLCHAIN_DIR          ?= $(WORKSPACE_DIR)/mlp1-toolchain
@@ -27,6 +28,6 @@ LAUNCHER_SWITCHER_DIR  ?= $(WORKSPACE_DIR)/miniloong-launcher-switcher
 TOOLCHAIN_IMAGE ?= ghcr.io/utility-muffin-research-kitchen/mlp1-toolchain:local
 
 # All sibling repos, used by bootstrap/status.
-ALL_REPOS := umrk-workspace Catastrophe Jawaka Thing-File ssh-server CentralScrutinizer Fugazi retroarch-builds \
+ALL_REPOS := umrk-workspace Catastrophe Jawaka Thing-File ssh-server CentralScrutinizer Fugazi PPSSPP-spruce retroarch-builds \
              Cores-spruce mlp1-toolchain miniloong-launcher-switcher \
              miniloong-adb-keeper

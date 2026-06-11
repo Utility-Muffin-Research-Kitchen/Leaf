@@ -9,6 +9,7 @@ WORKSPACE_DIR="${LEAF_WORKSPACE_DIR:-$(cd "$LEAF_ROOT/.." && pwd)}"
 
 DEVICE="${DEVICE:-mlp1}"
 STAGE_APPS="${STAGE_APPS-ssh-server Thing-File CentralScrutinizer Fugazi retroarch-builds}"
+STAGE_EMULATORS="${STAGE_EMULATORS-ppsspp}"
 PUBLIC_ROOT_DIRS="${PUBLIC_ROOT_DIRS-Roms Images Apps BIOS Saves States Cheats}"
 RELEASE_BUILD="${RELEASE_BUILD:-$LEAF_ROOT/build/release}"
 STAGE_BUILD="${STAGE_BUILD:-$LEAF_ROOT/build/stage/mlp1}"
@@ -16,11 +17,13 @@ PAYLOAD_ROOT="${PAYLOAD_ROOT:-$STAGE_BUILD/package}"
 
 CATASTROPHE_DIR="${CATASTROPHE_DIR:-$WORKSPACE_DIR/Catastrophe}"
 JAWAKA_DIR="${JAWAKA_DIR:-$WORKSPACE_DIR/Jawaka}"
+PPSSPP_SPRUCE_DIR="${PPSSPP_SPRUCE_DIR:-$WORKSPACE_DIR/PPSSPP-spruce}"
 RETROARCH_BUILDS_DIR="${RETROARCH_BUILDS_DIR:-$WORKSPACE_DIR/retroarch-builds}"
 CORES_SPRUCE_DIR="${CORES_SPRUCE_DIR:-$WORKSPACE_DIR/Cores-spruce}"
 LAUNCHER_SWITCHER_DIR="${LAUNCHER_SWITCHER_DIR:-$WORKSPACE_DIR/miniloong-launcher-switcher}"
 MLP1_RETROARCH_BIN="${MLP1_RETROARCH_BIN:-$RETROARCH_BUILDS_DIR/output/mlp1/bin/retroarch}"
 MLP1_CORES_DIR="${MLP1_CORES_DIR:-$CORES_SPRUCE_DIR/output/mlp1/cores}"
+MLP1_PPSSPP_PACKAGE="${MLP1_PPSSPP_PACKAGE:-$PPSSPP_SPRUCE_DIR/output/mlp1/ppsspp}"
 MLP1_RETROARCH_PATCH_SET="${MLP1_RETROARCH_PATCH_SET:-portrait-rotation,command-menu,jawaka-load-content}"
 
 usage() {
@@ -32,6 +35,7 @@ Environment:
   RELEASE_ID=<filesystem-safe id>
   LEAF_WORKSPACE_DIR=<workspace root>
   STAGE_APPS="ssh-server Thing-File CentralScrutinizer Fugazi retroarch-builds"
+  STAGE_EMULATORS="ppsspp"
 EOF
 }
 
@@ -291,6 +295,28 @@ package_app() {
     printf '%s/%s\n' "$destination_platform" "$package_name" >>"$MANAGED_APPS_FILE"
 }
 
+package_emulator() {
+    local emulator="$1"
+    local package_dir remote_name
+
+    case "$emulator" in
+        ppsspp)
+            [ -d "$PPSSPP_SPRUCE_DIR" ] || die "missing PPSSPP repo: $PPSSPP_SPRUCE_DIR"
+            make -C "$PPSSPP_SPRUCE_DIR" package-mlp1
+            package_dir="$MLP1_PPSSPP_PACKAGE"
+            remote_name="ppsspp"
+            ;;
+        *)
+            die "unsupported release emulator policy: $emulator for DEVICE=$DEVICE"
+            ;;
+    esac
+
+    [ -d "$package_dir" ] || die "missing emulator package dir: $package_dir"
+    mkdir -p "$RELEASE_ROOT/platforms/mlp1/emulators"
+    rm -rf "$RELEASE_ROOT/platforms/mlp1/emulators/$remote_name"
+    cp -R "$package_dir" "$RELEASE_ROOT/platforms/mlp1/emulators/$remote_name"
+}
+
 write_install_readme() {
     cat > "$INSTALL_STAGE/LEAF-INSTALL.txt" <<EOF
 Leaf MLP1 SD installer
@@ -370,6 +396,10 @@ build_install_zip() {
     : >"$MANAGED_APPS_FILE"
 
     cp -R "$PAYLOAD_ROOT/.system/leaf/platforms/mlp1" "$RELEASE_ROOT/platforms/mlp1"
+
+    for emulator in $STAGE_EMULATORS; do
+        package_emulator "$emulator"
+    done
 
     for app in $STAGE_APPS; do
         package_app "$app"

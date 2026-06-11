@@ -3,6 +3,7 @@
 
 # Apps staged by `make stage`.
 STAGE_APPS ?= ssh-server Thing-File CentralScrutinizer Fugazi retroarch-builds
+STAGE_EMULATORS ?= ppsspp
 PUBLIC_ROOT_DIRS ?= Roms Images Apps BIOS Saves States Cheats
 
 # --- Launcher payload assembly inputs --------------------------------------
@@ -12,6 +13,7 @@ CATASTROPHE_ASSETS_DIR ?= $(CATASTROPHE_DIR)/res/assets
 MLP1_RETROARCH_BIN ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/bin/retroarch
 MLP1_CORES_DIR     ?= $(CORES_SPRUCE_DIR)/output/mlp1/cores
 MLP1_INFO_DIR      ?= $(CORES_SPRUCE_DIR)/output/mlp1/info
+MLP1_PPSSPP_PACKAGE ?= $(PPSSPP_SPRUCE_DIR)/output/mlp1/ppsspp
 MLP1_RETROARCH_PATCH_SET ?= portrait-rotation,command-menu,jawaka-load-content
 UMRK_ENV_SCRIPT    ?= $(LAUNCHER_SWITCHER_DIR)/device/umrk-env.sh
 REMOTE_SDCARD_PATH ?= auto
@@ -26,7 +28,7 @@ LEAF_SYSTEM_PAYLOAD_DIR := $(PAYLOAD_ROOT)/.system/leaf
 PLATFORM_PAYLOAD_DIR := $(LEAF_SYSTEM_PAYLOAD_DIR)/platforms/mlp1
 PAYLOAD_DIR          := $(PLATFORM_PAYLOAD_DIR)/launcher
 
-.PHONY: stage stage-app stage-public-root stage-retroarch stage-refresh refresh-jawaka jawaka-build assemble-jawaka stage-jawaka release-zips release-sd-zip release-recovery-zip
+.PHONY: stage stage-app stage-emulator stage-emulators stage-public-root stage-retroarch stage-refresh refresh-jawaka jawaka-build assemble-jawaka stage-jawaka release-zips release-sd-zip release-recovery-zip
 
 # Build the Jawaka MLP1 binaries (cross-compile via its own Docker target).
 jawaka-build:
@@ -159,9 +161,60 @@ stage-public-root:
 	"$${ADB[@]}" shell "mkdir -p $$mkdirs && sync"; \
 	echo "Public SD folders ready at $$remote_sd: $(PUBLIC_ROOT_DIRS)"
 
-# Full device stage: public folders first, RetroArch/cores next, launcher
-# payload next, then each app package.
-stage: stage-public-root stage-retroarch stage-jawaka
+# Stage a single standalone emulator payload to the device. Product repos own
+# package output; Leaf owns SD resolution and deployment location.
+#   make stage-emulator EMULATOR=ppsspp DEVICE=mlp1
+stage-emulator:
+	@test -n "$(EMULATOR)" || { echo "usage: make stage-emulator EMULATOR=<id> DEVICE=mlp1" >&2; exit 1; }
+	@set -euo pipefail; \
+	case "$(EMULATOR)" in \
+		ppsspp) \
+			test -d "$(PPSSPP_SPRUCE_DIR)" || { echo "missing repo: $(PPSSPP_SPRUCE_DIR) (run: make bootstrap)" >&2; exit 1; }; \
+			$(MAKE) -C "$(PPSSPP_SPRUCE_DIR)" package-mlp1; \
+			package_dir="$(MLP1_PPSSPP_PACKAGE)"; \
+			remote_name="ppsspp"; \
+			;; \
+		*) \
+			echo "unsupported emulator policy: $(EMULATOR) for DEVICE=$(DEVICE)" >&2; \
+			exit 1; \
+			;; \
+	esac; \
+	test -d "$$package_dir" || { echo "missing emulator package dir: $$package_dir" >&2; exit 1; }; \
+	if [ -n "$${ADB_SERIAL:-}" ]; then \
+		serial="$$ADB_SERIAL"; \
+	else \
+		serial="$$(adb devices | awk 'NR>1 && $$2=="device" {print $$1; exit}')"; \
+	fi; \
+	if [ -z "$$serial" ]; then \
+		echo "No online adb device found." >&2; \
+		exit 1; \
+	fi; \
+	ADB=(adb -s "$$serial"); \
+	echo "Using adb device: $$serial"; \
+	remote_sd="$$(PLATFORM_ID="mlp1" REMOTE_SDCARD_PATH="$(REMOTE_SDCARD_PATH)" ADB_SERIAL="$$serial" "$(LEAF_ROOT)/scripts/adb-resolve-umrk-sd.sh")"; \
+	remote_system="$(REMOTE_SYSTEM_PATH)"; \
+	if [ -z "$$remote_system" ]; then remote_system="$$remote_sd/.system/leaf"; fi; \
+	remote_platform="$(REMOTE_PLATFORM_PATH)"; \
+	if [ -z "$$remote_platform" ]; then remote_platform="$$remote_system/platforms/mlp1"; fi; \
+	remote_dir="$$remote_platform/emulators/$$remote_name"; \
+	echo "Deploying $(EMULATOR) emulator to $$remote_dir"; \
+	"$${ADB[@]}" shell "rm -rf '$$remote_dir' && mkdir -p '$$remote_dir'"; \
+	"$${ADB[@]}" push "$$package_dir/." "$$remote_dir/" >/dev/null; \
+	"$${ADB[@]}" shell "chmod 755 '$$remote_dir/launch.sh' '$$remote_dir/bin/'* '$$remote_dir/lib/'* 2>/dev/null || true"; \
+	"$${ADB[@]}" shell "find '$$remote_dir' -maxdepth 3 -type f | sort | sed -n '1,80p'"
+
+stage-emulators:
+	@set -euo pipefail; \
+	emulators="$(STAGE_EMULATORS)"; \
+	if [ -n "$$emulators" ]; then \
+		for emulator in $$emulators; do \
+			$(MAKE) stage-emulator EMULATOR="$$emulator" DEVICE="$(DEVICE)"; \
+		done; \
+	fi
+
+# Full device stage: public folders first, RetroArch/cores next, standalone
+# emulators next, launcher payload next, then each app package.
+stage: stage-public-root stage-retroarch stage-emulators stage-jawaka
 	@set -euo pipefail; \
 	apps="$(STAGE_APPS)"; \
 	if [ -n "$$apps" ]; then \
@@ -217,14 +270,17 @@ release-zips:
 	LEAF_WORKSPACE_DIR="$(WORKSPACE_DIR)" \
 	RELEASE_ID="$(RELEASE_ID)" \
 	STAGE_APPS="$(STAGE_APPS)" \
+	STAGE_EMULATORS="$(STAGE_EMULATORS)" \
 	PUBLIC_ROOT_DIRS="$(PUBLIC_ROOT_DIRS)" \
 	CATASTROPHE_DIR="$(CATASTROPHE_DIR)" \
 	JAWAKA_DIR="$(JAWAKA_DIR)" \
+	PPSSPP_SPRUCE_DIR="$(PPSSPP_SPRUCE_DIR)" \
 	RETROARCH_BUILDS_DIR="$(RETROARCH_BUILDS_DIR)" \
 	CORES_SPRUCE_DIR="$(CORES_SPRUCE_DIR)" \
 	LAUNCHER_SWITCHER_DIR="$(LAUNCHER_SWITCHER_DIR)" \
 	MLP1_RETROARCH_BIN="$(MLP1_RETROARCH_BIN)" \
 	MLP1_CORES_DIR="$(MLP1_CORES_DIR)" \
+	MLP1_PPSSPP_PACKAGE="$(MLP1_PPSSPP_PACKAGE)" \
 	MLP1_RETROARCH_PATCH_SET="$(MLP1_RETROARCH_PATCH_SET)" \
 	"$(LEAF_ROOT)/scripts/make-sd-release-zip.sh" both
 
@@ -233,14 +289,17 @@ release-sd-zip:
 	LEAF_WORKSPACE_DIR="$(WORKSPACE_DIR)" \
 	RELEASE_ID="$(RELEASE_ID)" \
 	STAGE_APPS="$(STAGE_APPS)" \
+	STAGE_EMULATORS="$(STAGE_EMULATORS)" \
 	PUBLIC_ROOT_DIRS="$(PUBLIC_ROOT_DIRS)" \
 	CATASTROPHE_DIR="$(CATASTROPHE_DIR)" \
 	JAWAKA_DIR="$(JAWAKA_DIR)" \
+	PPSSPP_SPRUCE_DIR="$(PPSSPP_SPRUCE_DIR)" \
 	RETROARCH_BUILDS_DIR="$(RETROARCH_BUILDS_DIR)" \
 	CORES_SPRUCE_DIR="$(CORES_SPRUCE_DIR)" \
 	LAUNCHER_SWITCHER_DIR="$(LAUNCHER_SWITCHER_DIR)" \
 	MLP1_RETROARCH_BIN="$(MLP1_RETROARCH_BIN)" \
 	MLP1_CORES_DIR="$(MLP1_CORES_DIR)" \
+	MLP1_PPSSPP_PACKAGE="$(MLP1_PPSSPP_PACKAGE)" \
 	MLP1_RETROARCH_PATCH_SET="$(MLP1_RETROARCH_PATCH_SET)" \
 	"$(LEAF_ROOT)/scripts/make-sd-release-zip.sh" install
 
