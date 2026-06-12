@@ -5,8 +5,7 @@ set -euo pipefail
 #
 # This builds the steward NDS SDL2 backend (the readable custom menu + the MLP1
 # Wayland/xdg-shell video path) and bundles those libs with the prebuilt aarch64
-# drastic64 binary. It replaces the older approach of binary-patching DraStic's
-# native menu font, which was tedious to get right on every screen.
+# drastic64 binary from the local steward checkout.
 #
 # The custom-menu libs MUST be used (SDL_VIDEODRIVER=NDS + bundled lib/), not the
 # device's system SDL2 — that is what makes the steward menu appear at all.
