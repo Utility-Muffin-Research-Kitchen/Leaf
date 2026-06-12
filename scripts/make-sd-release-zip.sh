@@ -9,7 +9,7 @@ WORKSPACE_DIR="${LEAF_WORKSPACE_DIR:-$(cd "$LEAF_ROOT/.." && pwd)}"
 
 DEVICE="${DEVICE:-mlp1}"
 STAGE_APPS="${STAGE_APPS-ssh-server Thing-File CentralScrutinizer Fugazi retroarch-builds}"
-STAGE_EMULATORS="${STAGE_EMULATORS-ppsspp}"
+STAGE_EMULATORS="${STAGE_EMULATORS-ppsspp drastic}"
 PUBLIC_ROOT_DIRS="${PUBLIC_ROOT_DIRS-Roms Images Apps BIOS Saves States Cheats}"
 RELEASE_BUILD="${RELEASE_BUILD:-$LEAF_ROOT/build/release}"
 STAGE_BUILD="${STAGE_BUILD:-$LEAF_ROOT/build/stage/mlp1}"
@@ -24,6 +24,7 @@ LAUNCHER_SWITCHER_DIR="${LAUNCHER_SWITCHER_DIR:-$WORKSPACE_DIR/miniloong-launche
 MLP1_RETROARCH_BIN="${MLP1_RETROARCH_BIN:-$RETROARCH_BUILDS_DIR/output/mlp1/bin/retroarch}"
 MLP1_CORES_DIR="${MLP1_CORES_DIR:-$CORES_SPRUCE_DIR/output/mlp1/cores}"
 MLP1_PPSSPP_PACKAGE="${MLP1_PPSSPP_PACKAGE:-$PPSSPP_SPRUCE_DIR/output/mlp1/ppsspp}"
+MLP1_DRASTIC_PACKAGE="${MLP1_DRASTIC_PACKAGE:-$LEAF_ROOT/build/drastic/mlp1/drastic}"
 MLP1_RETROARCH_PATCH_SET="${MLP1_RETROARCH_PATCH_SET:-portrait-rotation,command-menu,jawaka-load-content}"
 
 usage() {
@@ -35,7 +36,7 @@ Environment:
   RELEASE_ID=<filesystem-safe id>
   LEAF_WORKSPACE_DIR=<workspace root>
   STAGE_APPS="ssh-server Thing-File CentralScrutinizer Fugazi retroarch-builds"
-  STAGE_EMULATORS="ppsspp"
+  STAGE_EMULATORS="ppsspp drastic"
 EOF
 }
 
@@ -356,6 +357,11 @@ package_emulator() {
             make -C "$PPSSPP_SPRUCE_DIR" package-mlp1
             package_dir="$MLP1_PPSSPP_PACKAGE"
             remote_name="ppsspp"
+            ;;
+        drastic)
+            OUTPUT_DIR="$MLP1_DRASTIC_PACKAGE" "$LEAF_ROOT/scripts/package-drastic-mlp1.sh"
+            package_dir="$MLP1_DRASTIC_PACKAGE"
+            remote_name="drastic"
             ;;
         *)
             die "unsupported release emulator policy: $emulator for DEVICE=$DEVICE"

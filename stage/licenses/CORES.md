@@ -10,14 +10,17 @@ licensed for **non-commercial use only** - Leaf and these cores must never be
 sold, bundled with hardware for sale, or otherwise used commercially.
 
 Corresponding source code for every core is publicly available at the upstream
-listed below. Cores are built unmodified from these sources by
+listed below. Libretro cores are built unmodified from these sources by
 [Cores-spruce](https://github.com/Utility-Muffin-Research-Kitchen/Cores-spruce)
 (forked from spruceOS's build lane, downstream of
-[libretro-super](https://github.com/libretro/libretro-super)).
+[libretro-super](https://github.com/libretro/libretro-super)). Standalone
+emulators may be either built by their owning UMRK sibling repo or repackaged
+from the named upstream release asset.
 
 | Core | License | Upstream source |
 |---|---|---|
 | dosbox_pure | GPL-2.0 | https://github.com/libretro/dosbox-pure |
+| drastic (standalone) | LGPL-2.1 | https://github.com/steward-fu/nds |
 | easyrpg | GPL-3.0 | https://github.com/EasyRPG/Player |
 | fake08 | MIT | https://github.com/jtothebell/fake-08 |
 | fbalpha2012 | FB Alpha (non-commercial) | https://github.com/libretro/fbalpha2012 |
@@ -44,5 +47,6 @@ listed below. Cores are built unmodified from these sources by
 | swanstation | GPL-3.0 | https://github.com/libretro/swanstation |
 | yabasanshiro | GPL-2.0 | https://github.com/libretro/yabause |
 
-Leaf never includes game ROMs or console BIOS files; users must supply their
-own. RetroArch itself is GPL-3.0 (https://github.com/libretro/RetroArch).
+Leaf never includes game ROMs or proprietary console BIOS files; users must
+supply their own where an emulator requires them. RetroArch itself is GPL-3.0
+(https://github.com/libretro/RetroArch).

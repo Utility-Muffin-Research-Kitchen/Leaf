@@ -3,7 +3,7 @@
 
 # Apps staged by `make stage`.
 STAGE_APPS ?= ssh-server Thing-File CentralScrutinizer Fugazi retroarch-builds
-STAGE_EMULATORS ?= ppsspp
+STAGE_EMULATORS ?= ppsspp drastic
 PUBLIC_ROOT_DIRS ?= Roms Images Apps BIOS Saves States Cheats
 
 # --- Launcher payload assembly inputs --------------------------------------
@@ -14,6 +14,7 @@ MLP1_RETROARCH_BIN ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/bin/retroarch
 MLP1_CORES_DIR     ?= $(CORES_SPRUCE_DIR)/output/mlp1/cores
 MLP1_INFO_DIR      ?= $(CORES_SPRUCE_DIR)/output/mlp1/info
 MLP1_PPSSPP_PACKAGE ?= $(PPSSPP_SPRUCE_DIR)/output/mlp1/ppsspp
+MLP1_DRASTIC_PACKAGE ?= $(LEAF_ROOT)/build/drastic/mlp1/drastic
 MLP1_RETROARCH_PATCH_SET ?= portrait-rotation,command-menu,jawaka-load-content
 UMRK_ENV_SCRIPT    ?= $(LAUNCHER_SWITCHER_DIR)/device/umrk-env.sh
 REMOTE_SDCARD_PATH ?= auto
@@ -174,6 +175,15 @@ stage-emulator:
 			package_dir="$(MLP1_PPSSPP_PACKAGE)"; \
 			remote_name="ppsspp"; \
 			;; \
+		drastic) \
+			test -d "$(STEWARD_NDS_DIR)" || { echo "missing repo: $(STEWARD_NDS_DIR) (clone steward-fu-nds)" >&2; exit 1; }; \
+			OUTPUT_DIR="$(MLP1_DRASTIC_PACKAGE)" \
+			STEWARD_NDS_DIR="$(STEWARD_NDS_DIR)" \
+			TOOLCHAIN_IMAGE="$(TOOLCHAIN_IMAGE)" \
+				"$(LEAF_ROOT)/scripts/package-drastic-mlp1.sh"; \
+			package_dir="$(MLP1_DRASTIC_PACKAGE)"; \
+			remote_name="drastic"; \
+			;; \
 		*) \
 			echo "unsupported emulator policy: $(EMULATOR) for DEVICE=$(DEVICE)" >&2; \
 			exit 1; \
@@ -201,6 +211,12 @@ stage-emulator:
 	"$${ADB[@]}" shell "rm -rf '$$remote_dir' && mkdir -p '$$remote_dir'"; \
 	"$${ADB[@]}" push "$$package_dir/." "$$remote_dir/" >/dev/null; \
 	"$${ADB[@]}" shell "chmod 755 '$$remote_dir/launch.sh' '$$remote_dir/bin/'* '$$remote_dir/lib/'* 2>/dev/null || true"; \
+	if [ -d "$(DEVICE_OVERLAY)/defaults" ]; then \
+		echo "Refreshing platform defaults at $$remote_platform/defaults"; \
+		"$${ADB[@]}" shell "rm -rf '$$remote_platform/defaults' && mkdir -p '$$remote_platform/defaults'"; \
+		"$${ADB[@]}" push "$(DEVICE_OVERLAY)/defaults/." "$$remote_platform/defaults/" >/dev/null; \
+	fi; \
+	"$${ADB[@]}" shell sync; \
 	"$${ADB[@]}" shell "find '$$remote_dir' -maxdepth 3 -type f | sort | sed -n '1,80p'"
 
 stage-emulators:
@@ -281,6 +297,7 @@ release-zips:
 	MLP1_RETROARCH_BIN="$(MLP1_RETROARCH_BIN)" \
 	MLP1_CORES_DIR="$(MLP1_CORES_DIR)" \
 	MLP1_PPSSPP_PACKAGE="$(MLP1_PPSSPP_PACKAGE)" \
+	MLP1_DRASTIC_PACKAGE="$(MLP1_DRASTIC_PACKAGE)" \
 	MLP1_RETROARCH_PATCH_SET="$(MLP1_RETROARCH_PATCH_SET)" \
 	"$(LEAF_ROOT)/scripts/make-sd-release-zip.sh" both
 
@@ -300,6 +317,7 @@ release-sd-zip:
 	MLP1_RETROARCH_BIN="$(MLP1_RETROARCH_BIN)" \
 	MLP1_CORES_DIR="$(MLP1_CORES_DIR)" \
 	MLP1_PPSSPP_PACKAGE="$(MLP1_PPSSPP_PACKAGE)" \
+	MLP1_DRASTIC_PACKAGE="$(MLP1_DRASTIC_PACKAGE)" \
 	MLP1_RETROARCH_PATCH_SET="$(MLP1_RETROARCH_PATCH_SET)" \
 	"$(LEAF_ROOT)/scripts/make-sd-release-zip.sh" install
 

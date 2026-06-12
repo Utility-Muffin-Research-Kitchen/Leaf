@@ -1,5 +1,6 @@
 # Local build and staging output
 /build/
+/workdir/
 
 # Workspace-local scratch / OS noise
 /.tmp/

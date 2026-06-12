@@ -25,6 +25,7 @@ help:
 	@echo "  make stage-jawaka DEVICE=mlp1             launcher payload only"
 	@echo "  make stage-retroarch DEVICE=mlp1          RetroArch binary + cores + info"
 	@echo "  make stage-emulator EMULATOR=ppsspp DEVICE=mlp1 stage a standalone emulator"
+	@echo "  make stage-emulator EMULATOR=drastic DEVICE=mlp1 stage DraStic"
 	@echo "  make stage-emulators DEVICE=mlp1          stage standalone emulators"
 	@echo "  make stage-app APP=CentralScrutinizer DEVICE=mlp1 stage a single app repo"
 	@echo "  make release-zips DEVICE=mlp1             build end-user install + recovery ZIPs"

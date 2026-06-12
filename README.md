@@ -70,6 +70,7 @@ make stage-refresh DEVICE=mlp1              # full stage, then restart Jawaka GU
 make refresh-jawaka DEVICE=mlp1             # restart Jawaka/Loong GUI stack only
 make stage-jawaka DEVICE=mlp1               # launcher payload only
 make stage-retroarch DEVICE=mlp1            # RetroArch binary + cores + info
+make stage-emulator EMULATOR=drastic DEVICE=mlp1
 make stage-app APP=ssh-server DEVICE=mlp1   # stage one app
 make stage-app APP=Thing-File DEVICE=mlp1
 make stage-app APP=CentralScrutinizer DEVICE=mlp1
@@ -98,7 +99,7 @@ make release-zips DEVICE=mlp1
 ```
 
 The release command builds missing MLP1 components, assembles the launcher and
-platform payload, packages the first-party apps, and asks
+platform payload, packages standalone emulators and first-party apps, and asks
 `miniloong-launcher-switcher` to generate the stock `loong_upgrade` install and
 recovery payloads.
 
@@ -173,6 +174,7 @@ $SDCARD_PATH/.system/leaf/platforms/mlp1/launcher/env.sh
 $SDCARD_PATH/.system/leaf/platforms/mlp1/launcher/bin/...
 $SDCARD_PATH/.system/leaf/platforms/mlp1/bin/
 $SDCARD_PATH/.system/leaf/platforms/mlp1/cores/
+$SDCARD_PATH/.system/leaf/platforms/mlp1/emulators/
 $SDCARD_PATH/.system/leaf/platforms/mlp1/state/
 $SDCARD_PATH/.system/leaf/platforms/mlp1/state/adb-enabled
 $SDCARD_PATH/.system/leaf/platforms/mlp1/userdata/logs/
@@ -210,6 +212,16 @@ CentralScrutinizer -> Apps/mlp1/CentralScrutinizer.pak/
 Fugazi            -> Apps/mlp1/Fugazi.pak/
 retroarch-builds  -> Apps/shared/RetroArch.pak/
 ```
+
+Standalone game emulator payloads are staged under
+`.system/leaf/platforms/mlp1/emulators/`. PPSSPP is built from the UMRK
+`PPSSPP-spruce` sibling repo. DraStic is packaged from the local
+`steward-fu-nds` sibling repo: Leaf bundles the cross-built steward SDL2 custom
+menu stack with the prebuilt `drastic64` binary, keeps runtime state under
+`state/drastic/`, and runs it through `SDL_VIDEODRIVER=NDS`. Single-emulator ADB
+staging also refreshes the platform defaults that Jawaka scans for packaged
+standalone launch targets. DraStic's in-game menu is handled by the steward
+custom menu, with Jawaka passing the MLP1 Menu button through to the emulator.
 
 This is a hard cutover from the old `umrk-launcher`, `UMRK`, `.umrk`,
 `.userdata`, and `.umrk-launcher` layout. Leaf does not migrate or delete old
