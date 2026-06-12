@@ -261,6 +261,57 @@ write_release_metadata() {
     write_release_checksums
 }
 
+# Release gate: every core marked "packaged" in cores.json must have its .so
+# staged AND its verbatim license file present, or the release build fails.
+# (v0.0.7 shipped 1 of 26 packaged cores because nothing checked this.)
+validate_packaged_cores() {
+    local release_root="$1"
+    python3 - "$release_root" <<'EOF' || die "packaged-core validation failed"
+import json, os, sys
+root = sys.argv[1]
+platform_dir = os.path.join(root, "platforms/mlp1")
+cores_json = os.path.join(platform_dir, "defaults/cores.json")
+cores_dir = os.path.join(platform_dir, "cores")
+lic_dir = os.path.join(root, "licenses/cores")
+data = json.load(open(cores_json))
+entries = data if isinstance(data, list) else data.get("cores", [])
+packaged = [e for e in entries if e.get("status") == "packaged"]
+missing_bin, missing_lic, expected_sos = [], [], set()
+for e in packaged:
+    cid = e.get("id") or e.get("name")
+    if e.get("type") == "path":
+        target = os.path.join(platform_dir, e.get("path") or "")
+        if not (e.get("path") and os.path.isfile(target)):
+            missing_bin.append("%s (path: %s)" % (cid, e.get("path")))
+    else:
+        so = e.get("file_name") or (cid + "_libretro.so")
+        expected_sos.add(so)
+        if not os.path.isfile(os.path.join(cores_dir, so)):
+            missing_bin.append("%s (%s)" % (cid, so))
+    if not os.path.isfile(os.path.join(lic_dir, cid + ".txt")):
+        missing_lic.append(cid)
+staged = sorted(f for f in os.listdir(cores_dir)
+                if f.endswith("_libretro.so")) if os.path.isdir(cores_dir) else []
+extra = [f for f in staged if f not in expected_sos]
+if extra:
+    print("warning: cores staged but not marked packaged in cores.json: "
+          + " ".join(extra))
+ok = True
+if missing_bin:
+    print("error: cores.json marks these packaged but the binary/launcher is "
+          "not staged: " + " ".join(missing_bin))
+    ok = False
+if missing_lic:
+    print("error: packaged cores missing a license file "
+          "(stage/licenses/cores/<core>.txt): " + " ".join(missing_lic))
+    ok = False
+if not ok:
+    sys.exit(1)
+print("core gate: %d packaged entries verified (binary + license present)"
+      % len(packaged))
+EOF
+}
+
 build_missing_platform_bits() {
     if [ ! -f "$MLP1_RETROARCH_BIN" ]; then
         echo "MLP1 RetroArch missing; building in $RETROARCH_BUILDS_DIR"
@@ -400,6 +451,9 @@ build_install_zip() {
     for emulator in $STAGE_EMULATORS; do
         package_emulator "$emulator"
     done
+
+    cp -R "$LEAF_ROOT/stage/licenses" "$RELEASE_ROOT/licenses"
+    validate_packaged_cores "$RELEASE_ROOT"
 
     for app in $STAGE_APPS; do
         package_app "$app"
