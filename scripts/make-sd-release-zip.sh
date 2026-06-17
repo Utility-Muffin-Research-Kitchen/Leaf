@@ -18,9 +18,11 @@ PAYLOAD_ROOT="${PAYLOAD_ROOT:-$STAGE_BUILD/package}"
 CATASTROPHE_DIR="${CATASTROPHE_DIR:-$WORKSPACE_DIR/Catastrophe}"
 JAWAKA_DIR="${JAWAKA_DIR:-$WORKSPACE_DIR/Jawaka}"
 PPSSPP_SPRUCE_DIR="${PPSSPP_SPRUCE_DIR:-$WORKSPACE_DIR/PPSSPP-spruce}"
+STEWARD_NDS_DIR="${STEWARD_NDS_DIR:-$WORKSPACE_DIR/steward-fu-nds}"
 RETROARCH_BUILDS_DIR="${RETROARCH_BUILDS_DIR:-$WORKSPACE_DIR/retroarch-builds}"
 CORES_SPRUCE_DIR="${CORES_SPRUCE_DIR:-$WORKSPACE_DIR/Cores-spruce}"
 LAUNCHER_SWITCHER_DIR="${LAUNCHER_SWITCHER_DIR:-$WORKSPACE_DIR/miniloong-launcher-switcher}"
+TOOLCHAIN_IMAGE="${TOOLCHAIN_IMAGE:-ghcr.io/utility-muffin-research-kitchen/mlp1-toolchain:local}"
 MLP1_RETROARCH_BIN="${MLP1_RETROARCH_BIN:-$RETROARCH_BUILDS_DIR/output/mlp1/bin/retroarch}"
 MLP1_CORES_DIR="${MLP1_CORES_DIR:-$CORES_SPRUCE_DIR/output/mlp1/cores}"
 MLP1_PPSSPP_PACKAGE="${MLP1_PPSSPP_PACKAGE:-$PPSSPP_SPRUCE_DIR/output/mlp1/ppsspp}"
@@ -35,6 +37,7 @@ Environment:
   DEVICE=mlp1
   RELEASE_ID=<filesystem-safe id>
   LEAF_WORKSPACE_DIR=<workspace root>
+  TOOLCHAIN_IMAGE=<MLP1 cross-compile Docker image>
   STAGE_APPS="ssh-server Thing-File CentralScrutinizer Fugazi retroarch-builds"
   STAGE_EMULATORS="ppsspp drastic"
 EOF
@@ -359,7 +362,11 @@ package_emulator() {
             remote_name="ppsspp"
             ;;
         drastic)
-            OUTPUT_DIR="$MLP1_DRASTIC_PACKAGE" "$LEAF_ROOT/scripts/package-drastic-mlp1.sh"
+            [ -d "$STEWARD_NDS_DIR" ] || die "missing steward-fu-nds repo: $STEWARD_NDS_DIR (run: make bootstrap)"
+            OUTPUT_DIR="$MLP1_DRASTIC_PACKAGE" \
+            STEWARD_NDS_DIR="$STEWARD_NDS_DIR" \
+            TOOLCHAIN_IMAGE="$TOOLCHAIN_IMAGE" \
+                "$LEAF_ROOT/scripts/package-drastic-mlp1.sh"
             package_dir="$MLP1_DRASTIC_PACKAGE"
             remote_name="drastic"
             ;;

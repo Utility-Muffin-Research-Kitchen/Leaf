@@ -43,6 +43,8 @@ By default Leaf treats its parent directory as the workspace root:
   ssh-server/
   CentralScrutinizer/
   Fugazi/
+  PPSSPP-spruce/
+  steward-fu-nds/
   retroarch-builds/
   Cores-spruce/
   mlp1-toolchain/

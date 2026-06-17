@@ -17,6 +17,7 @@ url_for() {
         CentralScrutinizer)          echo "https://github.com/Utility-Muffin-Research-Kitchen/CentralScrutinizer.git" ;;
         Fugazi)                      echo "https://github.com/Utility-Muffin-Research-Kitchen/Fugazi.git" ;;
         PPSSPP-spruce)               echo "https://github.com/Utility-Muffin-Research-Kitchen/PPSSPP-spruce.git" ;;
+        steward-fu-nds)              echo "https://github.com/Helaas/nds.git" ;;
         retroarch-builds)            echo "https://github.com/Utility-Muffin-Research-Kitchen/retroarch-builds.git" ;;
         Cores-spruce)                echo "https://github.com/Utility-Muffin-Research-Kitchen/Cores-spruce.git" ;;
         mlp1-toolchain)              echo "https://github.com/Utility-Muffin-Research-Kitchen/mlp1-toolchain.git" ;;
