@@ -177,11 +177,15 @@ $SDCARD_PATH/.system/leaf/platforms/mlp1/launcher/bin/...
 $SDCARD_PATH/.system/leaf/platforms/mlp1/bin/
 $SDCARD_PATH/.system/leaf/platforms/mlp1/cores/
 $SDCARD_PATH/.system/leaf/platforms/mlp1/emulators/
-$SDCARD_PATH/.system/leaf/platforms/mlp1/state/
-$SDCARD_PATH/.system/leaf/platforms/mlp1/state/adb-enabled
-$SDCARD_PATH/.system/leaf/platforms/mlp1/userdata/logs/
-$SDCARD_PATH/.system/leaf/shared/userdata/
+$SDCARD_PATH/.umrk/mlp1/                       # launcher control state (library.db, wifi.conf, ...)
+$SDCARD_PATH/.umrk/mlp1/adb-enabled
+$SDCARD_PATH/.userdata/mlp1/logs/              # durable user/app data + logs
+$SDCARD_PATH/.userdata/shared/
 ```
+
+Everything under `.system/leaf/platforms/mlp1` is release-managed (replaced on
+install/update). Durable state lives at the SD root under `.umrk/` and
+`.userdata/`, so a manual upgrade never overwrites it.
 
 `state/adb-enabled` is Jawaka's durable request for the Leaf init hook to
 restore the stock ADB pin at boot. The launcher activation marker is separate:

@@ -65,8 +65,8 @@ fi
 
 ROM_PATH="$1"
 PLATFORM_ROOT="${UMRK_PLATFORM_PATH:-${SYSTEM_PATH:-$SELF_DIR/../..}}"
-STATE_ROOT="${DRASTIC_STATE_ROOT:-$PLATFORM_ROOT/state/drastic}"
-LOG_ROOT="${LOGS_PATH:-$PLATFORM_ROOT/userdata/logs}"
+STATE_ROOT="${DRASTIC_STATE_ROOT:-${UMRK_INTERNAL_DATA_PATH:-${SDCARD_PATH:-/mnt/sdcard}/.umrk/mlp1}/drastic}"
+LOG_ROOT="${LOGS_PATH:-${USERDATA_PATH:-${SDCARD_PATH:-/mnt/sdcard}/.userdata/mlp1}/logs}"
 
 mkdir -p \
     "$STATE_ROOT" \

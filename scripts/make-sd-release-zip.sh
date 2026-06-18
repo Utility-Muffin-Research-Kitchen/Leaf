@@ -402,7 +402,7 @@ settings if needed.
 
 Logs are written under:
 
-  .system/leaf/platforms/mlp1/userdata/logs/
+  .userdata/mlp1/logs/
 
 To return to stock boot, extract the matching Leaf recovery ZIP to the SD-card
 root and boot the device once with that card inserted.
@@ -428,6 +428,25 @@ card content such as ROMs, BIOS files, saves, states, logs, settings, and apps.
 EOF
 }
 
+# A manual-install ZIP must never carry mutable user/state roots: a desktop
+# drag-extract would merge them over the user's own data. Only the versioned
+# release payload + root helper files belong in the install ZIP. Fail loudly if
+# any active/durable root slipped into the stage.
+validate_install_stage_clean() {
+    local stage="$1"
+    local bad=""
+    [ -d "$stage/.system/leaf/platforms" ] && bad="$bad .system/leaf/platforms (active payload; only releases/ ships)"
+    [ -d "$stage/.system/leaf/shared/userdata" ] && bad="$bad .system/leaf/shared/userdata"
+    [ -e "$stage/.userdata" ] && bad="$bad .userdata"
+    [ -e "$stage/.umrk" ] && bad="$bad .umrk"
+    local hit
+    hit="$(find "$stage" -type d \( -path '*/platforms/*/state' -o -path '*/platforms/*/userdata' \) 2>/dev/null)"
+    [ -n "$hit" ] && bad="$bad $(echo $hit)"
+    if [ -n "$bad" ]; then
+        die "install ZIP would ship forbidden mutable roots:$bad"
+    fi
+}
+
 zip_stage() {
     local stage_dir="$1"
     local zip_path="$2"
@@ -449,15 +468,17 @@ build_install_zip() {
     [ -d "$PAYLOAD_ROOT/.system/leaf/platforms/mlp1" ] || die "missing assembled MLP1 platform payload"
 
     rm -rf "$INSTALL_STAGE"
-    mkdir -p "$INSTALL_STAGE/.system/leaf/releases/$RELEASE_ID/platforms" "$INSTALL_STAGE/Apps"
-    for dir in $PUBLIC_ROOT_DIRS; do
-        mkdir -p "$INSTALL_STAGE/$dir"
-    done
+    mkdir -p "$INSTALL_STAGE/.system/leaf/releases/$RELEASE_ID/platforms"
+    # Public root dirs (Roms/Images/Apps/...) are NOT shipped as empty folders:
+    # the installer creates any that are missing from public-dirs.txt, so a
+    # desktop drag-extract can never merge over existing user content.
 
     RELEASE_ROOT="$INSTALL_STAGE/.system/leaf/releases/$RELEASE_ID"
     RELEASE_APPS_DIR="$RELEASE_ROOT/Apps"
     MANAGED_APPS_FILE="$RELEASE_ROOT/managed-apps.txt"
     : >"$MANAGED_APPS_FILE"
+    # Public content roots the installer creates if missing (one per line).
+    printf '%s\n' $PUBLIC_ROOT_DIRS > "$RELEASE_ROOT/public-dirs.txt"
 
     cp -R "$PAYLOAD_ROOT/.system/leaf/platforms/mlp1" "$RELEASE_ROOT/platforms/mlp1"
 
@@ -480,6 +501,7 @@ build_install_zip() {
         --completion-action reboot \
         "$INSTALL_STAGE"
 
+    validate_install_stage_clean "$INSTALL_STAGE"
     write_install_readme
     zip_stage "$INSTALL_STAGE" "$INSTALL_ZIP"
     BUILT_INSTALL=1
