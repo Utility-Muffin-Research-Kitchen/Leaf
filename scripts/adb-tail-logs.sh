@@ -28,7 +28,9 @@ echo "Using adb device: $("${ADB[@]}" get-serialno)"
 REMOTE_SDCARD_PATH="$(PLATFORM_ID="$PLATFORM_ID" REMOTE_SDCARD_PATH="$REQUESTED_REMOTE_SDCARD_PATH" ADB_SERIAL="$serial" "$ROOT_DIR/scripts/adb-resolve-umrk-sd.sh")"
 REMOTE_SYSTEM_PATH="${REMOTE_SYSTEM_PATH:-$REMOTE_SDCARD_PATH/.system/leaf}"
 REMOTE_PLATFORM_PATH="${REMOTE_PLATFORM_PATH:-$REMOTE_SYSTEM_PATH/platforms/$PLATFORM_ID}"
-REMOTE_USERDATA_PATH="${REMOTE_USERDATA_PATH:-$REMOTE_PLATFORM_PATH/userdata}"
+# Logs live under the SD-root user-data tree (.userdata/<platform>/logs), not the
+# release-managed .system tree (see umrk-env.sh).
+REMOTE_USERDATA_PATH="${REMOTE_USERDATA_PATH:-$REMOTE_SDCARD_PATH/.userdata/$PLATFORM_ID}"
 REMOTE_LOGS_PATH="${REMOTE_LOGS_PATH:-$REMOTE_USERDATA_PATH/logs}"
 
 "${ADB[@]}" shell "
