@@ -383,10 +383,11 @@ package_emulator() {
 
 write_install_readme() {
     cat > "$INSTALL_STAGE/LEAF-INSTALL.txt" <<EOF
-Leaf MLP1 SD installer
-======================
+Leaf MLP1 SD installer / updater
+================================
 
-This ZIP is for Miniloong Pocket 1.
+This ZIP installs Leaf on a Miniloong Pocket 1, and is also how you update an
+existing Leaf install. The same steps apply either way.
 
 1. Extract the contents of this ZIP to the root of a FAT32 or ext4 SD card.
 2. Do not use exFAT. The stock loong_daemon update path ignores exFAT media.
@@ -395,6 +396,13 @@ This ZIP is for Miniloong Pocket 1.
 5. The progress indicator may sit at 50 percent while files are copying.
 6. Wait for the device to reboot by itself.
 7. Boot normally with the SD card inserted. Leaf should start automatically.
+
+Safe to run over an existing install. The installer only refreshes the
+release-managed firmware under .system/leaf and never touches your data: games,
+saves, states, and app/control data live at the card root (Roms/, Saves/,
+States/, and the .userdata/ and .umrk/ folders) and are left as they are. There
+is no migration step; re-extracting this ZIP onto a card that already has Leaf
+is an in-place upgrade.
 
 The installer renames loong_upgrade to loong_upgrade.used when it runs.
 ADB is not enabled automatically. You can enable ADB later from Leaf/Jawaka
