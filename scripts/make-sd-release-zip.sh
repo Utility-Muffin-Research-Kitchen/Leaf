@@ -8,7 +8,7 @@ LEAF_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 WORKSPACE_DIR="${LEAF_WORKSPACE_DIR:-$(cd "$LEAF_ROOT/.." && pwd)}"
 
 DEVICE="${DEVICE:-mlp1}"
-STAGE_APPS="${STAGE_APPS-ssh-server Thing-File CentralScrutinizer Fugazi retroarch-builds}"
+STAGE_APPS="${STAGE_APPS-ssh-server Thing-File CentralScrutinizer Fugazi joes-calibrage retroarch-builds}"
 STAGE_EMULATORS="${STAGE_EMULATORS-ppsspp drastic}"
 PUBLIC_ROOT_DIRS="${PUBLIC_ROOT_DIRS-Roms Images Apps BIOS Saves States Cheats}"
 RELEASE_BUILD="${RELEASE_BUILD:-$LEAF_ROOT/build/release}"
@@ -38,7 +38,7 @@ Environment:
   RELEASE_ID=<filesystem-safe id>
   LEAF_WORKSPACE_DIR=<workspace root>
   TOOLCHAIN_IMAGE=<MLP1 cross-compile Docker image>
-  STAGE_APPS="ssh-server Thing-File CentralScrutinizer Fugazi retroarch-builds"
+  STAGE_APPS="ssh-server Thing-File CentralScrutinizer Fugazi joes-calibrage retroarch-builds"
   STAGE_EMULATORS="ppsspp drastic"
 EOF
 }
