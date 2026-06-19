@@ -2,7 +2,7 @@
 # Dispatches to each sibling repo's own targets — does not reimplement builds.
 
 # Apps staged by `make stage`.
-STAGE_APPS ?= ssh-server Thing-File CentralScrutinizer Fugazi retroarch-builds
+STAGE_APPS ?= ssh-server Thing-File CentralScrutinizer Fugazi joes-calibrage retroarch-builds
 STAGE_EMULATORS ?= ppsspp drastic
 PUBLIC_ROOT_DIRS ?= Roms Images Apps BIOS Saves States Cheats
 
@@ -209,9 +209,9 @@ stage-emulator:
 	if [ -z "$$remote_platform" ]; then remote_platform="$$remote_system/platforms/mlp1"; fi; \
 	remote_dir="$$remote_platform/emulators/$$remote_name"; \
 	echo "Deploying $(EMULATOR) emulator to $$remote_dir"; \
-	"$${ADB[@]}" shell "rm -rf '$$remote_dir' && mkdir -p '$$remote_dir'"; \
+	"$${ADB[@]}" shell "rm -rf \"$$remote_dir\" && mkdir -p \"$$remote_dir\""; \
 	"$${ADB[@]}" push "$$package_dir/." "$$remote_dir/" >/dev/null; \
-	"$${ADB[@]}" shell "chmod 755 '$$remote_dir/launch.sh' '$$remote_dir/bin/'* '$$remote_dir/lib/'* 2>/dev/null || true"; \
+	"$${ADB[@]}" shell "chmod 755 \"$$remote_dir/launch.sh\" \"$$remote_dir/bin/\"* \"$$remote_dir/lib/\"* 2>/dev/null || true"; \
 	if [ -d "$(DEVICE_OVERLAY)/defaults" ]; then \
 		echo "Refreshing platform defaults at $$remote_platform/defaults"; \
 		"$${ADB[@]}" shell "rm -rf '$$remote_platform/defaults' && mkdir -p '$$remote_platform/defaults'"; \
@@ -277,10 +277,10 @@ stage-app:
 	if [ -z "$$remote_apps" ]; then remote_apps="$$remote_sd/Apps"; fi; \
 	remote_dir="$$remote_apps/$$destination_platform/$$package_name"; \
 	echo "Deploying $$package_name to $$remote_dir"; \
-	"$${ADB[@]}" shell "rm -rf '$$remote_dir' && mkdir -p '$$remote_dir'"; \
+	"$${ADB[@]}" shell "rm -rf \"$$remote_dir\" && mkdir -p \"$$remote_dir\""; \
 	"$${ADB[@]}" push "$$package_dir/." "$$remote_dir/" >/dev/null; \
-	"$${ADB[@]}" shell "chmod 755 '$$remote_dir/launch.sh' '$$remote_dir/bin/'* 2>/dev/null || true"; \
-	"$${ADB[@]}" shell "find '$$remote_dir' -maxdepth 3 -type f | sort"
+	"$${ADB[@]}" shell "chmod 755 \"$$remote_dir/launch.sh\" \"$$remote_dir/bin/\"* 2>/dev/null || true"; \
+	"$${ADB[@]}" shell "find \"$$remote_dir\" -maxdepth 3 -type f | sort"
 
 release-zips:
 	DEVICE="$(DEVICE)" \

@@ -62,6 +62,14 @@ leaf_app_policy() {
             destination_platform="mlp1"
             supported_devices="mlp1"
             ;;
+        joes-calibrage)
+            package_target="package-platform"
+            package_platform="mlp1"
+            package_dir="$workspace_dir/joes-calibrage/build/mlp1/package/Joe's Calibrage.pak"
+            package_name="Joe's Calibrage.pak"
+            destination_platform="mlp1"
+            supported_devices="mlp1"
+            ;;
         retroarch-builds)
             package_target="package-platform"
             package_platform="mlp1"
