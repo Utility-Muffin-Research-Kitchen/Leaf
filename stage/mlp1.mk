@@ -68,6 +68,8 @@ assemble-jawaka: jawaka-build
 	@cp -f "$(CATASTROPHE_DIR)/res/font.ttf" "$(PAYLOAD_DIR)/res/font.ttf"
 	@cp -Rf "$(CATASTROPHE_ASSETS_DIR)" "$(PAYLOAD_DIR)/res/assets"
 	@cp -Rf "$(DEVICE_OVERLAY)/." "$(PLATFORM_PAYLOAD_DIR)/"
+	@test -f "$(PLATFORM_PAYLOAD_DIR)/defaults/systems.json" || { echo "missing platform defaults: $(PLATFORM_PAYLOAD_DIR)/defaults/systems.json" >&2; exit 1; }
+	@test -f "$(PLATFORM_PAYLOAD_DIR)/defaults/cores.json" || { echo "missing platform defaults: $(PLATFORM_PAYLOAD_DIR)/defaults/cores.json" >&2; exit 1; }
 	@mkdir -p "$(PLATFORM_PAYLOAD_DIR)/platform.d"
 	@if [ -d "$(JAWAKA_DIR)/platform/mlp1/platform.d" ]; then \
 		cp -Rf "$(JAWAKA_DIR)/platform/mlp1/platform.d/." "$(PLATFORM_PAYLOAD_DIR)/platform.d/"; \
@@ -217,6 +219,7 @@ stage-emulator:
 		"$${ADB[@]}" shell "rm -rf '$$remote_platform/defaults' && mkdir -p '$$remote_platform/defaults'"; \
 		"$${ADB[@]}" push "$(DEVICE_OVERLAY)/defaults/." "$$remote_platform/defaults/" >/dev/null; \
 	fi; \
+	"$${ADB[@]}" shell "test -f '$$remote_platform/defaults/systems.json' && test -f '$$remote_platform/defaults/cores.json'" || { echo "missing platform defaults at $$remote_platform/defaults" >&2; exit 1; }; \
 	"$${ADB[@]}" shell sync; \
 	"$${ADB[@]}" shell "find '$$remote_dir' -maxdepth 3 -type f | sort | sed -n '1,80p'"
 
