@@ -133,7 +133,7 @@ write_manifest() {
   "menu": "steward-custom",
   "sdl_video_driver": "NDS",
   "bundled_libs": "libSDL2-2.0.so.0 libcommon.so libdtr.so libasound.so.2",
-  "package_note": "Steward-fu/nds custom-menu port cross-built for MLP1 (Wayland/xdg-shell, queue_copy gameplay-throttle fix). Menu is opened by the hardware Menu key, passed through by jawakad."
+  "package_note": "Steward-fu/nds custom-menu port cross-built for MLP1 (Wayland/xdg-shell, queue_copy gameplay-throttle fix). Tapping hardware Menu opens DraStic's native menu; Menu+Start opens the steward menu. Menu+A toggles the default layout with the transparent N1 overlay layout, and Menu+Left/Right cycles layouts."
 }
 EOF
 }
@@ -192,9 +192,12 @@ menu + Wayland/xdg-shell video path) in lib/, and runs the prebuilt aarch64
 drastic64 against it via SDL_VIDEODRIVER=NDS. Saves, states, config, cache, and
 logs live under the Leaf platform runtime tree.
 
-The in-emulator menu is opened with the hardware Menu key; jawakad passes that
+Tapping the hardware Menu key opens DraStic's native menu; jawakad passes that
 key through to DraStic for a "drastic" standalone session instead of raising the
-launcher overlay.
+launcher overlay. Holding Menu as a modifier opens the steward controls:
+Menu+Start opens the steward menu, Menu+A toggles between the default layout and
+the transparent N1 overlay layout, and Menu+Left/Right cycles through the layout
+list.
 EOF
 
     find "$OUTPUT_DIR" -maxdepth 3 -type f | sort
