@@ -102,6 +102,18 @@ copy_if_missing "$SELF_DIR/share/drastic_logo_1.raw" "$STATE_ROOT/drastic_logo_1
 copy_if_missing "$SELF_DIR/share/icon.png" "$STATE_ROOT/icon.png"
 copy_if_missing "$SELF_DIR/share/readme.txt" "$STATE_ROOT/readme.txt"
 
+# Refresh package-owned steward/native menu backgrounds even when the runtime
+# res/ directory was seeded by an older DraStic package.
+for src in "$SELF_DIR"/share/res/menu/*/bg.png \
+           "$SELF_DIR"/share/res/menu/*/drastic_bg0.png \
+           "$SELF_DIR"/share/res/menu/*/drastic_bg1.png; do
+    [ -e "$src" ] || continue
+    rel="${src#"$SELF_DIR/share/res/"}"
+    dst="$STATE_ROOT/res/$rel"
+    mkdir -p "$(dirname "$dst")"
+    cp -f "$src" "$dst"
+done
+
 export HOME="$STATE_ROOT"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run}"
 export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
