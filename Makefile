@@ -22,13 +22,14 @@ LARGE_LIBRARY_FIXTURE_ENV = \
 	REMOTE_SDCARD_PATH="$(REMOTE_SDCARD_PATH)"
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap doctor status adb-enable-marker adb-disable-marker adb-tail-logs adb-large-library-create adb-large-library-clean adb-large-library-status adb-install-wrapper adb-uninstall-wrapper
+.PHONY: help bootstrap doctor status status-internal adb-enable-marker adb-disable-marker adb-tail-logs adb-large-library-create adb-large-library-clean adb-large-library-status adb-install-wrapper adb-uninstall-wrapper
 
 help:
 	@echo "Leaf workspace commands (DEVICE=$(DEVICE), WORKSPACE_DIR=$(WORKSPACE_DIR)):"
-	@echo "  make bootstrap                            clone any missing sibling repos"
+	@echo "  make bootstrap                            clone public repos; privately clone internal docs when accessible"
 	@echo "  make doctor                               preflight: adb / docker / toolchain / device"
-	@echo "  make status                               git status across all siblings"
+	@echo "  make status                               git status across public siblings"
+	@echo "  make status-internal                      git status including private maintainer repos"
 	@echo "  make stage DEVICE=mlp1                    full: launcher payload + all apps"
 	@echo "  make stage-refresh DEVICE=mlp1            full stage, then run refresh helper"
 	@echo "  make refresh-jawaka DEVICE=mlp1           refresh helper (reboot advised with init hook)"
@@ -51,13 +52,26 @@ help:
 	@echo "  make adb-uninstall-wrapper                remove Leaf init hook (compat alias)"
 
 bootstrap:
-	@LEAF_WORKSPACE_DIR="$(WORKSPACE_DIR)" scripts/bootstrap.sh $(ALL_REPOS)
+	@LEAF_WORKSPACE_DIR="$(WORKSPACE_DIR)" scripts/bootstrap.sh $(REQUIRED_REPOS) --optional $(OPTIONAL_PRIVATE_REPOS)
 
 doctor:
 	@LEAF_WORKSPACE_DIR="$(WORKSPACE_DIR)" TOOLCHAIN_IMAGE="$(TOOLCHAIN_IMAGE)" scripts/doctor.sh
 
 status:
-	@for r in $(ALL_REPOS); do \
+	@for r in $(REQUIRED_REPOS); do \
+		d="$(WORKSPACE_DIR)/$$r"; \
+		if [ -d "$$d/.git" ]; then \
+			b="$$(git -C "$$d" rev-parse --abbrev-ref HEAD 2>/dev/null)"; \
+			s="$$(git -C "$$d" status --short 2>/dev/null)"; \
+			if [ -n "$$s" ]; then state="dirty"; else state="clean"; fi; \
+			printf "%-30s %-20s %s\n" "$$r" "$$b" "$$state"; \
+		else \
+			printf "%-30s %s\n" "$$r" "(missing — run: make bootstrap)"; \
+		fi; \
+	done
+
+status-internal:
+	@for r in $(REQUIRED_REPOS) $(OPTIONAL_PRIVATE_REPOS); do \
 		d="$(WORKSPACE_DIR)/$$r"; \
 		if [ -d "$$d/.git" ]; then \
 			b="$$(git -C "$$d" rev-parse --abbrev-ref HEAD 2>/dev/null)"; \

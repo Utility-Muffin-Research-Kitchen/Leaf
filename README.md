@@ -16,8 +16,9 @@ and package targets.
 
 ## Setup
 
-Create a parent workspace, clone Leaf, then let Leaf clone the rest of the
-sibling repos:
+Create a parent workspace, clone Leaf, then let Leaf clone the public sibling
+repos. If your GitHub account has access to the private internal planning repo,
+bootstrap will clone it too; otherwise it is silently skipped.
 
 ```sh
 mkdir -p ~/dev/UMRK
@@ -36,7 +37,6 @@ By default Leaf treats its parent directory as the workspace root:
 ```text
 ~/dev/UMRK/
   Leaf/
-  umrk-workspace/
   Catastrophe/
   Jawaka/
   Thing-File/
@@ -50,6 +50,7 @@ By default Leaf treats its parent directory as the workspace root:
   mlp1-toolchain/
   miniloong-launcher-switcher/
   miniloong-adb-keeper/
+  umrk-workspace/      # optional internal docs/plans, only with access
 ```
 
 For unusual checkout layouts, set `LEAF_WORKSPACE_DIR`:
@@ -63,9 +64,10 @@ LEAF_WORKSPACE_DIR=/Volumes/Storage/UMRK make status
 Run commands from the `Leaf` repo:
 
 ```sh
-make bootstrap                              # clone any missing sibling repos
+make bootstrap                              # clone public repos; privately clone internal docs when accessible
 make doctor                                 # preflight: adb / docker / toolchain / device
-make status                                 # git status across all siblings
+make status                                 # git status across public siblings
+make status-internal                        # git status including private maintainer repos
 
 make stage DEVICE=mlp1                      # full: launcher payload + all apps
 make stage-refresh DEVICE=mlp1              # full stage, then restart Jawaka GUI
@@ -84,7 +86,8 @@ make release-recovery-zip DEVICE=mlp1       # build end-user recovery ZIP only
 ```
 
 `make bootstrap` is idempotent. Existing sibling repos are reported as present
-and left untouched. Missing repos are cloned into `Leaf/..`.
+and left untouched. Missing public repos are cloned into `Leaf/..`; optional
+private repos are cloned only when credentials are available.
 
 ## End-User SD Install Package
 

@@ -2,8 +2,9 @@
 
 Leaf is the deploy/orchestration repo for the UMRK launcher workspace.
 
-For cross-repo architecture, ownership boundaries, runtime path conventions, and
-device details, read the sibling docs repo first:
+When the private sibling docs repo is present, use it for cross-repo
+architecture, ownership boundaries, runtime path conventions, and device
+details:
 
 ```text
 ../umrk-workspace/AGENTS.md
@@ -20,7 +21,6 @@ Default workspace layout is sibling-based:
 ```text
 UMRK/
   Leaf/
-  umrk-workspace/
   Catastrophe/
   Jawaka/
   Thing-File/
@@ -30,6 +30,7 @@ UMRK/
   mlp1-toolchain/
   miniloong-launcher-switcher/
   miniloong-adb-keeper/
+  umrk-workspace/      # optional internal docs/plans, only with access
 ```
 
 Use `LEAF_WORKSPACE_DIR` only for unusual local layouts.
