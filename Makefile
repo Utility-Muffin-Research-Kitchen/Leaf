@@ -11,8 +11,18 @@ include stage/common.mk
 # Optional so bootstrap/doctor/status work before a device recipe exists.
 -include stage/$(DEVICE).mk
 
+LARGE_LIBRARY_FIXTURE_ENV = \
+	COUNT="$(if $(COUNT),$(COUNT),1200)" \
+	SMALL_COUNT="$(if $(SMALL_COUNT),$(SMALL_COUNT),10)" \
+	LARGE_SYSTEMS="$(if $(LARGE_SYSTEMS),$(LARGE_SYSTEMS),FC:nes,SFC:sfc)" \
+	SMALL_SYSTEMS="$(if $(SMALL_SYSTEMS),$(SMALL_SYSTEMS),GB:gb)" \
+	IMAGE_EVERY="$(if $(IMAGE_EVERY),$(IMAGE_EVERY),0)" \
+	FORCE="$(if $(FORCE),$(FORCE),0)" \
+	DEVICE="$(DEVICE)" \
+	REMOTE_SDCARD_PATH="$(REMOTE_SDCARD_PATH)"
+
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap doctor status adb-enable-marker adb-disable-marker adb-tail-logs adb-install-wrapper adb-uninstall-wrapper
+.PHONY: help bootstrap doctor status adb-enable-marker adb-disable-marker adb-tail-logs adb-large-library-create adb-large-library-clean adb-large-library-status adb-install-wrapper adb-uninstall-wrapper
 
 help:
 	@echo "Leaf workspace commands (DEVICE=$(DEVICE), WORKSPACE_DIR=$(WORKSPACE_DIR)):"
@@ -34,6 +44,9 @@ help:
 	@echo "  make adb-enable-marker                    enable Leaf launcher marker"
 	@echo "  make adb-disable-marker                   disable Leaf launcher marker"
 	@echo "  make adb-tail-logs                        tail launcher logs"
+	@echo "  make adb-large-library-create             seed fake large-library ROM fixture"
+	@echo "  make adb-large-library-status             show fixture and library.db counts"
+	@echo "  make adb-large-library-clean              remove fake large-library fixture"
 	@echo "  make adb-install-wrapper                  install Leaf init hook (compat alias)"
 	@echo "  make adb-uninstall-wrapper                remove Leaf init hook (compat alias)"
 
@@ -64,6 +77,15 @@ adb-disable-marker:
 
 adb-tail-logs:
 	scripts/adb-tail-logs.sh
+
+adb-large-library-create:
+	$(LARGE_LIBRARY_FIXTURE_ENV) scripts/adb-large-library-fixture.sh create
+
+adb-large-library-status:
+	$(LARGE_LIBRARY_FIXTURE_ENV) scripts/adb-large-library-fixture.sh status
+
+adb-large-library-clean:
+	$(LARGE_LIBRARY_FIXTURE_ENV) scripts/adb-large-library-fixture.sh clean
 
 adb-install-wrapper:
 	scripts/adb-install-wrapper.sh
