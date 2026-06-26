@@ -220,16 +220,28 @@ def build_storefront(args: argparse.Namespace) -> Path:
     return storefront_path
 
 
-def adb_configure(args: argparse.Namespace, url: str) -> None:
+def adb_command(args: argparse.Namespace) -> list[str]:
     adb = ["adb"]
     serial = args.adb_serial or os.environ.get("ADB_SERIAL")
     if serial:
         adb += ["-s", serial]
+    return adb
+
+
+def adb_reverse(args: argparse.Namespace) -> None:
+    adb = adb_command(args)
+    spec = f"tcp:{args.port}"
+    print(f"Configuring ADB reverse: device {spec} -> host {spec}")
+    subprocess.run(adb + ["reverse", spec, spec], check=True)
+
+
+def adb_configure(args: argparse.Namespace, url: str) -> None:
+    adb = adb_command(args)
     remote_state = args.remote_state_dir
     remote_file = remote_state.rstrip("/") + "/store/dev-catalog-url"
     shell = (
         f"mkdir -p {sh_quote(remote_state.rstrip('/') + '/store')} && "
-        f"printf %s {sh_quote(url)} > {sh_quote(remote_file)} && "
+        f"printf '%s\\n' {sh_quote(url)} > {sh_quote(remote_file)} && "
         f"cat {sh_quote(remote_file)}"
     )
     print(f"Configuring device dev catalog URL: {url}")
@@ -251,7 +263,10 @@ def serve(args: argparse.Namespace) -> None:
     server = http.server.ThreadingHTTPServer((args.host, args.port), handler)
     print(f"Serving {output_root}")
     print(f"Mac URL:    http://127.0.0.1:{args.port}/pakrat/v1/storefront.json")
-    print(f"Device URL: http://{default_lan_ip()}:{args.port}/pakrat/v1/storefront.json")
+    if args.adb_reverse:
+        print(f"Device URL: http://127.0.0.1:{args.port}/pakrat/v1/storefront.json (ADB reverse)")
+    else:
+        print(f"Device URL: http://{default_lan_ip()}:{args.port}/pakrat/v1/storefront.json")
     print("Press Ctrl-C to stop.")
     try:
         server.serve_forever()
@@ -271,6 +286,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--serve", action="store_true", help="serve after generating")
     parser.add_argument("--skip-build", action="store_true", help="use existing package dir")
     parser.add_argument("--adb-configure", action="store_true", help="write dev-catalog-url to an attached device")
+    parser.add_argument("--adb-reverse", action="store_true", help="set up adb reverse and use a device-loopback catalog URL")
     parser.add_argument("--adb-serial", help="ADB serial; defaults to ADB_SERIAL or adb default")
     parser.add_argument("--remote-state-dir", default="/mnt/sdcard/.umrk/mlp1", help="device UMRK_INTERNAL_DATA_PATH")
     return parser.parse_args()
@@ -278,11 +294,19 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    reverse_base_url = f"http://127.0.0.1:{args.port}/pakrat/v1/"
+    if args.adb_reverse:
+        if args.base_url and ensure_base_url(args.base_url) != reverse_base_url:
+            die(f"--adb-reverse requires --base-url {reverse_base_url}")
+        args.base_url = reverse_base_url
+        args.adb_configure = True
     if not args.base_url:
         host = default_lan_ip() if args.adb_configure else ("127.0.0.1" if args.host in ("0.0.0.0", "::") else args.host)
         args.base_url = f"http://{host}:{args.port}/pakrat/v1/"
 
     build_storefront(args)
+    if args.adb_reverse:
+        adb_reverse(args)
     if args.adb_configure:
         adb_configure(args, ensure_base_url(args.base_url))
     print(f"Catalog base URL: {ensure_base_url(args.base_url)}")
@@ -292,4 +316,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
