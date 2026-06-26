@@ -167,6 +167,35 @@ write_managed_apps_json_items() {
     done <"$file"
 }
 
+sync_platform_managed_apps_manifest() {
+    local manifest="$1"
+    local managed_file="$2"
+
+    [ -f "$manifest" ] || die "missing platform manifest: $manifest"
+    [ -f "$managed_file" ] || die "missing managed apps file: $managed_file"
+
+    python3 - "$manifest" "$managed_file" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+manifest_path = Path(sys.argv[1])
+managed_path = Path(sys.argv[2])
+
+with manifest_path.open("r", encoding="utf-8") as fp:
+    manifest = json.load(fp)
+
+managed = []
+for raw in managed_path.read_text(encoding="utf-8").splitlines():
+    app = raw.strip()
+    if app and not app.startswith("#"):
+        managed.append(app)
+
+manifest["managed_apps"] = managed
+manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+PY
+}
+
 write_checksum_line() {
     local path="$1"
     printf '%s  %s\n' "$(file_sha256 "$path")" "$(basename "$path")" >>"$SHA256SUMS_FILE"
@@ -500,6 +529,7 @@ build_install_zip() {
     for app in $STAGE_APPS; do
         package_app "$app"
     done
+    sync_platform_managed_apps_manifest "$RELEASE_ROOT/platforms/mlp1/manifest.json" "$MANAGED_APPS_FILE"
 
     python3 "$LAUNCHER_SWITCHER_DIR/make_launcher_switcher_sd.py" \
         --force \
