@@ -212,6 +212,14 @@ Cheats/
 and wrapper/runtime-delegating apps under `Apps/shared/`; flat
 `Apps/<Name>.pak/` entries are not part of the Jawaka discovery contract.
 
+`Roms/` and `Images/` use one canonical public folder per console — one folder
+per system, not one per emulator. Legacy alias folders (e.g. `Roms/FC` for NES)
+still scan and fold into the canonical system; emulator variants are a launcher
+**Core** choice, not a separate folder. The canonical folder per system plus its
+accepted aliases come from the staged platform `systems.json`, driven by
+`umrk-workspace/scripts/system_folder_policy.json`; the release path enforces the
+invariant via `retroarch_validate_package.py --canonical-systems`.
+
 The current first-party app policies are:
 
 ```text

@@ -70,6 +70,7 @@ assemble-jawaka: jawaka-build
 	@cp -Rf "$(DEVICE_OVERLAY)/." "$(PLATFORM_PAYLOAD_DIR)/"
 	@test -f "$(PLATFORM_PAYLOAD_DIR)/defaults/systems.json" || { echo "missing platform defaults: $(PLATFORM_PAYLOAD_DIR)/defaults/systems.json" >&2; exit 1; }
 	@test -f "$(PLATFORM_PAYLOAD_DIR)/defaults/cores.json" || { echo "missing platform defaults: $(PLATFORM_PAYLOAD_DIR)/defaults/cores.json" >&2; exit 1; }
+	@python3 "$(UMRK_WORKSPACE_DIR)/scripts/retroarch_validate_package.py" --canonical-systems "$(PLATFORM_PAYLOAD_DIR)/defaults/systems.json"
 	@mkdir -p "$(PLATFORM_PAYLOAD_DIR)/platform.d"
 	@if [ -d "$(JAWAKA_DIR)/platform/mlp1/platform.d" ]; then \
 		cp -Rf "$(JAWAKA_DIR)/platform/mlp1/platform.d/." "$(PLATFORM_PAYLOAD_DIR)/platform.d/"; \
