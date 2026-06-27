@@ -38,6 +38,7 @@ from the named upstream release asset.
 | mednafen_pce_fast | GPL-2.0 | https://github.com/libretro/beetle-pce-fast-libretro |
 | mednafen_wswan | GPL-2.0 | https://github.com/libretro/beetle-wswan-libretro |
 | mgba | MPL-2.0 | https://github.com/libretro/mgba |
+| mupen64plus_standalone (standalone) | GPL-2.0 / MIT / bundled third-party notices | https://github.com/josegonzalez/minui-n64-pak |
 | mupen64plus_next | GPL-2.0 | https://github.com/libretro/mupen64plus-libretro-nx |
 | pcsx_rearmed | GPL-2.0 | https://github.com/libretro/pcsx_rearmed |
 | ppsspp (standalone) | GPL-2.0+ | https://github.com/hrydgard/ppsspp |

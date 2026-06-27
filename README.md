@@ -75,6 +75,7 @@ make refresh-jawaka DEVICE=mlp1             # restart Jawaka/Loong GUI stack onl
 make stage-jawaka DEVICE=mlp1               # launcher payload only
 make stage-retroarch DEVICE=mlp1            # RetroArch binary + cores + info
 make stage-emulator EMULATOR=drastic DEVICE=mlp1
+make stage-emulator EMULATOR=mupen64plus DEVICE=mlp1
 make stage-app APP=ssh-server DEVICE=mlp1   # stage one app
 make stage-app APP=Thing-File DEVICE=mlp1
 make stage-app APP=CentralScrutinizer DEVICE=mlp1
@@ -232,7 +233,9 @@ retroarch-builds  -> Apps/shared/RetroArch.pak/
 
 Standalone game emulator payloads are staged under
 `.system/leaf/platforms/mlp1/emulators/`. PPSSPP is built from the UMRK
-`PPSSPP-spruce` sibling repo. DraStic is packaged from the local
+`PPSSPP-spruce` sibling repo. Mupen64Plus standalone is built from the
+`N64-standalone` sibling repo and launched as a selectable path core for the
+canonical `Roms/N64` library. DraStic is packaged from the local
 `steward-fu-nds` sibling repo: Leaf bundles the cross-built steward SDL2 custom
 menu stack with the prebuilt `drastic64` binary, keeps runtime state under
 `state/drastic/`, and runs it through `SDL_VIDEODRIVER=NDS`. Single-emulator ADB

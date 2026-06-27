@@ -3,7 +3,7 @@
 
 # Apps staged by `make stage`.
 STAGE_APPS ?= ssh-server Thing-File CentralScrutinizer Fugazi joes-calibrage retroarch-builds
-STAGE_EMULATORS ?= ppsspp drastic
+STAGE_EMULATORS ?= ppsspp drastic mupen64plus
 PUBLIC_ROOT_DIRS ?= Roms Images Apps BIOS Saves States Cheats
 
 # --- Launcher payload assembly inputs --------------------------------------
@@ -15,6 +15,7 @@ MLP1_CORES_DIR     ?= $(CORES_SPRUCE_DIR)/output/mlp1/cores
 MLP1_INFO_DIR      ?= $(CORES_SPRUCE_DIR)/output/mlp1/info
 MLP1_PPSSPP_PACKAGE ?= $(PPSSPP_SPRUCE_DIR)/output/mlp1/ppsspp
 MLP1_DRASTIC_PACKAGE ?= $(LEAF_ROOT)/build/drastic/mlp1/drastic
+MLP1_MUPEN64PLUS_PACKAGE ?= $(N64_STANDALONE_DIR)/output/mlp1/mupen64plus
 MLP1_RETROARCH_PATCH_SET ?= portrait-rotation,command-menu,jawaka-load-content
 UMRK_ENV_SCRIPT    ?= $(LAUNCHER_SWITCHER_DIR)/device/umrk-env.sh
 REMOTE_SDCARD_PATH ?= auto
@@ -188,6 +189,12 @@ stage-emulator:
 			package_dir="$(MLP1_DRASTIC_PACKAGE)"; \
 			remote_name="drastic"; \
 			;; \
+		mupen64plus) \
+			test -d "$(N64_STANDALONE_DIR)" || { echo "missing repo: $(N64_STANDALONE_DIR)" >&2; exit 1; }; \
+			$(MAKE) -C "$(N64_STANDALONE_DIR)" package-mlp1 TOOLCHAIN_IMAGE="$(TOOLCHAIN_IMAGE)"; \
+			package_dir="$(MLP1_MUPEN64PLUS_PACKAGE)"; \
+			remote_name="mupen64plus"; \
+			;; \
 		*) \
 			echo "unsupported emulator policy: $(EMULATOR) for DEVICE=$(DEVICE)" >&2; \
 			exit 1; \
@@ -297,6 +304,7 @@ release-zips:
 	JAWAKA_DIR="$(JAWAKA_DIR)" \
 	PPSSPP_SPRUCE_DIR="$(PPSSPP_SPRUCE_DIR)" \
 	STEWARD_NDS_DIR="$(STEWARD_NDS_DIR)" \
+	N64_STANDALONE_DIR="$(N64_STANDALONE_DIR)" \
 	RETROARCH_BUILDS_DIR="$(RETROARCH_BUILDS_DIR)" \
 	CORES_SPRUCE_DIR="$(CORES_SPRUCE_DIR)" \
 	LAUNCHER_SWITCHER_DIR="$(LAUNCHER_SWITCHER_DIR)" \
@@ -305,6 +313,7 @@ release-zips:
 	MLP1_CORES_DIR="$(MLP1_CORES_DIR)" \
 	MLP1_PPSSPP_PACKAGE="$(MLP1_PPSSPP_PACKAGE)" \
 	MLP1_DRASTIC_PACKAGE="$(MLP1_DRASTIC_PACKAGE)" \
+	MLP1_MUPEN64PLUS_PACKAGE="$(MLP1_MUPEN64PLUS_PACKAGE)" \
 	MLP1_RETROARCH_PATCH_SET="$(MLP1_RETROARCH_PATCH_SET)" \
 	"$(LEAF_ROOT)/scripts/make-sd-release-zip.sh" both
 
@@ -319,6 +328,7 @@ release-sd-zip:
 	JAWAKA_DIR="$(JAWAKA_DIR)" \
 	PPSSPP_SPRUCE_DIR="$(PPSSPP_SPRUCE_DIR)" \
 	STEWARD_NDS_DIR="$(STEWARD_NDS_DIR)" \
+	N64_STANDALONE_DIR="$(N64_STANDALONE_DIR)" \
 	RETROARCH_BUILDS_DIR="$(RETROARCH_BUILDS_DIR)" \
 	CORES_SPRUCE_DIR="$(CORES_SPRUCE_DIR)" \
 	LAUNCHER_SWITCHER_DIR="$(LAUNCHER_SWITCHER_DIR)" \
@@ -327,6 +337,7 @@ release-sd-zip:
 	MLP1_CORES_DIR="$(MLP1_CORES_DIR)" \
 	MLP1_PPSSPP_PACKAGE="$(MLP1_PPSSPP_PACKAGE)" \
 	MLP1_DRASTIC_PACKAGE="$(MLP1_DRASTIC_PACKAGE)" \
+	MLP1_MUPEN64PLUS_PACKAGE="$(MLP1_MUPEN64PLUS_PACKAGE)" \
 	MLP1_RETROARCH_PATCH_SET="$(MLP1_RETROARCH_PATCH_SET)" \
 	"$(LEAF_ROOT)/scripts/make-sd-release-zip.sh" install
 

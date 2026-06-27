@@ -9,7 +9,7 @@ WORKSPACE_DIR="${LEAF_WORKSPACE_DIR:-$(cd "$LEAF_ROOT/.." && pwd)}"
 
 DEVICE="${DEVICE:-mlp1}"
 STAGE_APPS="${STAGE_APPS-ssh-server Thing-File CentralScrutinizer Fugazi joes-calibrage retroarch-builds}"
-STAGE_EMULATORS="${STAGE_EMULATORS-ppsspp drastic}"
+STAGE_EMULATORS="${STAGE_EMULATORS-ppsspp drastic mupen64plus}"
 PUBLIC_ROOT_DIRS="${PUBLIC_ROOT_DIRS-Roms Images Apps BIOS Saves States Cheats}"
 RELEASE_BUILD="${RELEASE_BUILD:-$LEAF_ROOT/build/release}"
 STAGE_BUILD="${STAGE_BUILD:-$LEAF_ROOT/build/stage/mlp1}"
@@ -19,6 +19,7 @@ CATASTROPHE_DIR="${CATASTROPHE_DIR:-$WORKSPACE_DIR/Catastrophe}"
 JAWAKA_DIR="${JAWAKA_DIR:-$WORKSPACE_DIR/Jawaka}"
 PPSSPP_SPRUCE_DIR="${PPSSPP_SPRUCE_DIR:-$WORKSPACE_DIR/PPSSPP-spruce}"
 STEWARD_NDS_DIR="${STEWARD_NDS_DIR:-$WORKSPACE_DIR/steward-fu-nds}"
+N64_STANDALONE_DIR="${N64_STANDALONE_DIR:-$WORKSPACE_DIR/N64-standalone}"
 RETROARCH_BUILDS_DIR="${RETROARCH_BUILDS_DIR:-$WORKSPACE_DIR/retroarch-builds}"
 CORES_SPRUCE_DIR="${CORES_SPRUCE_DIR:-$WORKSPACE_DIR/Cores-spruce}"
 LAUNCHER_SWITCHER_DIR="${LAUNCHER_SWITCHER_DIR:-$WORKSPACE_DIR/miniloong-launcher-switcher}"
@@ -27,6 +28,7 @@ MLP1_RETROARCH_BIN="${MLP1_RETROARCH_BIN:-$RETROARCH_BUILDS_DIR/output/mlp1/bin/
 MLP1_CORES_DIR="${MLP1_CORES_DIR:-$CORES_SPRUCE_DIR/output/mlp1/cores}"
 MLP1_PPSSPP_PACKAGE="${MLP1_PPSSPP_PACKAGE:-$PPSSPP_SPRUCE_DIR/output/mlp1/ppsspp}"
 MLP1_DRASTIC_PACKAGE="${MLP1_DRASTIC_PACKAGE:-$LEAF_ROOT/build/drastic/mlp1/drastic}"
+MLP1_MUPEN64PLUS_PACKAGE="${MLP1_MUPEN64PLUS_PACKAGE:-$N64_STANDALONE_DIR/output/mlp1/mupen64plus}"
 MLP1_RETROARCH_PATCH_SET="${MLP1_RETROARCH_PATCH_SET:-portrait-rotation,command-menu,jawaka-load-content}"
 
 usage() {
@@ -39,7 +41,7 @@ Environment:
   LEAF_WORKSPACE_DIR=<workspace root>
   TOOLCHAIN_IMAGE=<MLP1 cross-compile Docker image>
   STAGE_APPS="ssh-server Thing-File CentralScrutinizer Fugazi joes-calibrage retroarch-builds"
-  STAGE_EMULATORS="ppsspp drastic"
+  STAGE_EMULATORS="ppsspp drastic mupen64plus"
 EOF
 }
 
@@ -398,6 +400,12 @@ package_emulator() {
                 "$LEAF_ROOT/scripts/package-drastic-mlp1.sh"
             package_dir="$MLP1_DRASTIC_PACKAGE"
             remote_name="drastic"
+            ;;
+        mupen64plus)
+            [ -d "$N64_STANDALONE_DIR" ] || die "missing N64 standalone repo: $N64_STANDALONE_DIR"
+            make -C "$N64_STANDALONE_DIR" package-mlp1 TOOLCHAIN_IMAGE="$TOOLCHAIN_IMAGE"
+            package_dir="$MLP1_MUPEN64PLUS_PACKAGE"
+            remote_name="mupen64plus"
             ;;
         *)
             die "unsupported release emulator policy: $emulator for DEVICE=$DEVICE"

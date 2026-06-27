@@ -20,6 +20,7 @@ JAWAKA_DIR             ?= $(WORKSPACE_DIR)/Jawaka
 CENTRAL_SCRUTINIZER_DIR ?= $(WORKSPACE_DIR)/CentralScrutinizer
 PPSSPP_SPRUCE_DIR     ?= $(WORKSPACE_DIR)/PPSSPP-spruce
 STEWARD_NDS_DIR        ?= $(WORKSPACE_DIR)/steward-fu-nds
+N64_STANDALONE_DIR     ?= $(WORKSPACE_DIR)/N64-standalone
 RETROARCH_BUILDS_DIR   ?= $(WORKSPACE_DIR)/retroarch-builds
 CORES_SPRUCE_DIR       ?= $(WORKSPACE_DIR)/Cores-spruce
 TOOLCHAIN_DIR          ?= $(WORKSPACE_DIR)/mlp1-toolchain
