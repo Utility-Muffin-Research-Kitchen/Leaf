@@ -30,7 +30,7 @@ LAUNCHER_SWITCHER_DIR  ?= $(WORKSPACE_DIR)/miniloong-launcher-switcher
 TOOLCHAIN_IMAGE ?= ghcr.io/utility-muffin-research-kitchen/mlp1-toolchain:local
 
 # Public sibling repos required for contributor build/stage workflows.
-REQUIRED_REPOS := Catastrophe Jawaka Thing-File ssh-server CentralScrutinizer Fugazi joes-calibrage PPSSPP-spruce steward-fu-nds \
+REQUIRED_REPOS := Catastrophe Jawaka Thing-File ssh-server CentralScrutinizer Fugazi joes-calibrage PPSSPP-spruce steward-fu-nds N64-standalone \
                   retroarch-builds Cores-spruce mlp1-toolchain miniloong-launcher-switcher \
                   miniloong-adb-keeper
 

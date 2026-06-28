@@ -19,6 +19,7 @@ url_for() {
         joes-calibrage)              echo "https://github.com/Utility-Muffin-Research-Kitchen/joes-calibrage.git" ;;
         PPSSPP-spruce)               echo "https://github.com/Utility-Muffin-Research-Kitchen/PPSSPP-spruce.git" ;;
         steward-fu-nds)              echo "https://github.com/Helaas/nds.git" ;;
+        N64-standalone)              echo "https://github.com/Utility-Muffin-Research-Kitchen/leaf-n64-standalone.git" ;;
         retroarch-builds)            echo "https://github.com/Utility-Muffin-Research-Kitchen/retroarch-builds.git" ;;
         Cores-spruce)                echo "https://github.com/Utility-Muffin-Research-Kitchen/Cores-spruce.git" ;;
         mlp1-toolchain)              echo "https://github.com/Utility-Muffin-Research-Kitchen/mlp1-toolchain.git" ;;

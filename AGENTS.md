@@ -25,6 +25,7 @@ UMRK/
   Jawaka/
   Thing-File/
   ssh-server/
+  N64-standalone/
   retroarch-builds/
   Cores-spruce/
   mlp1-toolchain/

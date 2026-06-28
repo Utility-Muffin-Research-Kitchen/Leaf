@@ -418,6 +418,42 @@ package_emulator() {
     cp -R "$package_dir" "$RELEASE_ROOT/platforms/mlp1/emulators/$remote_name"
 }
 
+validate_standalone_n64_release() {
+    local platform_dir="$RELEASE_ROOT/platforms/mlp1"
+
+    python3 - "$platform_dir" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+platform_dir = Path(sys.argv[1])
+systems_path = platform_dir / "defaults" / "systems.json"
+cores_path = platform_dir / "defaults" / "cores.json"
+
+systems_data = json.loads(systems_path.read_text(encoding="utf-8"))
+cores_data = json.loads(cores_path.read_text(encoding="utf-8"))
+systems = systems_data.get("systems", []) if isinstance(systems_data, dict) else systems_data
+cores = cores_data.get("cores", []) if isinstance(cores_data, dict) else cores_data
+
+n64 = next((s for s in systems if s.get("id") == "N64"), None)
+if not n64 or n64.get("default_core") != "mupen64plus_standalone":
+    sys.exit(0)
+
+core = next((c for c in cores if c.get("id") == "mupen64plus_standalone"), None)
+if not core:
+    raise SystemExit("error: N64 defaults to mupen64plus_standalone but cores.json has no matching core")
+if core.get("type") != "path":
+    raise SystemExit("error: mupen64plus_standalone must be a path core")
+
+rel = core.get("path") or ""
+target = platform_dir / rel
+if not rel or not target.is_file():
+    raise SystemExit(f"error: N64 standalone default points at missing release payload: {rel}")
+
+print(f"N64 standalone release gate: {rel}")
+PY
+}
+
 write_install_readme() {
     cat > "$INSTALL_STAGE/LEAF-INSTALL.txt" <<EOF
 Leaf MLP1 SD installer / updater
@@ -530,6 +566,7 @@ build_install_zip() {
     for emulator in $STAGE_EMULATORS; do
         package_emulator "$emulator"
     done
+    validate_standalone_n64_release
 
     cp -R "$LEAF_ROOT/stage/licenses" "$RELEASE_ROOT/licenses"
     validate_packaged_cores "$RELEASE_ROOT"

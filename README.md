@@ -45,6 +45,7 @@ By default Leaf treats its parent directory as the workspace root:
   Fugazi/
   PPSSPP-spruce/
   steward-fu-nds/
+  N64-standalone/
   retroarch-builds/
   Cores-spruce/
   mlp1-toolchain/
@@ -76,6 +77,7 @@ make stage-jawaka DEVICE=mlp1               # launcher payload only
 make stage-retroarch DEVICE=mlp1            # RetroArch binary + cores + info
 make stage-emulator EMULATOR=drastic DEVICE=mlp1
 make stage-emulator EMULATOR=mupen64plus DEVICE=mlp1
+make stage-emulators DEVICE=mlp1            # PPSSPP + DraStic + standalone N64
 make stage-app APP=ssh-server DEVICE=mlp1   # stage one app
 make stage-app APP=Thing-File DEVICE=mlp1
 make stage-app APP=CentralScrutinizer DEVICE=mlp1
@@ -105,7 +107,7 @@ make release-zips DEVICE=mlp1
 ```
 
 The release command builds missing MLP1 components, assembles the launcher and
-platform payload, packages standalone emulators and first-party apps, and asks
+platform payload, packages standalone emulators including N64 and first-party apps, and asks
 `miniloong-launcher-switcher` to generate the stock `loong_upgrade` install and
 recovery payloads.
 
