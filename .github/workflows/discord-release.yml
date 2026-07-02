@@ -1,0 +1,94 @@
+# Discord release announcer
+#
+# Posts every published GitHub release to the #releases channel and pings @Release.
+# A plain GitHub->Discord webhook CAN'T mention a role; this Action can, via allowed_mentions.
+#
+# INSTALL
+#   1. Copy this file to  .github/workflows/discord-release.yml  in the repo that publishes releases.
+#   2. Get the webhook URL: #releases -> Edit Channel -> Integrations -> Webhooks -> New Webhook -> Copy URL.
+#        Do NOT append /github here (that's only for the raw GitHub integration; this uses the plain URL).
+#   3. Get the role id: enable Developer Mode (User Settings -> Advanced), then Server Settings -> Roles ->
+#        right-click @Release -> Copy Role ID.
+#   4. Repo -> Settings -> Secrets and variables -> Actions:
+#        - Secret   DISCORD_RELEASE_WEBHOOK  = the webhook URL
+#        - Variable DISCORD_RELEASE_ROLE_ID  = the @Release role id
+#   5. Publish a release (or re-publish a draft) to fire it. Pre-releases are skipped by default.
+
+name: Discord release announcer
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  announce:
+    runs-on: ubuntu-latest
+    # Skip drafts/pre-releases; drop this line if you want pre-releases announced too.
+    if: github.event.release.prerelease == false
+    steps:
+      - name: Post release to Discord
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_RELEASE_WEBHOOK }}
+          ROLE_ID: ${{ vars.DISCORD_RELEASE_ROLE_ID }}
+          TAG: ${{ github.event.release.tag_name }}
+          NAME: ${{ github.event.release.name }}
+          URL: ${{ github.event.release.html_url }}
+          BODY: ${{ github.event.release.body }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${WEBHOOK:-}" ]; then
+            echo "DISCORD_RELEASE_WEBHOOK secret is not set" >&2
+            exit 1
+          fi
+
+          # Fall back to the tag if the release has no title.
+          title="${NAME:-$TAG}"
+
+          # Discord embed descriptions cap at 4096 chars; trim with a notice if longer.
+          body="${BODY:-_No release notes._}"
+          if [ "${#body}" -gt 3900 ]; then
+            body="${body:0:3900}"$'\n\n…notes truncated — see the full release on GitHub.'
+          fi
+
+          # Ping the role only if a role id was provided.
+          if [ -n "${ROLE_ID:-}" ]; then
+            content="<@&${ROLE_ID}> New Leaf release: **${TAG}** 🍃"
+            allowed=$(jq -nc --arg r "$ROLE_ID" '{parse: [], roles: [$r]}')
+          else
+            content="New Leaf release: **${TAG}** 🍃"
+            allowed=$(jq -nc '{parse: []}')
+          fi
+
+          # Build the payload with jq so release notes are escaped safely.
+          payload=$(jq -nc \
+            --arg content "$content" \
+            --arg title "$title" \
+            --arg url "$URL" \
+            --arg desc "$body" \
+            --argjson allowed "$allowed" \
+            '{
+              content: $content,
+              allowed_mentions: $allowed,
+              embeds: [{
+                title: $title,
+                url: $url,
+                description: $desc,
+                color: 5763719
+              }]
+            }')
+
+          # Retry a few times so a transient Discord/network blip does not lose the announcement.
+          for attempt in 1 2 3; do
+            code=$(curl -sS -o /tmp/discord_resp -w '%{http_code}' \
+              -H 'Content-Type: application/json' \
+              -X POST "$WEBHOOK" -d "$payload") && true
+            if [ "$code" = "204" ] || [ "$code" = "200" ]; then
+              echo "Posted to Discord (HTTP $code)."
+              exit 0
+            fi
+            echo "Attempt $attempt failed (HTTP $code): $(cat /tmp/discord_resp)" >&2
+            sleep 5
+          done
+          echo "Failed to post to Discord after 3 attempts." >&2
+          exit 1
