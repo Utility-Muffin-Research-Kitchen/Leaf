@@ -25,7 +25,9 @@ CORES_SPRUCE_DIR="${CORES_SPRUCE_DIR:-$WORKSPACE_DIR/Cores-spruce}"
 LAUNCHER_SWITCHER_DIR="${LAUNCHER_SWITCHER_DIR:-$WORKSPACE_DIR/miniloong-launcher-switcher}"
 TOOLCHAIN_IMAGE="${TOOLCHAIN_IMAGE:-ghcr.io/utility-muffin-research-kitchen/mlp1-toolchain:local}"
 MLP1_RETROARCH_BIN="${MLP1_RETROARCH_BIN:-$RETROARCH_BUILDS_DIR/output/mlp1/bin/retroarch}"
+MLP1_RETROARCH_MANIFEST="${MLP1_RETROARCH_MANIFEST:-$RETROARCH_BUILDS_DIR/output/mlp1/build-manifest.json}"
 MLP1_CORES_DIR="${MLP1_CORES_DIR:-$CORES_SPRUCE_DIR/output/mlp1/cores}"
+MLP1_CORES_REPORT="${MLP1_CORES_REPORT:-$CORES_SPRUCE_DIR/output/mlp1/build-report.json}"
 MLP1_PPSSPP_PACKAGE="${MLP1_PPSSPP_PACKAGE:-$PPSSPP_SPRUCE_DIR/output/mlp1/ppsspp}"
 MLP1_DRASTIC_PACKAGE="${MLP1_DRASTIC_PACKAGE:-$LEAF_ROOT/build/drastic/mlp1/drastic}"
 MLP1_MUPEN64PLUS_PACKAGE="${MLP1_MUPEN64PLUS_PACKAGE:-$N64_STANDALONE_DIR/output/mlp1/mupen64plus}"
@@ -347,6 +349,18 @@ print("core gate: %d packaged entries verified (binary + license present)"
 EOF
 }
 
+audit_mlp1_build_tuning() {
+    local release_root="$1"
+    local audit_script="$WORKSPACE_DIR/umrk-workspace/scripts/audit-mlp1-build-flags.py"
+
+    if [ ! -f "$audit_script" ]; then
+        echo "warning: MLP1 build tuning audit script not found: $audit_script"
+        return 0
+    fi
+
+    python3 "$audit_script" "$release_root" || die "MLP1 build tuning audit failed"
+}
+
 build_missing_platform_bits() {
     if [ ! -f "$MLP1_RETROARCH_BIN" ]; then
         echo "MLP1 RetroArch missing; building in $RETROARCH_BUILDS_DIR"
@@ -355,7 +369,7 @@ build_missing_platform_bits() {
 
     if ! ( [ -d "$MLP1_CORES_DIR" ] && find "$MLP1_CORES_DIR" -maxdepth 1 -type f -name '*_libretro.so' | grep -q . ); then
         echo "MLP1 cores missing; building in $CORES_SPRUCE_DIR"
-        (cd "$CORES_SPRUCE_DIR" && ./build-mlp1.sh)
+        (cd "$CORES_SPRUCE_DIR" && ./build-mlp1.sh --stock-parity)
     fi
 }
 
@@ -544,7 +558,13 @@ build_install_zip() {
     echo "Building Leaf MLP1 install ZIP release=$RELEASE_ID"
     build_missing_platform_bits
 
-    make -C "$LEAF_ROOT" DEVICE=mlp1 assemble-jawaka
+    make -C "$LEAF_ROOT" \
+        DEVICE=mlp1 \
+        MLP1_RETROARCH_BIN="$MLP1_RETROARCH_BIN" \
+        MLP1_RETROARCH_MANIFEST="$MLP1_RETROARCH_MANIFEST" \
+        MLP1_CORES_DIR="$MLP1_CORES_DIR" \
+        MLP1_CORES_REPORT="$MLP1_CORES_REPORT" \
+        assemble-jawaka
     [ -d "$PAYLOAD_ROOT/.system/leaf/platforms/mlp1/launcher" ] || die "missing assembled launcher payload"
     [ -d "$PAYLOAD_ROOT/.system/leaf/platforms/mlp1" ] || die "missing assembled MLP1 platform payload"
 
@@ -575,6 +595,7 @@ build_install_zip() {
         package_app "$app"
     done
     sync_platform_managed_apps_manifest "$RELEASE_ROOT/platforms/mlp1/manifest.json" "$MANAGED_APPS_FILE"
+    audit_mlp1_build_tuning "$RELEASE_ROOT"
 
     python3 "$LAUNCHER_SWITCHER_DIR/make_launcher_switcher_sd.py" \
         --force \

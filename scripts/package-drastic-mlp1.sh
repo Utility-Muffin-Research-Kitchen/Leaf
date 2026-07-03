@@ -18,6 +18,7 @@ TOOLCHAIN_IMAGE="${TOOLCHAIN_IMAGE:-ghcr.io/utility-muffin-research-kitchen/mlp1
 OUTPUT_DIR="${OUTPUT_DIR:-$LEAF_ROOT/build/drastic/mlp1/drastic}"
 # Set DRASTIC_BUILD=0 to package an already-built steward tree (skip docker).
 DRASTIC_BUILD="${DRASTIC_BUILD:-1}"
+DRASTIC_MLP1_BUILD_PROFILE="${DRASTIC_MLP1_BUILD_PROFILE:-${MLP1_BUILD_PROFILE:-perf}}"
 
 # Steward libs that must come from the MLP1 build (not the device system libs).
 STEWARD_LIBS=(libSDL2-2.0.so.0 libcommon.so libdtr.so libasound.so.2)
@@ -40,6 +41,7 @@ build_steward() {
     # configure.ac bakes in the /src path, so mount the repo there.
     docker run --rm \
         -v "$STEWARD_NDS_DIR":/src -w /src \
+        -e MLP1_BUILD_PROFILE="$DRASTIC_MLP1_BUILD_PROFILE" \
         "$TOOLCHAIN_IMAGE" \
         bash -lc 'export CROSS="$CROSS_COMPILE"; make -f Makefile.mlp1'
 }
@@ -140,12 +142,21 @@ write_manifest() {
   "kind": "standalone-emulator",
   "source_repo": "steward-fu/nds",
   "source_ref": "$rel_ver",
+  "target_soc": "rk3566",
+  "target_cpu": "cortex-a55",
+  "build_profile": "$DRASTIC_MLP1_BUILD_PROFILE",
   "binary": "bin/drastic64",
   "entrypoint": "launch.sh",
   "menu": "steward-custom",
   "sdl_video_driver": "NDS",
   "bundled_libs": "libSDL2-2.0.so.0 libcommon.so libdtr.so libasound.so.2",
-  "package_note": "Steward-fu/nds custom-menu port cross-built for MLP1 (Wayland/xdg-shell, queue_copy gameplay-throttle fix). Tapping hardware Menu opens DraStic's native menu; Menu+Start opens the steward menu. Menu+A toggles the default layout with the transparent N1 overlay layout, and Menu+Left/Right cycles layouts."
+  "package_note": "Steward-fu/nds custom-menu port cross-built for MLP1 (Wayland/xdg-shell, queue_copy gameplay-throttle fix). Tapping hardware Menu opens DraStic's native menu; Menu+Start opens the steward menu. Menu+A toggles the default layout with the transparent N1 overlay layout, and Menu+Left/Right cycles layouts.",
+  "exceptions": [
+    {
+      "artifact": "bin/drastic64",
+      "reason": "prebuilt upstream aarch64 binary; steward support libraries are rebuilt for MLP1"
+    }
+  ]
 }
 EOF
 }

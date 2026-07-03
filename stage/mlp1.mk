@@ -11,7 +11,9 @@ JAWAKA_BUILD_DIR ?= $(JAWAKA_DIR)/build/mlp1
 DEVICE_OVERLAY   ?= $(LAUNCHER_SWITCHER_DIR)/device/mlp1
 CATASTROPHE_ASSETS_DIR ?= $(CATASTROPHE_DIR)/res/assets
 MLP1_RETROARCH_BIN ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/bin/retroarch
+MLP1_RETROARCH_MANIFEST ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/build-manifest.json
 MLP1_CORES_DIR     ?= $(CORES_SPRUCE_DIR)/output/mlp1/cores
+MLP1_CORES_REPORT  ?= $(CORES_SPRUCE_DIR)/output/mlp1/build-report.json
 MLP1_INFO_DIR      ?= $(CORES_SPRUCE_DIR)/output/mlp1/info
 MLP1_PPSSPP_PACKAGE ?= $(PPSSPP_SPRUCE_DIR)/output/mlp1/ppsspp
 MLP1_DRASTIC_PACKAGE ?= $(LEAF_ROOT)/build/drastic/mlp1/drastic
@@ -57,6 +59,7 @@ assemble-jawaka: jawaka-build
 	@cp -f "$(JAWAKA_BUILD_DIR)/bin/jawaka-update-runner" "$(PAYLOAD_DIR)/bin/jawaka-update-runner"
 	@cp -f "$(JAWAKA_BUILD_DIR)/bin/jawaka-ledd" "$(PAYLOAD_DIR)/bin/jawaka-ledd"
 	@chmod 755 "$(PAYLOAD_DIR)/bin/"*
+	@if [ -f "$(JAWAKA_BUILD_DIR)/build-manifest.json" ]; then cp -f "$(JAWAKA_BUILD_DIR)/build-manifest.json" "$(PAYLOAD_DIR)/build-manifest.json"; fi
 	@docker run --rm -v "$(PAYLOAD_DIR)/lib":/out "$(TOOLCHAIN_IMAGE)" bash -lc 'set -euo pipefail; for lib in libcurl.so.4 libssl.so.3 libcrypto.so.3 libz.so.1 libatomic.so.1; do src=""; for dir in "$$SYSROOT/usr/lib" "$$SYSROOT/lib"; do if [ -e "$$dir/$$lib" ]; then src="$$dir/$$lib"; break; fi; done; test -n "$$src" || { echo "missing SDK runtime library: $$lib" >&2; exit 1; }; cp -Lf "$$src" "/out/$$lib"; done'
 	@chmod 755 "$(PAYLOAD_DIR)/lib/"*.so*
 	@cp -f "$(UMRK_ENV_SCRIPT)" "$(PAYLOAD_DIR)/env.sh"
@@ -80,6 +83,7 @@ assemble-jawaka: jawaka-build
 	@if [ -f "$(MLP1_RETROARCH_BIN)" ]; then \
 		mkdir -p "$(PLATFORM_PAYLOAD_DIR)/bin"; \
 		cp -f "$(MLP1_RETROARCH_BIN)" "$(PLATFORM_PAYLOAD_DIR)/bin/retroarch"; \
+		if [ -f "$(MLP1_RETROARCH_MANIFEST)" ]; then cp -f "$(MLP1_RETROARCH_MANIFEST)" "$(PLATFORM_PAYLOAD_DIR)/bin/retroarch.build-manifest.json"; fi; \
 		chmod 755 "$(PLATFORM_PAYLOAD_DIR)/bin/retroarch"; \
 	else \
 		echo "warning: MLP1 RetroArch not found at $(MLP1_RETROARCH_BIN); launches will fail until built (make stage-retroarch)."; \
@@ -87,6 +91,7 @@ assemble-jawaka: jawaka-build
 	@if [ -d "$(MLP1_CORES_DIR)" ]; then \
 		mkdir -p "$(PLATFORM_PAYLOAD_DIR)/cores"; \
 		find "$(MLP1_CORES_DIR)" -maxdepth 1 -type f -name '*_libretro.so' -exec cp -f {} "$(PLATFORM_PAYLOAD_DIR)/cores/" \;; \
+		if [ -f "$(MLP1_CORES_REPORT)" ]; then cp -f "$(MLP1_CORES_REPORT)" "$(PLATFORM_PAYLOAD_DIR)/cores/build-report.json"; fi; \
 		chmod 755 "$(PLATFORM_PAYLOAD_DIR)/cores/"*_libretro.so 2>/dev/null || true; \
 	else \
 		echo "warning: MLP1 cores not found at $(MLP1_CORES_DIR); launches will fail until built (make stage-retroarch)."; \
@@ -113,7 +118,7 @@ stage-retroarch:
 	fi
 	@if ! ( [ -d "$(MLP1_CORES_DIR)" ] && find "$(MLP1_CORES_DIR)" -maxdepth 1 -type f -name '*_libretro.so' | grep -q . ); then \
 		echo "MLP1 cores missing; building in $(CORES_SPRUCE_DIR)"; \
-		cd "$(CORES_SPRUCE_DIR)" && ./build-mlp1.sh; \
+		cd "$(CORES_SPRUCE_DIR)" && ./build-mlp1.sh --stock-parity; \
 	fi
 	@test -f "$(MLP1_RETROARCH_BIN)" || { echo "missing RetroArch binary: $(MLP1_RETROARCH_BIN)" >&2; exit 1; }
 	@test -d "$(MLP1_CORES_DIR)" || { echo "missing cores dir: $(MLP1_CORES_DIR)" >&2; exit 1; }
@@ -136,7 +141,13 @@ stage-retroarch:
 	if [ -z "$$remote_platform" ]; then remote_platform="$$remote_system/platforms/mlp1"; fi; \
 	"$${ADB[@]}" shell "mkdir -p '$$remote_platform' && rm -rf '$$remote_platform/bin' '$$remote_platform/cores' '$$remote_platform/info' && mkdir -p '$$remote_platform/bin' '$$remote_platform/cores' '$$remote_platform/info'"; \
 	"$${ADB[@]}" push "$(MLP1_RETROARCH_BIN)" "$$remote_platform/bin/retroarch" >/dev/null; \
+	if [ -f "$(MLP1_RETROARCH_MANIFEST)" ]; then \
+		"$${ADB[@]}" push "$(MLP1_RETROARCH_MANIFEST)" "$$remote_platform/bin/retroarch.build-manifest.json" >/dev/null; \
+	fi; \
 	"$${ADB[@]}" push "$(MLP1_CORES_DIR)/." "$$remote_platform/cores/" >/dev/null; \
+	if [ -f "$(MLP1_CORES_REPORT)" ]; then \
+		"$${ADB[@]}" push "$(MLP1_CORES_REPORT)" "$$remote_platform/cores/build-report.json" >/dev/null; \
+	fi; \
 	if [ -d "$(MLP1_INFO_DIR)" ]; then \
 		"$${ADB[@]}" push "$(MLP1_INFO_DIR)/." "$$remote_platform/info/" >/dev/null; \
 	fi; \
@@ -310,7 +321,9 @@ release-zips:
 	LAUNCHER_SWITCHER_DIR="$(LAUNCHER_SWITCHER_DIR)" \
 	TOOLCHAIN_IMAGE="$(TOOLCHAIN_IMAGE)" \
 	MLP1_RETROARCH_BIN="$(MLP1_RETROARCH_BIN)" \
+	MLP1_RETROARCH_MANIFEST="$(MLP1_RETROARCH_MANIFEST)" \
 	MLP1_CORES_DIR="$(MLP1_CORES_DIR)" \
+	MLP1_CORES_REPORT="$(MLP1_CORES_REPORT)" \
 	MLP1_PPSSPP_PACKAGE="$(MLP1_PPSSPP_PACKAGE)" \
 	MLP1_DRASTIC_PACKAGE="$(MLP1_DRASTIC_PACKAGE)" \
 	MLP1_MUPEN64PLUS_PACKAGE="$(MLP1_MUPEN64PLUS_PACKAGE)" \
@@ -334,7 +347,9 @@ release-sd-zip:
 	LAUNCHER_SWITCHER_DIR="$(LAUNCHER_SWITCHER_DIR)" \
 	TOOLCHAIN_IMAGE="$(TOOLCHAIN_IMAGE)" \
 	MLP1_RETROARCH_BIN="$(MLP1_RETROARCH_BIN)" \
+	MLP1_RETROARCH_MANIFEST="$(MLP1_RETROARCH_MANIFEST)" \
 	MLP1_CORES_DIR="$(MLP1_CORES_DIR)" \
+	MLP1_CORES_REPORT="$(MLP1_CORES_REPORT)" \
 	MLP1_PPSSPP_PACKAGE="$(MLP1_PPSSPP_PACKAGE)" \
 	MLP1_DRASTIC_PACKAGE="$(MLP1_DRASTIC_PACKAGE)" \
 	MLP1_MUPEN64PLUS_PACKAGE="$(MLP1_MUPEN64PLUS_PACKAGE)" \
