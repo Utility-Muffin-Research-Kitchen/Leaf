@@ -349,6 +349,101 @@ print("core gate: %d packaged entries verified (binary + license present)"
 EOF
 }
 
+validate_portmaster_integration() {
+    local release_root="$1"
+    python3 - "$release_root" <<'EOF' || die "PortMaster integration validation failed"
+import json
+import os
+import pathlib
+import sys
+
+release_root = pathlib.Path(sys.argv[1])
+platform = release_root / "platforms" / "mlp1"
+
+cores = json.load(open(platform / "defaults" / "cores.json", encoding="utf-8"))["cores"]
+systems = json.load(open(platform / "defaults" / "systems.json", encoding="utf-8"))["systems"]
+
+ports_rows = [row for row in cores if row.get("id") == "ports"]
+if len(ports_rows) != 1:
+    raise SystemExit(f"error: expected exactly one ports core, found {len(ports_rows)}")
+expected_core = {
+    "id": "ports",
+    "display_name": "Ports",
+    "type": "path",
+    "libretro_name": None,
+    "file_name": None,
+    "config_folder": None,
+    "info_name": None,
+    "path": "emulators/ports/launch.sh",
+    "supports_menu": False,
+    "supports_savestate": False,
+    "supports_disk_control": False,
+    "needs_swap": False,
+    "platforms": ["mlp1"],
+    "status": "packaged",
+}
+if ports_rows[0] != expected_core:
+    raise SystemExit(f"error: ports core does not match the OTA contract: {ports_rows[0]!r}")
+
+system_rows = [row for row in systems if row.get("id") == "PORTS"]
+if len(system_rows) != 1:
+    raise SystemExit(f"error: expected exactly one PORTS system, found {len(system_rows)}")
+expected_system = {
+    "id": "PORTS",
+    "name": "Ports",
+    "patterns": ["PORTS", "ports"],
+    "extensions": ["sh"],
+    "archive_extensions": [],
+    "archive_inner_extensions": [],
+    "archive_mode": "pass_through",
+    "file_names": [],
+    "ignore_file_names": [],
+    "playlist_extensions": [],
+    "m3u_generation": "none",
+    "default_core": "ports",
+    "alternate_cores": [],
+    "rom_root": "Roms/PORTS",
+    "image_root": "Images/PORTS",
+    "bios_notes": [],
+}
+if system_rows[0] != expected_system:
+    raise SystemExit(f"error: PORTS system does not match the OTA contract: {system_rows[0]!r}")
+
+launcher = platform / "emulators" / "ports" / "launch.sh"
+icon = platform / "launcher" / "res" / "system_icons" / "PORTS.png"
+license_path = release_root / "licenses" / "cores" / "ports.txt"
+if not launcher.is_file() or not os.access(launcher, os.X_OK):
+    raise SystemExit(f"error: packaged Ports launcher is missing or not executable: {launcher}")
+if not icon.is_file() or icon.stat().st_size == 0:
+    raise SystemExit(f"error: packaged Ports icon is missing or empty: {icon}")
+if not license_path.is_file() or license_path.stat().st_size == 0:
+    raise SystemExit(f"error: packaged Ports licence is missing or empty: {license_path}")
+
+managed_file = release_root / "managed-apps.txt"
+managed_apps = []
+if managed_file.is_file():
+    managed_apps = [line.strip() for line in managed_file.read_text(encoding="utf-8").splitlines()
+                    if line.strip() and not line.lstrip().startswith("#")]
+if any(pathlib.PurePosixPath(item).name.casefold() == "portmaster.pak" for item in managed_apps):
+    raise SystemExit("error: PortMaster.pak must remain Pak Rat-owned, not release-managed")
+
+manifest = json.load(open(platform / "manifest.json", encoding="utf-8"))
+manifest_apps = manifest.get("managed_apps", [])
+if any(pathlib.PurePosixPath(item).name.casefold() == "portmaster.pak" for item in manifest_apps):
+    raise SystemExit("error: platform manifest claims release ownership of PortMaster.pak")
+
+apps_root = release_root / "Apps"
+if apps_root.is_dir():
+    staged_portmaster = [path for path in apps_root.rglob("*")
+                         if path.name.casefold() == "portmaster.pak"]
+    if staged_portmaster:
+        raise SystemExit("error: release stages Pak Rat-owned PortMaster.pak: "
+                         + " ".join(str(path) for path in staged_portmaster))
+
+print("PortMaster OTA gate: packaged integration verified; pak remains Pak Rat-owned")
+EOF
+}
+
 audit_mlp1_build_tuning() {
     local release_root="$1"
     local audit_script="$WORKSPACE_DIR/umrk-workspace/scripts/audit-mlp1-build-flags.py"
@@ -595,6 +690,7 @@ build_install_zip() {
         package_app "$app"
     done
     sync_platform_managed_apps_manifest "$RELEASE_ROOT/platforms/mlp1/manifest.json" "$MANAGED_APPS_FILE"
+    validate_portmaster_integration "$RELEASE_ROOT"
     audit_mlp1_build_tuning "$RELEASE_ROOT"
 
     python3 "$LAUNCHER_SWITCHER_DIR/make_launcher_switcher_sd.py" \
