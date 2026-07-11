@@ -30,6 +30,14 @@ leaf_app_policy() {
     supported_devices=
 
     case "$app" in
+        Leaf-Itchio-Pak)
+            package_target="package-platform"
+            package_platform="mlp1"
+            package_dir="$workspace_dir/Leaf-Itchio-Pak/build/mlp1/package/Itch-io.pak"
+            package_name="Itch-io.pak"
+            destination_platform="mlp1"
+            supported_devices="mlp1"
+            ;;
         ssh-server)
             package_target="package-platform"
             package_platform="mlp1"
