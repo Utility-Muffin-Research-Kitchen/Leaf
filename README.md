@@ -83,6 +83,7 @@ make stage-app APP=Thing-File DEVICE=mlp1
 make stage-app APP=CentralScrutinizer DEVICE=mlp1
 make stage-app APP=Fugazi DEVICE=mlp1
 make stage-app APP=Leaf-Itchio-Pak DEVICE=mlp1  # optional developer/acceptance stage only
+make stage-app APP=DiscoBoy DEVICE=mlp1         # optional developer/acceptance stage only
 
 make release-zips DEVICE=mlp1               # build end-user install + recovery ZIPs
 make release-sd-zip DEVICE=mlp1             # build end-user install ZIP only

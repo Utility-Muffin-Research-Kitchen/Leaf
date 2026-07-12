@@ -38,6 +38,14 @@ leaf_app_policy() {
             destination_platform="mlp1"
             supported_devices="mlp1"
             ;;
+        DiscoBoy)
+            package_target="package-platform"
+            package_platform="mlp1"
+            package_dir="$workspace_dir/DiscoBoy/build/mlp1/package/DiscoBoy.pak"
+            package_name="DiscoBoy.pak"
+            destination_platform="mlp1"
+            supported_devices="mlp1"
+            ;;
         ssh-server)
             package_target="package-platform"
             package_platform="mlp1"

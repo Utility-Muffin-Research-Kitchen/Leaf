@@ -41,6 +41,7 @@ help:
 	@echo "  make stage-emulators DEVICE=mlp1          stage standalone emulators"
 	@echo "  make stage-app APP=CentralScrutinizer DEVICE=mlp1 stage a single app repo"
 	@echo "  make stage-app APP=Leaf-Itchio-Pak DEVICE=mlp1 explicitly stage the optional Itch.io app"
+	@echo "  make stage-app APP=DiscoBoy DEVICE=mlp1 explicitly stage the optional Disco Boy app"
 	@echo "  make release-zips DEVICE=mlp1             build end-user install + recovery ZIPs"
 	@echo "  make release-sd-zip DEVICE=mlp1           build end-user install ZIP"
 	@echo "  make release-recovery-zip DEVICE=mlp1     build end-user recovery ZIP"
