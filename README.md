@@ -84,11 +84,18 @@ make stage-app APP=CentralScrutinizer DEVICE=mlp1
 make stage-app APP=Fugazi DEVICE=mlp1
 make stage-app APP=Leaf-Itchio-Pak DEVICE=mlp1  # optional developer/acceptance stage only
 make stage-app APP=DiscoBoy DEVICE=mlp1         # optional developer/acceptance stage only
+make stage-app APP=Nimbus DEVICE=mlp1           # optional developer/acceptance stage only
+make stage-app APP=PortMaster-mlp1 DEVICE=mlp1  # optional developer/acceptance stage only
 
 make release-zips DEVICE=mlp1               # build end-user install + recovery ZIPs
 make release-sd-zip DEVICE=mlp1             # build end-user install ZIP only
 make release-recovery-zip DEVICE=mlp1       # build end-user recovery ZIP only
 ```
+
+The four first-party optional apps above are registered only for an explicit
+developer stage. They remain Pak Rat-owned and are excluded from default full
+staging, release ZIPs, `managed_apps`, and bootstrap requirements. Store
+install/update/uninstall testing must still use Pak Rat rather than `stage-app`.
 
 `make bootstrap` is idempotent. Existing sibling repos are reported as present
 and left untouched. Missing public repos are cloned into `Leaf/..`; optional
