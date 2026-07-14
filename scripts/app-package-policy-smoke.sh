@@ -30,8 +30,15 @@ assert_policy Nimbus Nimbus.pak pakrat
 assert_policy PortMaster-mlp1 PortMaster.pak pakrat
 assert_policy ssh-server SSHServer.pak release
 
-if rg '^STAGE_APPS' "$LEAF_ROOT/stage/mlp1.mk" "$SCRIPT_DIR/make-sd-release-zip.sh" |
-    rg -i 'Leaf-Itchio|DiscoBoy|Nimbus|PortMaster'; then
+# Use grep (always present) rather than rg: a missing tool under `pipefail`
+# silently skips this leak check yet still lets the script report PASS.
+stage_apps_defs="$(grep -hE '^STAGE_APPS' \
+    "$LEAF_ROOT/stage/mlp1.mk" "$SCRIPT_DIR/make-sd-release-zip.sh" || true)"
+[ -n "$stage_apps_defs" ] || {
+    echo "no STAGE_APPS definition found to audit -- cannot verify the default list" >&2
+    exit 1
+}
+if printf '%s\n' "$stage_apps_defs" | grep -qiE 'Leaf-Itchio|DiscoBoy|Nimbus|PortMaster'; then
     echo "Pak Rat-owned optional app leaked into default STAGE_APPS" >&2
     exit 1
 fi
