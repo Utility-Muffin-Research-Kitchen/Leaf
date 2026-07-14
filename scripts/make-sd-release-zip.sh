@@ -419,29 +419,23 @@ if not icon.is_file() or icon.stat().st_size == 0:
 if not license_path.is_file() or license_path.stat().st_size == 0:
     raise SystemExit(f"error: packaged Ports licence is missing or empty: {license_path}")
 
-managed_file = release_root / "managed-apps.txt"
-managed_apps = []
-if managed_file.is_file():
-    managed_apps = [line.strip() for line in managed_file.read_text(encoding="utf-8").splitlines()
-                    if line.strip() and not line.lstrip().startswith("#")]
-if any(pathlib.PurePosixPath(item).name.casefold() == "portmaster.pak" for item in managed_apps):
-    raise SystemExit("error: PortMaster.pak must remain Pak Rat-owned, not release-managed")
-
-manifest = json.load(open(platform / "manifest.json", encoding="utf-8"))
-manifest_apps = manifest.get("managed_apps", [])
-if any(pathlib.PurePosixPath(item).name.casefold() == "portmaster.pak" for item in manifest_apps):
-    raise SystemExit("error: platform manifest claims release ownership of PortMaster.pak")
-
-apps_root = release_root / "Apps"
-if apps_root.is_dir():
-    staged_portmaster = [path for path in apps_root.rglob("*")
-                         if path.name.casefold() == "portmaster.pak"]
-    if staged_portmaster:
-        raise SystemExit("error: release stages Pak Rat-owned PortMaster.pak: "
-                         + " ".join(str(path) for path in staged_portmaster))
-
-print("PortMaster OTA gate: packaged integration verified; pak remains Pak Rat-owned")
+print("PortMaster OTA gate: packaged Ports integration verified")
 EOF
+}
+
+validate_pakrat_owned_apps() {
+    local release_root="$1"
+    local package
+    local pakrat_packages=()
+
+    # shellcheck source=scripts/app-package-policy.sh
+    . "$LEAF_ROOT/scripts/app-package-policy.sh"
+    while IFS= read -r package; do
+        [ -n "$package" ] && pakrat_packages+=("$package")
+    done < <(leaf_pakrat_owned_package_names)
+    python3 "$LEAF_ROOT/scripts/audit-pakrat-owned-apps.py" \
+        "$release_root" "${pakrat_packages[@]}" || \
+        die "Pak Rat ownership validation failed"
 }
 
 audit_mlp1_build_tuning() {
@@ -470,11 +464,13 @@ build_missing_platform_bits() {
 
 package_app() {
     local app="$1"
-    local package_target package_platform package_dir package_name destination_platform supported_devices
+    local package_target package_platform package_dir package_name destination_platform supported_devices distribution
 
     # shellcheck source=scripts/app-package-policy.sh
     . "$LEAF_ROOT/scripts/app-package-policy.sh"
     leaf_app_policy "$app" "$WORKSPACE_DIR" "$DEVICE" || die "unsupported release app policy: $app for DEVICE=$DEVICE"
+    [ "$distribution" = "release" ] || \
+        die "Pak Rat-owned optional app cannot be packaged in a Leaf release: $app ($package_name)"
 
     [ -d "$WORKSPACE_DIR/$app" ] || die "missing app repo: $WORKSPACE_DIR/$app"
     local make_args=("$package_target")
@@ -690,6 +686,7 @@ build_install_zip() {
         package_app "$app"
     done
     sync_platform_managed_apps_manifest "$RELEASE_ROOT/platforms/mlp1/manifest.json" "$MANAGED_APPS_FILE"
+    validate_pakrat_owned_apps "$RELEASE_ROOT"
     validate_portmaster_integration "$RELEASE_ROOT"
     audit_mlp1_build_tuning "$RELEASE_ROOT"
 
