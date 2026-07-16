@@ -23,6 +23,9 @@ N64_STANDALONE_DIR="${N64_STANDALONE_DIR:-$WORKSPACE_DIR/N64-standalone}"
 RETROARCH_BUILDS_DIR="${RETROARCH_BUILDS_DIR:-$WORKSPACE_DIR/retroarch-builds}"
 CORES_SPRUCE_DIR="${CORES_SPRUCE_DIR:-$WORKSPACE_DIR/Cores-spruce}"
 LAUNCHER_SWITCHER_DIR="${LAUNCHER_SWITCHER_DIR:-$WORKSPACE_DIR/miniloong-launcher-switcher}"
+UMRK_WORKSPACE_DIR="${UMRK_WORKSPACE_DIR:-$WORKSPACE_DIR/umrk-workspace}"
+MLP1_CORE_REPORT_TOOL="${MLP1_CORE_REPORT_TOOL:-$CORES_SPRUCE_DIR/scripts/mlp1-core-report.py}"
+MLP1_CORE_PROBE_RUNNER="${MLP1_CORE_PROBE_RUNNER:-$CORES_SPRUCE_DIR/probe-mlp1-cores-adb.sh}"
 TOOLCHAIN_IMAGE="${TOOLCHAIN_IMAGE:-ghcr.io/utility-muffin-research-kitchen/mlp1-toolchain:local}"
 MLP1_RETROARCH_BIN="${MLP1_RETROARCH_BIN:-$RETROARCH_BUILDS_DIR/output/mlp1/bin/retroarch}"
 MLP1_RETROARCH_MANIFEST="${MLP1_RETROARCH_MANIFEST:-$RETROARCH_BUILDS_DIR/output/mlp1/build-manifest.json}"
@@ -349,6 +352,17 @@ print("core gate: %d packaged entries verified (binary + license present)"
 EOF
 }
 
+validate_retroarch_contract() {
+    local platform_dir="$1"
+    local report="$platform_dir/cores/build-report.json"
+    [ -f "$report" ] || die "missing MLP1 core build report: $report"
+    python3 "$UMRK_WORKSPACE_DIR/scripts/retroarch_validate_package.py" \
+        --metadata-dir "$UMRK_WORKSPACE_DIR/plans/retroarch/generated/mlp1" \
+        --build-report "$report" \
+        --package-root "$platform_dir" \
+        || die "RetroArch runtime metadata contract validation failed"
+}
+
 validate_portmaster_integration() {
     local release_root="$1"
     python3 - "$release_root" <<'EOF' || die "PortMaster integration validation failed"
@@ -460,6 +474,28 @@ build_missing_platform_bits() {
         echo "MLP1 cores missing; building in $CORES_SPRUCE_DIR"
         (cd "$CORES_SPRUCE_DIR" && ./build-mlp1.sh --stock-parity)
     fi
+
+    if ! python3 "$MLP1_CORE_REPORT_TOOL" manifest \
+            --report "$MLP1_CORES_REPORT" \
+            --cores-dir "$MLP1_CORES_DIR" >/dev/null 2>&1; then
+        echo "MLP1 core identity report is missing, stale, or checksum-invalid; rebuilding stock-parity cores"
+        (cd "$CORES_SPRUCE_DIR" && ./build-mlp1.sh --stock-parity)
+    fi
+
+    if ! python3 "$MLP1_CORE_REPORT_TOOL" verify \
+            --report "$MLP1_CORES_REPORT" \
+            --cores-dir "$MLP1_CORES_DIR"; then
+        echo "Probing exact MLP1 libretro library names on the selected device"
+        "$MLP1_CORE_PROBE_RUNNER" \
+            --report "$MLP1_CORES_REPORT" \
+            --cores-dir "$MLP1_CORES_DIR" || \
+            die "MLP1 core identity probe failed"
+    fi
+
+    python3 "$MLP1_CORE_REPORT_TOOL" verify \
+        --report "$MLP1_CORES_REPORT" \
+        --cores-dir "$MLP1_CORES_DIR" || \
+        die "MLP1 core identity report is incomplete"
 }
 
 package_app() {
@@ -578,8 +614,11 @@ existing Leaf install. The same steps apply either way.
 Safe to run over an existing install. The installer only refreshes the
 release-managed firmware under .system/leaf and never touches your data: games,
 saves, states, and app/control data live at the card root (Roms/, Saves/,
-States/, and the .userdata/ and .umrk/ folders) and are left as they are. There
-is no migration step; re-extracting this ZIP onto a card that already has Leaf
+States/, and the .userdata/ and .umrk/ folders) and are left as they are. On the
+first compatible-core launch, Jawaka may non-destructively copy recognized
+legacy flat save/state files into that core's folder when the historical owner
+is unambiguous; the original files remain in place. Ambiguous files are left
+flat and produce a warning. Re-extracting this ZIP onto an existing Leaf card
 is an in-place upgrade.
 
 The installer renames loong_upgrade to loong_upgrade.used when it runs.
@@ -681,6 +720,7 @@ build_install_zip() {
 
     cp -R "$LEAF_ROOT/stage/licenses" "$RELEASE_ROOT/licenses"
     validate_packaged_cores "$RELEASE_ROOT"
+    validate_retroarch_contract "$RELEASE_ROOT/platforms/mlp1"
 
     for app in $STAGE_APPS; do
         package_app "$app"

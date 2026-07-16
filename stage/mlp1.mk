@@ -15,6 +15,9 @@ MLP1_RETROARCH_MANIFEST ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/build-manifest.js
 MLP1_CORES_DIR     ?= $(CORES_SPRUCE_DIR)/output/mlp1/cores
 MLP1_CORES_REPORT  ?= $(CORES_SPRUCE_DIR)/output/mlp1/build-report.json
 MLP1_INFO_DIR      ?= $(CORES_SPRUCE_DIR)/output/mlp1/info
+MLP1_METADATA_DIR  ?= $(UMRK_WORKSPACE_DIR)/plans/retroarch/generated/mlp1
+MLP1_CORE_REPORT_TOOL ?= $(CORES_SPRUCE_DIR)/scripts/mlp1-core-report.py
+MLP1_CORE_PROBE_RUNNER ?= $(CORES_SPRUCE_DIR)/probe-mlp1-cores-adb.sh
 MLP1_PPSSPP_PACKAGE ?= $(PPSSPP_SPRUCE_DIR)/output/mlp1/ppsspp
 MLP1_DRASTIC_PACKAGE ?= $(LEAF_ROOT)/build/drastic/mlp1/drastic
 MLP1_MUPEN64PLUS_PACKAGE ?= $(N64_STANDALONE_DIR)/output/mlp1/mupen64plus
@@ -74,7 +77,6 @@ assemble-jawaka: jawaka-build
 	@cp -Rf "$(DEVICE_OVERLAY)/." "$(PLATFORM_PAYLOAD_DIR)/"
 	@test -f "$(PLATFORM_PAYLOAD_DIR)/defaults/systems.json" || { echo "missing platform defaults: $(PLATFORM_PAYLOAD_DIR)/defaults/systems.json" >&2; exit 1; }
 	@test -f "$(PLATFORM_PAYLOAD_DIR)/defaults/cores.json" || { echo "missing platform defaults: $(PLATFORM_PAYLOAD_DIR)/defaults/cores.json" >&2; exit 1; }
-	@python3 "$(UMRK_WORKSPACE_DIR)/scripts/retroarch_validate_package.py" --canonical-systems "$(PLATFORM_PAYLOAD_DIR)/defaults/systems.json"
 	@mkdir -p "$(PLATFORM_PAYLOAD_DIR)/platform.d"
 	@if [ -d "$(JAWAKA_DIR)/platform/mlp1/platform.d" ]; then \
 		cp -Rf "$(JAWAKA_DIR)/platform/mlp1/platform.d/." "$(PLATFORM_PAYLOAD_DIR)/platform.d/"; \
@@ -100,6 +102,11 @@ assemble-jawaka: jawaka-build
 		mkdir -p "$(PLATFORM_PAYLOAD_DIR)/info"; \
 		find "$(MLP1_INFO_DIR)" -maxdepth 1 -type f -name '*_libretro.info' -exec cp -f {} "$(PLATFORM_PAYLOAD_DIR)/info/" \;; \
 	fi
+	@test -f "$(PLATFORM_PAYLOAD_DIR)/cores/build-report.json" || { echo "missing MLP1 core build report: $(PLATFORM_PAYLOAD_DIR)/cores/build-report.json" >&2; exit 1; }
+	@python3 "$(UMRK_WORKSPACE_DIR)/scripts/retroarch_validate_package.py" \
+		--metadata-dir "$(MLP1_METADATA_DIR)" \
+		--build-report "$(PLATFORM_PAYLOAD_DIR)/cores/build-report.json" \
+		--package-root "$(PLATFORM_PAYLOAD_DIR)"
 	@printf 'Jawaka MLP1 launcher bundle\n' > "$(PAYLOAD_DIR)/README.txt"
 	@echo "Assembled payload at $(PAYLOAD_ROOT)"
 	@find "$(PAYLOAD_ROOT)" -type f | sort
@@ -120,8 +127,29 @@ stage-retroarch:
 		echo "MLP1 cores missing; building in $(CORES_SPRUCE_DIR)"; \
 		cd "$(CORES_SPRUCE_DIR)" && ./build-mlp1.sh --stock-parity; \
 	fi
+	@if ! python3 "$(MLP1_CORE_REPORT_TOOL)" manifest \
+			--report "$(MLP1_CORES_REPORT)" \
+			--cores-dir "$(MLP1_CORES_DIR)" >/dev/null 2>&1; then \
+		echo "MLP1 core identity report is missing, stale, or checksum-invalid; rebuilding stock-parity cores"; \
+		cd "$(CORES_SPRUCE_DIR)" && ./build-mlp1.sh --stock-parity; \
+	fi
 	@test -f "$(MLP1_RETROARCH_BIN)" || { echo "missing RetroArch binary: $(MLP1_RETROARCH_BIN)" >&2; exit 1; }
 	@test -d "$(MLP1_CORES_DIR)" || { echo "missing cores dir: $(MLP1_CORES_DIR)" >&2; exit 1; }
+	@if ! python3 "$(MLP1_CORE_REPORT_TOOL)" verify \
+			--report "$(MLP1_CORES_REPORT)" \
+			--cores-dir "$(MLP1_CORES_DIR)"; then \
+		echo "Probing exact MLP1 libretro library names on the selected device"; \
+		ADB_SERIAL="$${ADB_SERIAL:-}" "$(MLP1_CORE_PROBE_RUNNER)" \
+			--report "$(MLP1_CORES_REPORT)" \
+			--cores-dir "$(MLP1_CORES_DIR)"; \
+	fi
+	@python3 "$(MLP1_CORE_REPORT_TOOL)" verify \
+		--report "$(MLP1_CORES_REPORT)" \
+		--cores-dir "$(MLP1_CORES_DIR)"
+	@python3 "$(UMRK_WORKSPACE_DIR)/scripts/retroarch_validate_package.py" \
+		--metadata-dir "$(MLP1_METADATA_DIR)" \
+		--build-report "$(MLP1_CORES_REPORT)" \
+		--require-full-build-report
 	@set -euo pipefail; \
 	if [ -n "$${ADB_SERIAL:-}" ]; then \
 		serial="$$ADB_SERIAL"; \
