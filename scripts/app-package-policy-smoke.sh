@@ -30,21 +30,100 @@ assert_policy Nimbus Nimbus.pak pakrat
 assert_policy PortMaster-mlp1 PortMaster.pak pakrat
 assert_policy ssh-server SSHServer.pak release
 
-# Use grep (always present) rather than rg: a missing tool under `pipefail`
-# silently skips this leak check yet still lets the script report PASS.
-stage_apps_defs="$(grep -hE '^STAGE_APPS' \
-    "$LEAF_ROOT/stage/mlp1.mk" "$SCRIPT_DIR/make-sd-release-zip.sh" || true)"
-[ -n "$stage_apps_defs" ] || {
-    echo "no STAGE_APPS definition found to audit -- cannot verify the default list" >&2
-    exit 1
+audit_stage_apps_definitions() {
+    local grep_bin="$1"
+    shift
+    local file definitions status
+
+    command -v "$grep_bin" >/dev/null 2>&1 || {
+        echo "STAGE_APPS audit command not found: $grep_bin" >&2
+        return 1
+    }
+    for file in "$@"; do
+        [ -f "$file" ] && [ -r "$file" ] || {
+            echo "STAGE_APPS audit input is missing or unreadable: $file" >&2
+            return 1
+        }
+        if definitions="$("$grep_bin" -E '^STAGE_APPS' "$file")"; then
+            :
+        else
+            status=$?
+            if [ "$status" -eq 1 ]; then
+                echo "no STAGE_APPS definition found in $file" >&2
+            else
+                echo "failed to read STAGE_APPS definitions from $file (grep status $status)" >&2
+            fi
+            return 1
+        fi
+        if printf '%s\n' "$definitions" | \
+            "$grep_bin" -qiE 'Leaf-Itchio|DiscoBoy|Nimbus|PortMaster'; then
+            echo "Pak Rat-owned optional app leaked into STAGE_APPS in $file" >&2
+            return 1
+        else
+            status=$?
+            if [ "$status" -ne 1 ]; then
+                echo "failed to inspect STAGE_APPS definitions from $file (grep status $status)" >&2
+                return 1
+            fi
+        fi
+    done
 }
-if printf '%s\n' "$stage_apps_defs" | grep -qiE 'Leaf-Itchio|DiscoBoy|Nimbus|PortMaster'; then
-    echo "Pak Rat-owned optional app leaked into default STAGE_APPS" >&2
-    exit 1
-fi
 
 fixture="$(mktemp -d "${TMPDIR:-/tmp}/leaf-pakrat-policy.XXXXXX")"
 trap 'rm -rf "$fixture"' EXIT HUP INT TERM
+
+stage_fixture="$fixture/stage-apps"
+mkdir -p "$stage_fixture"
+printf 'STAGE_APPS ?= ssh-server Thing-File\n' >"$stage_fixture/clean.mk"
+printf 'STAGE_APPS="${STAGE_APPS-ssh-server Thing-File}"\n' >"$stage_fixture/clean.sh"
+printf '# no default app list here\n' >"$stage_fixture/missing-definition.mk"
+printf 'STAGE_APPS ?= ssh-server DiscoBoy\n' >"$stage_fixture/forbidden.mk"
+printf 'STAGE_APPS ?= ssh-server\n' >"$stage_fixture/unreadable.mk"
+printf '#!/bin/sh\nexit 2\n' >"$stage_fixture/grep-read-error"
+chmod 700 "$stage_fixture/grep-read-error"
+chmod 000 "$stage_fixture/unreadable.mk"
+
+audit_stage_apps_definitions grep "$stage_fixture/clean.mk" "$stage_fixture/clean.sh" || {
+    echo "STAGE_APPS fixture rejected clean definitions" >&2
+    exit 1
+}
+if audit_stage_apps_definitions "$stage_fixture/missing-grep" \
+    "$stage_fixture/clean.mk" "$stage_fixture/clean.sh" >/dev/null 2>&1; then
+    echo "STAGE_APPS fixture accepted a missing grep command" >&2
+    exit 1
+fi
+if audit_stage_apps_definitions "$stage_fixture/grep-read-error" \
+    "$stage_fixture/clean.mk" "$stage_fixture/clean.sh" >/dev/null 2>&1; then
+    echo "STAGE_APPS fixture accepted grep status 2" >&2
+    exit 1
+fi
+if audit_stage_apps_definitions grep \
+    "$stage_fixture/clean.mk" "$stage_fixture/missing-definition.mk" >/dev/null 2>&1; then
+    echo "STAGE_APPS fixture accepted a missing definition" >&2
+    exit 1
+fi
+if audit_stage_apps_definitions grep \
+    "$stage_fixture/clean.mk" "$stage_fixture/missing.mk" >/dev/null 2>&1; then
+    echo "STAGE_APPS fixture accepted a missing input file" >&2
+    exit 1
+fi
+if [ ! -r "$stage_fixture/unreadable.mk" ]; then
+    if audit_stage_apps_definitions grep \
+        "$stage_fixture/clean.mk" "$stage_fixture/unreadable.mk" >/dev/null 2>&1; then
+        echo "STAGE_APPS fixture accepted an unreadable input file" >&2
+        exit 1
+    fi
+fi
+chmod 600 "$stage_fixture/unreadable.mk"
+if audit_stage_apps_definitions grep \
+    "$stage_fixture/clean.mk" "$stage_fixture/forbidden.mk" >/dev/null 2>&1; then
+    echo "STAGE_APPS fixture accepted a forbidden app" >&2
+    exit 1
+fi
+
+audit_stage_apps_definitions grep \
+    "$LEAF_ROOT/stage/mlp1.mk" "$SCRIPT_DIR/make-sd-release-zip.sh"
+
 mkdir -p "$fixture/platforms/mlp1" "$fixture/Apps/mlp1"
 printf '{"managed_apps": []}\n' >"$fixture/platforms/mlp1/manifest.json"
 : >"$fixture/managed-apps.txt"
