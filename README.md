@@ -97,6 +97,29 @@ developer stage. They remain Pak Rat-owned and are excluded from default full
 staging, release ZIPs, `managed_apps`, and bootstrap requirements. Store
 install/update/uninstall testing must still use Pak Rat rather than `stage-app`.
 
+For a local Pak Rat catalog, pass one or more app repositories containing
+`pakrat.json`. The generator builds each selected package and writes only below
+`build/pakrat-local`:
+
+```sh
+python3 scripts/pakrat-local-feed.py \
+  --app-dir ../Leaf-Itchio-Pak \
+  --app-dir ../PortMaster-mlp1
+```
+
+To exercise the exact ZIP downloaded from a draft release without repackaging
+it, add an app-id-to-file override:
+
+```sh
+python3 scripts/pakrat-local-feed.py \
+  --app-dir ../Leaf-Itchio-Pak \
+  --skip-build \
+  --artifact org.umrk.itchio=/path/to/Itch-io.mlp1.pak.zip
+```
+
+The exact-artifact path is copied byte-for-byte into the local feed. Pak Rat
+lifecycle testing still uses the generated catalog and Jawaka ownership state.
+
 `make bootstrap` is idempotent. Existing sibling repos are reported as present
 and left untouched. Missing public repos are cloned into `Leaf/..`; optional
 private repos are cloned only when credentials are available.
