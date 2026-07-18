@@ -1,0 +1,59 @@
+{
+  "schema": 1,
+  "name": "God of War: Chains of Olympus deterministic scene workload",
+  "game_id": "NPEG00023",
+  "description": "Drives alternating forward movement and repeated combat input after loading the dedicated benchmark scene.",
+  "events": [
+    {
+      "at": 0.0,
+      "event": "input.analog.send",
+      "stick": "left",
+      "x": 0.3,
+      "y": -0.9,
+      "repeat_every": 8.0
+    },
+    {
+      "at": 4.0,
+      "event": "input.analog.send",
+      "stick": "left",
+      "x": -0.3,
+      "y": -0.9,
+      "repeat_every": 8.0
+    },
+    {
+      "at": 0.0,
+      "event": "input.buttons.press",
+      "button": "square",
+      "duration": 6,
+      "repeat_every": 0.65
+    },
+    {
+      "at": 0.25,
+      "event": "input.buttons.press",
+      "button": "triangle",
+      "duration": 7,
+      "repeat_every": 1.3
+    },
+    {
+      "at": 0.5,
+      "event": "input.buttons.press",
+      "button": "cross",
+      "duration": 7,
+      "repeat_every": 2.6
+    },
+    {
+      "at": 1.0,
+      "event": "input.buttons.press",
+      "button": "circle",
+      "duration": 7,
+      "repeat_every": 4.5
+    },
+    {
+      "at": 1.5,
+      "event": "input.buttons.press",
+      "button": "rtrigger",
+      "duration": 7,
+      "repeat_every": 7.0
+    }
+  ]
+}

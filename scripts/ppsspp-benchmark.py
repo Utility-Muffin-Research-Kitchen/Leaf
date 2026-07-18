@@ -1,0 +1,2092 @@
+#!/usr/bin/env python3
+"""Run a controlled PPSSPP Vulkan/GLES benchmark on an attached MLP1.
+
+The harness launches PPSSPP through Jawaka so direct-DRM lifecycle and
+performance-profile behavior are part of the measurement.  It temporarily
+installs a known PPSSPP preset with the local debugger enabled, then restores
+the exact pre-run configuration.
+"""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import hashlib
+import json
+import math
+import os
+from pathlib import Path
+import re
+import secrets
+import shlex
+import socket
+import statistics
+import struct
+import subprocess
+import sys
+import tempfile
+import time
+from typing import Any
+
+
+LEAF_ROOT = Path(__file__).resolve().parent.parent
+WORKSPACE_ROOT = LEAF_ROOT.parent
+PPSSPP_ROOT = WORKSPACE_ROOT / "PPSSPP-spruce"
+DEFAULT_PRESET_ROOT = PPSSPP_ROOT / "output/mlp1/ppsspp/defaults"
+DEFAULT_OUTPUT_ROOT = LEAF_ROOT / "build/benchmarks/ppsspp"
+REMOTE_SOCKET = "/tmp/jawaka-runtime/jawakad.sock"
+CORE_IDS = {"vulkan": "ppsspp", "gles": "ppsspp_gles"}
+TRANSIENT_ADB_ERRORS = (
+    "device not found",
+    "device offline",
+    "no devices/emulators found",
+    "closed",
+    "connection reset",
+    "protocol fault",
+    "transport error",
+    "transport is closing",
+)
+TRACE_EVENTS = {
+    "input.buttons.press",
+    "input.buttons.send",
+    "input.analog.send",
+}
+TRACE_BUTTONS = {
+    "back",
+    "circle",
+    "cross",
+    "disc",
+    "down",
+    "forward",
+    "hold",
+    "home",
+    "l2",
+    "l3",
+    "left",
+    "ltrigger",
+    "memstick",
+    "note",
+    "playpause",
+    "r2",
+    "r3",
+    "remote_hold",
+    "right",
+    "rtrigger",
+    "screen",
+    "select",
+    "square",
+    "start",
+    "triangle",
+    "up",
+    "vol_down",
+    "vol_up",
+    "wlan",
+}
+
+
+class BenchmarkError(RuntimeError):
+    pass
+
+
+def quote(value: str | Path) -> str:
+    return shlex.quote(str(value))
+
+
+def run(
+    command: list[str],
+    *,
+    check: bool = True,
+    text: bool = True,
+    env: dict[str, str] | None = None,
+    timeout: float | None = None,
+) -> subprocess.CompletedProcess[Any]:
+    result = subprocess.run(
+        command,
+        check=False,
+        capture_output=True,
+        text=text,
+        env=env,
+        timeout=timeout,
+    )
+    if check and result.returncode != 0:
+        stderr = result.stderr.strip() if text else result.stderr.decode(errors="replace").strip()
+        stdout = result.stdout.strip() if text else result.stdout.decode(errors="replace").strip()
+        detail = stderr or stdout or f"exit {result.returncode}"
+        raise BenchmarkError(f"{shlex.join(command)}: {detail}")
+    return result
+
+
+class Adb:
+    def __init__(self, serial: str | None, retry_timeout: float = 15.0) -> None:
+        if serial:
+            self.serial = serial
+        else:
+            result = run(["adb", "devices"])
+            self.serial = ""
+            for line in result.stdout.splitlines()[1:]:
+                fields = line.split()
+                if len(fields) >= 2 and fields[1] == "device":
+                    self.serial = fields[0]
+                    break
+            if not self.serial:
+                raise BenchmarkError("No online adb device found")
+        self.prefix = ["adb", "-s", self.serial]
+        self.retry_timeout = retry_timeout
+        self.recoveries: list[dict[str, Any]] = []
+        self.command(["get-state"])
+
+    @staticmethod
+    def _detail(result: subprocess.CompletedProcess[Any], text: bool) -> str:
+        if text:
+            stderr = result.stderr.strip()
+            stdout = result.stdout.strip()
+        else:
+            stderr = result.stderr.decode(errors="replace").strip()
+            stdout = result.stdout.decode(errors="replace").strip()
+        return stderr or stdout or f"exit {result.returncode}"
+
+    @staticmethod
+    def _transient(detail: str) -> bool:
+        lowered = detail.lower()
+        return (
+            any(pattern in lowered for pattern in TRANSIENT_ADB_ERRORS)
+            or bool(re.search(r"(?:adb|error): device .+ not found", lowered))
+        )
+
+    def command(
+        self,
+        arguments: list[str],
+        *,
+        check: bool = True,
+        text: bool = True,
+        timeout: float | None = None,
+    ) -> subprocess.CompletedProcess[Any]:
+        command = self.prefix + arguments
+        deadline = time.monotonic() + self.retry_timeout
+        attempts = 0
+        first_error = ""
+        while True:
+            result = run(command, check=False, text=text, timeout=timeout)
+            if result.returncode == 0:
+                if attempts:
+                    self.recoveries.append(
+                        {
+                            "host_time": time.time(),
+                            "command": shlex.join(command),
+                            "attempts": attempts + 1,
+                            "first_error": first_error,
+                        }
+                    )
+                return result
+            detail = self._detail(result, text)
+            if (
+                not self._transient(detail)
+                or time.monotonic() >= deadline
+                or self.retry_timeout <= 0
+            ):
+                if check:
+                    raise BenchmarkError(f"{shlex.join(command)}: {detail}")
+                return result
+            if not first_error:
+                first_error = detail
+            attempts += 1
+            time.sleep(0.5)
+
+    def shell(
+        self,
+        script: str,
+        *,
+        check: bool = True,
+        timeout: float | None = None,
+    ) -> str:
+        result = self.command(["shell", script], check=check, timeout=timeout)
+        return result.stdout.replace("\r\n", "\n").rstrip("\r\n")
+
+    def exec_out(self, arguments: list[str], *, check: bool = True) -> bytes:
+        return self.command(["exec-out"] + arguments, check=check, text=False).stdout
+
+    def push(self, local_path: Path, remote_path: str) -> None:
+        self.command(["push", str(local_path), remote_path])
+
+    def process_ids(self, name: str) -> list[int]:
+        output = self.shell(f"pidof {quote(name)} 2>/dev/null || true")
+        return [int(value) for value in output.split() if value.isdigit()]
+
+    def process_snapshot(self) -> dict[str, list[int]]:
+        return {
+            name: self.process_ids(name)
+            for name in (
+                "loong_pangu",
+                "jawaka-launcher",
+                "jawaka-osd",
+                "weston",
+                "PPSSPPSDL",
+            )
+        }
+
+
+class Logger:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+
+    def __call__(self, message: str) -> None:
+        line = f"[{time.strftime('%H:%M:%S')}] {message}"
+        print(line, flush=True)
+        with self.path.open("a", encoding="utf-8") as handle:
+            handle.write(line + "\n")
+
+
+def replace_ini_values(text: str, section: str, values: dict[str, str]) -> str:
+    """Replace or add keys in one INI section without rewriting other sections."""
+    lines = text.splitlines()
+    section_pattern = re.compile(r"^\s*\[\s*" + re.escape(section) + r"\s*\]\s*$", re.I)
+    any_section_pattern = re.compile(r"^\s*\[[^]]+\]\s*$")
+    start = next((i for i, line in enumerate(lines) if section_pattern.match(line)), None)
+
+    if start is None:
+        if lines and lines[-1].strip():
+            lines.append("")
+        lines.append(f"[{section}]")
+        lines.extend(f"{key} = {value}" for key, value in values.items())
+        return "\n".join(lines) + "\n"
+
+    end = len(lines)
+    for index in range(start + 1, len(lines)):
+        if any_section_pattern.match(lines[index]):
+            end = index
+            break
+
+    remaining = {key.lower(): (key, value) for key, value in values.items()}
+    output = lines[: start + 1]
+    key_pattern = re.compile(r"^\s*([^#;][^=]*?)\s*=")
+    for line in lines[start + 1 : end]:
+        match = key_pattern.match(line)
+        lowered = match.group(1).strip().lower() if match else ""
+        if lowered in remaining:
+            key, value = remaining.pop(lowered)
+            output.append(f"{key} = {value}")
+        else:
+            output.append(line)
+    output.extend(f"{key} = {value}" for key, value in remaining.values())
+    output.extend(lines[end:])
+    return "\n".join(output) + "\n"
+
+
+def ini_value(text: str, section: str, key: str) -> str | None:
+    current = ""
+    for line in text.splitlines():
+        section_match = re.match(r"^\s*\[\s*([^]]+?)\s*\]\s*$", line)
+        if section_match:
+            current = section_match.group(1)
+            continue
+        if current.lower() != section.lower():
+            continue
+        key_match = re.match(r"^\s*([^#;][^=]*?)\s*=\s*(.*?)\s*$", line)
+        if key_match and key_match.group(1).strip().lower() == key.lower():
+            return key_match.group(2)
+    return None
+
+
+def percentile(values: list[float], percent: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    position = (len(ordered) - 1) * percent / 100.0
+    lower = math.floor(position)
+    upper = math.ceil(position)
+    if lower == upper:
+        return ordered[lower]
+    return ordered[lower] + (ordered[upper] - ordered[lower]) * (position - lower)
+
+
+def rounded(value: float | None, places: int = 3) -> float | None:
+    return round(value, places) if value is not None else None
+
+
+def numeric(value: str) -> int | float | str:
+    try:
+        return int(value)
+    except ValueError:
+        try:
+            return float(value)
+        except ValueError:
+            return value
+
+
+class InputTrace:
+    """Validated, time-based PPSSPP debugger input sequence."""
+
+    def __init__(self, path: Path, horizon: float) -> None:
+        self.path = path.resolve()
+        try:
+            raw = self.path.read_bytes()
+        except OSError as error:
+            raise BenchmarkError(
+                f"Could not read PPSSPP input trace {self.path}: {error}"
+            ) from error
+        try:
+            document = json.loads(raw)
+        except json.JSONDecodeError as error:
+            raise BenchmarkError(f"Invalid PPSSPP input trace JSON: {error}") from error
+        if not isinstance(document, dict) or document.get("schema") != 1:
+            raise BenchmarkError("PPSSPP input trace must be a schema 1 object")
+        name = document.get("name")
+        if not isinstance(name, str) or not name.strip():
+            raise BenchmarkError("PPSSPP input trace requires a non-empty name")
+        game_id = document.get("game_id")
+        if game_id is not None and (
+            not isinstance(game_id, str) or not game_id.strip()
+        ):
+            raise BenchmarkError("PPSSPP input trace game_id must be a string")
+        source_events = document.get("events")
+        if not isinstance(source_events, list) or not source_events:
+            raise BenchmarkError("PPSSPP input trace requires at least one event")
+
+        self.name = name
+        self.game_id = game_id
+        self.description = str(document.get("description", ""))
+        self.sha256 = hashlib.sha256(raw).hexdigest()
+        self.events: list[tuple[float, str, dict[str, Any]]] = []
+        self.used_buttons: set[str] = set()
+        self.next_index = 0
+        self.dispatched = 0
+        self.skipped_late = 0
+
+        for index, item in enumerate(source_events):
+            self._append_source_event(item, index, horizon)
+        self.events.sort(key=lambda event: event[0])
+
+    def _append_source_event(
+        self,
+        item: Any,
+        index: int,
+        horizon: float,
+    ) -> None:
+        label = f"input trace event {index}"
+        if not isinstance(item, dict):
+            raise BenchmarkError(f"{label} must be an object")
+        at = item.get("at")
+        event = item.get("event")
+        if (
+            not isinstance(at, (int, float))
+            or isinstance(at, bool)
+            or not math.isfinite(float(at))
+            or at < 0
+        ):
+            raise BenchmarkError(f"{label} requires a finite, non-negative at value")
+        if event not in TRACE_EVENTS:
+            raise BenchmarkError(f"{label} uses unsupported event: {event!r}")
+        repeat_every = item.get("repeat_every")
+        if repeat_every is not None and (
+            not isinstance(repeat_every, (int, float))
+            or isinstance(repeat_every, bool)
+            or not math.isfinite(float(repeat_every))
+            or repeat_every <= 0
+        ):
+            raise BenchmarkError(f"{label} repeat_every must be positive")
+        repeat_until = item.get("repeat_until", horizon)
+        if (
+            not isinstance(repeat_until, (int, float))
+            or isinstance(repeat_until, bool)
+            or not math.isfinite(float(repeat_until))
+        ):
+            raise BenchmarkError(f"{label} repeat_until must be finite")
+
+        parameters = {
+            key: value
+            for key, value in item.items()
+            if key not in {"at", "event", "repeat_every", "repeat_until"}
+        }
+        self._validate_parameters(str(event), parameters, label)
+
+        current = float(at)
+        limit = min(float(repeat_until), horizon)
+        while current <= limit + 1e-9:
+            self.events.append((current, str(event), parameters.copy()))
+            if repeat_every is None:
+                break
+            current += float(repeat_every)
+
+    def _validate_parameters(
+        self,
+        event: str,
+        parameters: dict[str, Any],
+        label: str,
+    ) -> None:
+        if event == "input.buttons.press":
+            button = parameters.get("button")
+            duration = parameters.get("duration", 1)
+            if button not in TRACE_BUTTONS:
+                raise BenchmarkError(f"{label} has unsupported button: {button!r}")
+            if not isinstance(duration, int) or isinstance(duration, bool) or duration < 0:
+                raise BenchmarkError(f"{label} duration must be a non-negative integer")
+            if set(parameters) - {"button", "duration"}:
+                raise BenchmarkError(f"{label} has unsupported button-press parameters")
+            self.used_buttons.add(str(button))
+            return
+        if event == "input.buttons.send":
+            buttons = parameters.get("buttons")
+            if not isinstance(buttons, dict) or not buttons:
+                raise BenchmarkError(f"{label} buttons must be a non-empty object")
+            if set(parameters) != {"buttons"}:
+                raise BenchmarkError(f"{label} has unsupported button-state parameters")
+            for button, state in buttons.items():
+                if button not in TRACE_BUTTONS:
+                    raise BenchmarkError(f"{label} has unsupported button: {button!r}")
+                if state is not None and not isinstance(state, bool):
+                    raise BenchmarkError(f"{label} button states must be boolean or null")
+                self.used_buttons.add(button)
+            return
+
+        stick = parameters.get("stick", "left")
+        x = parameters.get("x")
+        y = parameters.get("y")
+        if set(parameters) - {"stick", "x", "y"}:
+            raise BenchmarkError(f"{label} has unsupported analog parameters")
+        if stick not in {"left", "right"}:
+            raise BenchmarkError(f"{label} stick must be left or right")
+        for axis, value in (("x", x), ("y", y)):
+            if (
+                not isinstance(value, (int, float))
+                or isinstance(value, bool)
+                or not math.isfinite(float(value))
+                or not -1.0 <= float(value) <= 1.0
+            ):
+                raise BenchmarkError(f"{label} {axis} must be between -1.0 and 1.0")
+
+    def dispatch_due(
+        self,
+        websocket: "WebSocketClient",
+        elapsed: float,
+        *,
+        late_tolerance: float = 1.0,
+    ) -> None:
+        while (
+            self.next_index < len(self.events)
+            and self.events[self.next_index][0] <= elapsed
+        ):
+            scheduled, event, parameters = self.events[self.next_index]
+            self.next_index += 1
+            if elapsed - scheduled > late_tolerance:
+                self.skipped_late += 1
+                continue
+            websocket.notify(event, parameters)
+            self.dispatched += 1
+
+    def next_at(self) -> float | None:
+        if self.next_index >= len(self.events):
+            return None
+        return self.events[self.next_index][0]
+
+    def release(self, websocket: "WebSocketClient") -> None:
+        websocket.notify(
+            "input.analog.send",
+            {"stick": "left", "x": 0.0, "y": 0.0},
+        )
+        websocket.notify(
+            "input.analog.send",
+            {"stick": "right", "x": 0.0, "y": 0.0},
+        )
+        if self.used_buttons:
+            websocket.notify(
+                "input.buttons.send",
+                {"buttons": {button: False for button in sorted(self.used_buttons)}},
+            )
+
+    def metadata(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "game_id": self.game_id,
+            "description": self.description,
+            "source_path": str(self.path),
+            "sha256": self.sha256,
+            "expanded_event_count": len(self.events),
+            "dispatched_event_count": self.dispatched,
+            "skipped_late_event_count": self.skipped_late,
+        }
+
+
+class WebSocketClient:
+    """Small RFC 6455 client sufficient for PPSSPP's JSON debugger."""
+
+    def __init__(self, host: str, port: int, timeout: float = 5.0) -> None:
+        self.socket = socket.create_connection((host, port), timeout=timeout)
+        self.socket.settimeout(timeout)
+        self.buffer = bytearray()
+        key = base64.b64encode(secrets.token_bytes(16)).decode("ascii")
+        request = (
+            "GET /debugger HTTP/1.1\r\n"
+            f"Host: {host}:{port}\r\n"
+            "Upgrade: websocket\r\n"
+            "Connection: Upgrade\r\n"
+            f"Sec-WebSocket-Key: {key}\r\n"
+            "Sec-WebSocket-Version: 13\r\n"
+            "Sec-WebSocket-Protocol: debugger.ppsspp.org\r\n"
+            "\r\n"
+        )
+        self.socket.sendall(request.encode("ascii"))
+        response = self._read_until(b"\r\n\r\n").decode("iso-8859-1")
+        if not response.startswith("HTTP/1.1 101") and not response.startswith("HTTP/1.0 101"):
+            raise BenchmarkError(f"PPSSPP debugger WebSocket rejected upgrade: {response.splitlines()[0]}")
+        accept = base64.b64encode(
+            hashlib.sha1(
+                (key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii")
+            ).digest()
+        ).decode("ascii")
+        headers = {}
+        for line in response.split("\r\n")[1:]:
+            if ":" in line:
+                name, value = line.split(":", 1)
+                headers[name.lower()] = value.strip()
+        if headers.get("sec-websocket-accept") != accept:
+            raise BenchmarkError("PPSSPP debugger returned an invalid WebSocket accept key")
+
+    def _receive(self, count: int) -> bytes:
+        while len(self.buffer) < count:
+            chunk = self.socket.recv(65536)
+            if not chunk:
+                raise BenchmarkError("PPSSPP debugger WebSocket closed unexpectedly")
+            self.buffer.extend(chunk)
+        data = bytes(self.buffer[:count])
+        del self.buffer[:count]
+        return data
+
+    def _read_until(self, marker: bytes) -> bytes:
+        while marker not in self.buffer:
+            chunk = self.socket.recv(65536)
+            if not chunk:
+                raise BenchmarkError("PPSSPP debugger closed during WebSocket handshake")
+            self.buffer.extend(chunk)
+        end = self.buffer.index(marker) + len(marker)
+        data = bytes(self.buffer[:end])
+        del self.buffer[:end]
+        return data
+
+    def _send_frame(self, opcode: int, payload: bytes) -> None:
+        mask = secrets.token_bytes(4)
+        length = len(payload)
+        header = bytearray([0x80 | opcode])
+        if length < 126:
+            header.append(0x80 | length)
+        elif length < 65536:
+            header.append(0x80 | 126)
+            header.extend(struct.pack("!H", length))
+        else:
+            header.append(0x80 | 127)
+            header.extend(struct.pack("!Q", length))
+        header.extend(mask)
+        masked = bytes(value ^ mask[index % 4] for index, value in enumerate(payload))
+        self.socket.sendall(header + masked)
+
+    def _read_frame(self) -> tuple[bool, int, bytes]:
+        first, second = self._receive(2)
+        final = bool(first & 0x80)
+        opcode = first & 0x0F
+        length = second & 0x7F
+        if length == 126:
+            length = struct.unpack("!H", self._receive(2))[0]
+        elif length == 127:
+            length = struct.unpack("!Q", self._receive(8))[0]
+        mask = self._receive(4) if second & 0x80 else b""
+        payload = self._receive(length)
+        if mask:
+            payload = bytes(value ^ mask[index % 4] for index, value in enumerate(payload))
+        return final, opcode, payload
+
+    def receive_text(self) -> str:
+        fragments = bytearray()
+        text_started = False
+        while True:
+            final, opcode, payload = self._read_frame()
+            if opcode == 0x8:
+                raise BenchmarkError("PPSSPP debugger WebSocket closed")
+            if opcode == 0x9:
+                self._send_frame(0xA, payload)
+                continue
+            if opcode == 0xA:
+                continue
+            if opcode == 0x1:
+                fragments = bytearray(payload)
+                text_started = True
+            elif opcode == 0x0 and text_started:
+                fragments.extend(payload)
+            else:
+                continue
+            if final:
+                return fragments.decode("utf-8")
+
+    def request(
+        self,
+        event: str,
+        ticket: str,
+        parameters: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        request_object = {"event": event, "ticket": ticket}
+        if parameters:
+            request_object.update(parameters)
+        self._send_frame(
+            0x1,
+            json.dumps(request_object, separators=(",", ":")).encode("utf-8"),
+        )
+        while True:
+            response = json.loads(self.receive_text())
+            if response.get("ticket") == ticket:
+                if response.get("event") == "error":
+                    raise BenchmarkError(
+                        f"PPSSPP debugger error: {response.get('message', response)}"
+                    )
+                if response.get("event") == event:
+                    return response
+
+    def request_gpu_stats(self, ticket: str) -> dict[str, Any]:
+        return self.request("gpu.stats.get", ticket)
+
+    def notify(
+        self,
+        event: str,
+        parameters: dict[str, Any] | None = None,
+    ) -> None:
+        message = {"event": event}
+        if parameters:
+            message.update(parameters)
+        self._send_frame(
+            0x1,
+            json.dumps(message, separators=(",", ":")).encode("utf-8"),
+        )
+
+    def close(self) -> None:
+        try:
+            self._send_frame(0x8, struct.pack("!H", 1000))
+        except OSError:
+            pass
+        self.socket.close()
+
+
+class BenchmarkSession:
+    def __init__(self, args: argparse.Namespace) -> None:
+        self.args = args
+        self.adb = Adb(
+            args.serial or os.environ.get("ADB_SERIAL"),
+            retry_timeout=args.adb_retry_timeout,
+        )
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        output = Path(args.output) if args.output else (
+            DEFAULT_OUTPUT_ROOT / f"{timestamp}-{args.core}-{args.preset}"
+        )
+        self.output = output.resolve()
+        self.output.mkdir(parents=True, exist_ok=False)
+        self.log = Logger(self.output / "session.log")
+        self.sdcard = ""
+        self.remote_config = ""
+        self.remote_backup = ""
+        self.remote_state = ""
+        self.config_prepared = False
+        self.forward_active = False
+        self.websocket: WebSocketClient | None = None
+        self.pid: int | None = None
+        self.samples: list[dict[str, Any]] = []
+        self.frontend_before: dict[str, list[int]] = {}
+        self.frontend_during: dict[str, list[int]] = {}
+        self.frontend_after: dict[str, list[int]] = {}
+        self.log_offsets: dict[str, int] = {}
+        self.error: str | None = None
+        self.effective_config = ""
+        self.backend_evidence: dict[str, Any] = {}
+        self.game_status: dict[str, Any] = {}
+        self.debugger_reconnects = 0
+        self.daemon_recovery: dict[str, Any] | None = None
+        self.scene_state: dict[str, Any] | None = None
+        self.trace_started_at: float | None = None
+        self.input_trace = (
+            InputTrace(Path(args.input_trace), args.warmup + args.duration)
+            if args.input_trace
+            else None
+        )
+        if self.input_trace:
+            (self.output / "input-trace.json").write_bytes(
+                self.input_trace.path.read_bytes()
+            )
+        self.started_at = time.time()
+
+    def resolve_sdcard(self) -> str:
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "PLATFORM_ID": "mlp1",
+                "REMOTE_SDCARD_PATH": self.args.remote_sd,
+                "ADB_SERIAL": self.adb.serial,
+            }
+        )
+        result = run(
+            [str(LEAF_ROOT / "scripts/adb-resolve-umrk-sd.sh")],
+            env=environment,
+        )
+        return result.stdout.strip()
+
+    def ensure_preflight(self) -> None:
+        self.sdcard = self.resolve_sdcard()
+        self.log(f"Using adb device {self.adb.serial}; active SD is {self.sdcard}")
+        if "'" in self.sdcard or "\n" in self.sdcard:
+            raise BenchmarkError(f"Unsupported resolved SD path: {self.sdcard!r}")
+        if not self.adb.shell(f"[ -f {quote(self.args.rom)} ] && echo yes") == "yes":
+            raise BenchmarkError(f"ROM not found on device: {self.args.rom}")
+        controller = (
+            f"{self.sdcard}/.system/leaf/platforms/mlp1/launcher/bin/"
+            "jawaka-platformctl"
+        )
+        checks = (
+            f"[ -x {quote(controller)} ] && "
+            f"[ -S {quote(REMOTE_SOCKET)} ] && echo yes"
+        )
+        if self.adb.shell(checks) != "yes":
+            raise BenchmarkError("Jawaka controller or daemon socket is unavailable")
+        running = self.adb.process_ids("PPSSPPSDL")
+        if running and not self.args.replace_running:
+            raise BenchmarkError(
+                f"PPSSPP is already running (pid {running}); pass --replace-running to terminate it"
+            )
+        if running:
+            self.log(f"Terminating pre-existing PPSSPP process(es): {running}")
+            self.adb.shell("killall PPSSPPSDL 2>/dev/null || true")
+            self.wait_process_gone(10.0)
+            if self.adb.process_ids("PPSSPPSDL"):
+                self.adb.shell("killall -KILL PPSSPPSDL 2>/dev/null || true")
+                self.wait_process_gone(5.0)
+        self.frontend_before = self.adb.process_snapshot()
+        if not self.frontend_before["jawaka-launcher"]:
+            raise BenchmarkError("Jawaka launcher is not active before benchmark")
+
+    def recover_stale_config(self) -> None:
+        command = f"""
+set -eu
+state={quote(self.remote_state)}
+config={quote(self.remote_config)}
+backup={quote(self.remote_backup)}
+if [ -f "$state" ]; then
+    previous="$(cat "$state" 2>/dev/null || true)"
+    case "$previous" in
+        existed=1)
+            [ -f "$backup" ] || {{
+                echo "stale PPSSPP benchmark backup is missing" >&2
+                exit 1
+            }}
+            cp -p "$backup" "$config"
+            ;;
+        existed=0)
+            rm -f "$config"
+            ;;
+        *)
+            echo "invalid stale PPSSPP benchmark state" >&2
+            exit 1
+            ;;
+    esac
+    rm -f "$state" "$backup"
+    sync
+    echo recovered
+fi
+"""
+        result = self.adb.shell(command)
+        if result:
+            self.log("Recovered PPSSPP configuration left by an interrupted benchmark")
+
+    def prepare_config(self) -> None:
+        config_dir = (
+            f"{self.sdcard}/.userdata/mlp1/ppsspp/config/ppsspp/PSP/SYSTEM"
+        )
+        self.remote_config = f"{config_dir}/ppsspp.ini"
+        self.remote_backup = f"{self.remote_config}.umrk-benchmark-backup"
+        self.remote_state = f"{self.remote_config}.umrk-benchmark-state"
+        self.adb.shell(f"mkdir -p {quote(config_dir)}")
+        self.recover_stale_config()
+
+        preset_path = Path(self.args.preset_root) / f"ppsspp-{self.args.preset}.ini"
+        if not preset_path.is_file():
+            raise BenchmarkError(f"PPSSPP preset not found: {preset_path}")
+        preset = preset_path.read_text(encoding="utf-8")
+        self.effective_config = replace_ini_values(
+            preset,
+            "General",
+            {
+                "RemoteISOPort": str(self.args.debug_port),
+                "RemoteDebuggerOnStartup": "True",
+                "RemoteDebuggerLocal": "True",
+            },
+        )
+        (self.output / "effective.ini").write_text(
+            self.effective_config,
+            encoding="utf-8",
+        )
+        config_sha = hashlib.sha256(self.effective_config.encode("utf-8")).hexdigest()
+        (self.output / "benchmark-overrides.json").write_text(
+            json.dumps(
+                {
+                    "preset": self.args.preset,
+                    "preset_path": str(preset_path),
+                    "effective_config_sha256": config_sha,
+                    "backend_command_line": self.args.core,
+                    "input_trace": (
+                        self.input_trace.metadata() if self.input_trace else None
+                    ),
+                    "scene_state": {
+                        "action": self.args.scene_state_action,
+                        "expected_sha256": self.args.scene_expected_sha256,
+                        "settle_seconds": self.args.scene_settle,
+                    },
+                    "debugger": {
+                        "port": self.args.debug_port,
+                        "on_startup": True,
+                        "local": True,
+                    },
+                    "graphics": {
+                        key: ini_value(self.effective_config, "Graphics", key)
+                        for key in (
+                            "GraphicsBackend",
+                            "InternalResolution",
+                            "FrameSkip",
+                            "AutoFrameSkip",
+                            "InflightFrames",
+                            "RenderDuplicateFrames",
+                        )
+                    },
+                    "cpu": {
+                        key: ini_value(self.effective_config, "CPU", key)
+                        for key in (
+                            "CPUCore",
+                            "FastMemoryAccess",
+                            "CPUSpeed",
+                        )
+                    },
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        self.adb.shell(
+            f"""
+set -eu
+config={quote(self.remote_config)}
+backup={quote(self.remote_backup)}
+state={quote(self.remote_state)}
+if [ -e "$config" ]; then
+    cp -p "$config" "$backup"
+    printf 'existed=1\\n' >"$state"
+else
+    rm -f "$backup"
+    printf 'existed=0\\n' >"$state"
+fi
+"""
+        )
+        self.config_prepared = True
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as handle:
+            handle.write(self.effective_config)
+            temporary = Path(handle.name)
+        try:
+            remote_temporary = f"{self.remote_config}.tmp"
+            self.adb.push(temporary, remote_temporary)
+            self.adb.shell(
+                f"mv {quote(remote_temporary)} {quote(self.remote_config)} && sync"
+            )
+        finally:
+            temporary.unlink(missing_ok=True)
+        self.log(
+            f"Installed controlled {self.args.preset} preset; original config is recoverable"
+        )
+
+    def restore_config(self) -> None:
+        if not self.config_prepared:
+            return
+        self.adb.shell(
+            f"""
+set -eu
+config={quote(self.remote_config)}
+backup={quote(self.remote_backup)}
+state={quote(self.remote_state)}
+previous="$(cat "$state" 2>/dev/null || true)"
+case "$previous" in
+    existed=1)
+        [ -f "$backup" ] || {{
+            echo "PPSSPP benchmark backup is missing" >&2
+            exit 1
+        }}
+        cp -p "$backup" "$config"
+        ;;
+    existed=0)
+        rm -f "$config"
+        ;;
+    *)
+        echo "PPSSPP benchmark state is missing or invalid" >&2
+        exit 1
+        ;;
+esac
+rm -f "$state" "$backup"
+sync
+"""
+        )
+        self.config_prepared = False
+        self.log("Restored the pre-benchmark PPSSPP configuration")
+
+    def remote_file_size(self, path: str) -> int:
+        output = self.adb.shell(
+            f"if [ -f {quote(path)} ]; then wc -c <{quote(path)}; else echo 0; fi"
+        )
+        return int(output.strip() or "0")
+
+    def mark_log_offsets(self) -> None:
+        paths = {
+            "ppsspp.log": f"{self.sdcard}/.userdata/mlp1/logs/ppsspp.log",
+            "umrk-launcher.log": (
+                f"{self.sdcard}/.userdata/mlp1/logs/umrk-launcher.log"
+            ),
+            "umrk-leaf-session.log": (
+                f"{self.sdcard}/.userdata/mlp1/logs/umrk-leaf-session.log"
+            ),
+        }
+        self.log_offsets = {
+            remote: self.remote_file_size(remote) for remote in paths.values()
+        }
+
+    def capture_log_slices(self) -> None:
+        if not self.log_offsets:
+            return
+        paths = {
+            "ppsspp.log": f"{self.sdcard}/.userdata/mlp1/logs/ppsspp.log",
+            "umrk-launcher.log": (
+                f"{self.sdcard}/.userdata/mlp1/logs/umrk-launcher.log"
+            ),
+            "umrk-leaf-session.log": (
+                f"{self.sdcard}/.userdata/mlp1/logs/umrk-leaf-session.log"
+            ),
+        }
+        for local_name, remote in paths.items():
+            offset = self.log_offsets.get(remote, 0)
+            content = self.adb.shell(
+                f"if [ -f {quote(remote)} ]; then "
+                f"tail -c +{offset + 1} {quote(remote)} 2>/dev/null || true; fi",
+                check=False,
+            )
+            (self.output / local_name).write_text(content + ("\n" if content else ""), encoding="utf-8")
+
+    def capture_device_identity(self) -> None:
+        script = r"""
+echo "serial=$(cat /sys/class/android_usb/android0/iSerial 2>/dev/null || true)"
+echo "uname=$(uname -a)"
+echo "buildroot=$(cat /etc/os-release 2>/dev/null | tr '\n' ' ')"
+echo "meminfo:"
+sed -n '1,24p' /proc/meminfo
+echo "swap:"
+cat /proc/swaps
+echo "display:"
+for connector in /sys/class/drm/card*-*; do
+    [ -f "$connector/status" ] || continue
+    printf '%s status=%s modes=' "$(basename "$connector")" "$(cat "$connector/status")"
+    tr '\n' ',' <"$connector/modes" 2>/dev/null || true
+    echo
+done
+echo "cpu:"
+for policy in /sys/devices/system/cpu/cpufreq/policy*; do
+    [ -d "$policy" ] || continue
+    printf '%s governor=%s min=%s max=%s available=%s\n' \
+        "$(basename "$policy")" \
+        "$(cat "$policy/scaling_governor" 2>/dev/null)" \
+        "$(cat "$policy/cpuinfo_min_freq" 2>/dev/null)" \
+        "$(cat "$policy/cpuinfo_max_freq" 2>/dev/null)" \
+        "$(cat "$policy/scaling_available_frequencies" 2>/dev/null)"
+done
+echo "devfreq:"
+for node in /sys/class/devfreq/*; do
+    [ -d "$node" ] || continue
+    printf '%s governor=%s min=%s max=%s available=%s\n' \
+        "$(basename "$node")" \
+        "$(cat "$node/governor" 2>/dev/null)" \
+        "$(cat "$node/min_freq" 2>/dev/null)" \
+        "$(cat "$node/max_freq" 2>/dev/null)" \
+        "$(cat "$node/available_frequencies" 2>/dev/null)"
+done
+echo "thermal:"
+for zone in /sys/class/thermal/thermal_zone*; do
+    [ -d "$zone" ] || continue
+    printf '%s type=%s temp=%s\n' \
+        "$(basename "$zone")" \
+        "$(cat "$zone/type" 2>/dev/null)" \
+        "$(cat "$zone/temp" 2>/dev/null)"
+done
+"""
+        (self.output / "device.txt").write_text(
+            self.adb.shell(script) + "\n",
+            encoding="utf-8",
+        )
+
+    def launch(self) -> None:
+        controller = (
+            f"{self.sdcard}/.system/leaf/platforms/mlp1/launcher/bin/"
+            "jawaka-platformctl"
+        )
+        request = json.dumps(
+            {
+                "type": "launch-game",
+                "system": "PSP",
+                "rom_path": self.args.rom,
+                "core_id": CORE_IDS[self.args.core],
+            },
+            separators=(",", ":"),
+        )
+        response = self.adb.shell(
+            f"{quote(controller)} --socket {quote(REMOTE_SOCKET)} "
+            f"request {quote(request)}"
+        )
+        try:
+            response_object = json.loads(response)
+        except json.JSONDecodeError as error:
+            raise BenchmarkError(f"Jawaka returned invalid launch response: {response}") from error
+        if response_object.get("type") != "ok":
+            raise BenchmarkError(
+                f"Jawaka rejected {self.args.core} launch: "
+                f"{response_object.get('message', response)}"
+            )
+        self.log(f"Jawaka accepted {self.args.core} launch: {response}")
+        launcher_pids = self.adb.process_ids("jawaka-launcher")
+        if launcher_pids:
+            self.adb.shell(
+                "kill -KILL " + " ".join(str(pid) for pid in launcher_pids)
+            )
+            self.log(
+                "Closed the launcher process so jawakad can enter the requested game"
+            )
+
+        deadline = time.monotonic() + self.args.startup_timeout
+        while time.monotonic() < deadline:
+            pids = self.adb.process_ids("PPSSPPSDL")
+            if pids:
+                self.pid = pids[0]
+                self.log(f"PPSSPP started as pid {self.pid}")
+                return
+            time.sleep(0.5)
+        raise BenchmarkError("Timed out waiting for PPSSPP to start")
+
+    def wait_process_gone(self, timeout: float) -> bool:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if not self.adb.process_ids("PPSSPPSDL"):
+                return True
+            time.sleep(0.25)
+        return not self.adb.process_ids("PPSSPPSDL")
+
+    def process_alive(self) -> bool:
+        return bool(self.pid and self.pid in self.adb.process_ids("PPSSPPSDL"))
+
+    def capture_backend_evidence(self) -> None:
+        if not self.pid:
+            return
+        command_line = self.adb.shell(
+            f"tr '\\000' ' ' </proc/{self.pid}/cmdline 2>/dev/null || true"
+        )
+        mappings = self.adb.shell(
+            f"grep -E 'lib(vulkan|mali|GLES|EGL|SDL)' "
+            f"/proc/{self.pid}/maps 2>/dev/null | "
+            "awk '{print $NF}' | sort -u || true"
+        ).splitlines()
+        self.backend_evidence = {
+            "command_line": command_line,
+            "graphics_mappings": mappings,
+        }
+        (self.output / "backend.json").write_text(
+            json.dumps(self.backend_evidence, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+    def connect_debugger(self, *, reconnecting: bool = False) -> None:
+        if self.websocket:
+            try:
+                self.websocket.close()
+            except OSError:
+                pass
+            self.websocket = None
+        self.adb.command(
+            ["forward", "--remove", f"tcp:{self.args.debug_port}"],
+            check=False,
+        )
+        self.adb.command(
+            [
+                "forward",
+                f"tcp:{self.args.debug_port}",
+                f"tcp:{self.args.debug_port}",
+            ]
+        )
+        self.forward_active = True
+        deadline = time.monotonic() + self.args.debugger_timeout
+        last_error: Exception | None = None
+        while time.monotonic() < deadline:
+            if not self.process_alive():
+                raise BenchmarkError("PPSSPP exited before debugger connected")
+            candidate: WebSocketClient | None = None
+            try:
+                candidate = WebSocketClient(
+                    "127.0.0.1",
+                    self.args.debug_port,
+                    timeout=min(5.0, self.args.debugger_timeout),
+                )
+                candidate.request(
+                    "version",
+                    "harness-version",
+                    {"name": "UMRK PPSSPP benchmark", "version": "1"},
+                )
+                game_status = candidate.request("game.status", "harness-game-status")
+                if not game_status.get("game"):
+                    candidate.close()
+                    time.sleep(0.5)
+                    continue
+                expected_game_id = (
+                    self.input_trace.game_id if self.input_trace else None
+                )
+                actual_game_id = game_status.get("game", {}).get("id")
+                if expected_game_id and actual_game_id != expected_game_id:
+                    candidate.close()
+                    raise ValueError(
+                        "PPSSPP input trace expects game "
+                        f"{expected_game_id}, observed {actual_game_id or 'unknown'}"
+                    )
+                self.game_status = game_status
+                self.websocket = candidate
+                if self.trace_started_at is None:
+                    self.trace_started_at = time.monotonic()
+                self.log(
+                    "Reconnected to PPSSPP GPU statistics debugger"
+                    if reconnecting
+                    else "Connected to PPSSPP GPU statistics debugger"
+                )
+                return
+            except (OSError, BenchmarkError) as error:
+                last_error = error
+                if candidate:
+                    candidate.close()
+                time.sleep(0.5)
+        raise BenchmarkError(f"Timed out connecting to PPSSPP debugger: {last_error}")
+
+    @staticmethod
+    def _debugger_transport_error(error: Exception) -> bool:
+        if isinstance(error, (OSError, json.JSONDecodeError)):
+            return True
+        detail = str(error).lower()
+        return any(
+            marker in detail
+            for marker in (
+                "websocket closed",
+                "websocket accept",
+                "closed during websocket",
+                "timed out",
+            )
+        )
+
+    def request_gpu_stats(self, ticket: str) -> dict[str, Any]:
+        if not self.websocket:
+            raise BenchmarkError("PPSSPP debugger is not connected")
+        while True:
+            try:
+                return self.websocket.request_gpu_stats(ticket)
+            except (BenchmarkError, OSError, json.JSONDecodeError) as error:
+                if (
+                    not self._debugger_transport_error(error)
+                    or self.debugger_reconnects >= self.args.max_debugger_reconnects
+                ):
+                    raise
+                self.debugger_reconnects += 1
+                self.log(
+                    "Debugger transport interrupted; reconnecting "
+                    f"({self.debugger_reconnects}/"
+                    f"{self.args.max_debugger_reconnects}): {error}"
+                )
+                self.connect_debugger(reconnecting=True)
+
+    def scene_state_file_evidence(self, path: str) -> dict[str, Any]:
+        lowered = path.lower()
+        userdata_root = f"{self.sdcard}/.userdata/mlp1/".lower()
+        if (
+            "\n" in path
+            or not lowered.startswith(userdata_root)
+            or "/psp/ppsspp_state/umrk-benchmark-" not in lowered
+            or not lowered.endswith(".ppst")
+        ):
+            raise BenchmarkError(
+                f"PPSSPP debugger returned an unsafe benchmark savestate path: {path!r}"
+            )
+        output = self.adb.shell(
+            f"""
+set -eu
+file={quote(path)}
+[ -f "$file" ]
+printf 'size='
+wc -c <"$file"
+printf 'sha256='
+sha256sum "$file" | awk '{{print $1}}'
+"""
+        )
+        values = dict(
+            line.split("=", 1)
+            for line in output.splitlines()
+            if "=" in line
+        )
+        try:
+            size = int(values["size"])
+            sha256 = values["sha256"].lower()
+        except (KeyError, ValueError) as error:
+            raise BenchmarkError(
+                f"Could not read benchmark savestate evidence: {output!r}"
+            ) from error
+        if size <= 0 or not re.fullmatch(r"[0-9a-f]{64}", sha256):
+            raise BenchmarkError(
+                f"Invalid benchmark savestate evidence: size={size} sha256={sha256!r}"
+            )
+        expected = self.args.scene_expected_sha256
+        if expected and sha256 != expected:
+            raise BenchmarkError(
+                "Benchmark savestate hash mismatch: "
+                f"expected {expected}, observed {sha256}"
+            )
+        return {
+            "path": path,
+            "size_bytes": size,
+            "sha256": sha256,
+        }
+
+    def apply_scene_state(self, action: str) -> None:
+        if not self.websocket:
+            raise BenchmarkError("PPSSPP debugger is not connected")
+        event = (
+            "game.savestate.save"
+            if action == "capture"
+            else "game.savestate.load"
+        )
+        started = time.monotonic()
+        self.log(
+            "Capturing deterministic benchmark savestate"
+            if action == "capture"
+            else "Loading deterministic benchmark savestate"
+        )
+        response = self.websocket.request(event, f"harness-scene-{action}")
+        if response.get("status") != "success":
+            raise BenchmarkError(
+                f"PPSSPP benchmark savestate {action} returned "
+                f"{response.get('status', 'unknown')}: {response.get('message', '')}"
+            )
+        path = response.get("path")
+        if not isinstance(path, str) or not path:
+            raise BenchmarkError(
+                f"PPSSPP benchmark savestate {action} returned no path"
+            )
+        evidence = self.scene_state_file_evidence(path)
+        status = self.websocket.request(
+            "game.status",
+            f"harness-scene-{action}-game-status",
+        )
+        expected_game = self.game_status.get("game", {}).get("id")
+        observed_game = status.get("game", {}).get("id")
+        if not expected_game or observed_game != expected_game:
+            raise BenchmarkError(
+                "Benchmark savestate changed the running game: "
+                f"expected {expected_game or 'unknown'}, "
+                f"observed {observed_game or 'unknown'}"
+            )
+        self.game_status = status
+        self.scene_state = {
+            "action": action,
+            "completed": True,
+            "elapsed_seconds": time.monotonic() - started,
+            "game_id": observed_game,
+            "game_version": status.get("game", {}).get("version"),
+            "response": response,
+            **evidence,
+        }
+        (self.output / "scene-state.json").write_text(
+            json.dumps(self.scene_state, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        self.log(
+            f"Benchmark savestate {action} passed: "
+            f"{evidence['size_bytes']} bytes sha256={evidence['sha256']}"
+        )
+
+    def settle_after_scene_load(self) -> None:
+        if self.args.scene_settle <= 0:
+            self.trace_started_at = time.monotonic()
+            return
+        self.log(
+            f"Settling loaded benchmark scene for {self.args.scene_settle:.1f} seconds"
+        )
+        deadline = time.monotonic() + self.args.scene_settle
+        while time.monotonic() < deadline:
+            if not self.process_alive():
+                raise BenchmarkError("PPSSPP exited while settling loaded scene")
+            time.sleep(min(0.5, max(0.0, deadline - time.monotonic())))
+        self.trace_started_at = time.monotonic()
+
+    def trace_elapsed(self) -> float:
+        if self.trace_started_at is None:
+            return 0.0
+        return time.monotonic() - self.trace_started_at
+
+    def dispatch_input_trace(self) -> None:
+        if not self.input_trace or not self.websocket:
+            return
+        try:
+            self.input_trace.dispatch_due(self.websocket, self.trace_elapsed())
+        except OSError as error:
+            if self.debugger_reconnects >= self.args.max_debugger_reconnects:
+                raise
+            self.debugger_reconnects += 1
+            self.log(
+                "Input-trace debugger transport interrupted; reconnecting "
+                f"({self.debugger_reconnects}/"
+                f"{self.args.max_debugger_reconnects}): {error}"
+            )
+            self.connect_debugger(reconnecting=True)
+            self.input_trace.dispatch_due(self.websocket, self.trace_elapsed())
+
+    def wait_with_trace(self, deadline: float) -> None:
+        while time.monotonic() < deadline:
+            self.dispatch_input_trace()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            sleep_for = min(0.1 if self.input_trace else 0.5, remaining)
+            if self.input_trace:
+                next_at = self.input_trace.next_at()
+                if next_at is not None:
+                    sleep_for = min(
+                        sleep_for,
+                        max(0.0, next_at - self.trace_elapsed()),
+                    )
+            if sleep_for > 0:
+                time.sleep(sleep_for)
+
+    def telemetry(self) -> dict[str, Any]:
+        if not self.pid:
+            raise BenchmarkError("Cannot sample telemetry without a PPSSPP pid")
+        script = f"""
+pid={self.pid}
+[ -d "/proc/$pid" ] || exit 44
+cpu_cur=0
+for node in /sys/devices/system/cpu/cpufreq/policy*/scaling_cur_freq; do
+    [ -f "$node" ] || continue
+    value="$(cat "$node" 2>/dev/null || echo 0)"
+    [ "$value" -gt "$cpu_cur" ] 2>/dev/null && cpu_cur="$value"
+done
+echo "cpu_cur_khz=$cpu_cur"
+echo "gpu_cur_hz=$(cat /sys/class/devfreq/fde60000.gpu/cur_freq 2>/dev/null || echo 0)"
+echo "gpu_load=$(cat /sys/class/devfreq/fde60000.gpu/load 2>/dev/null || echo unknown)"
+echo "gpu_governor=$(cat /sys/class/devfreq/fde60000.gpu/governor 2>/dev/null || echo unknown)"
+echo "dmc_cur_hz=$(cat /sys/class/devfreq/dmc/cur_freq 2>/dev/null || echo 0)"
+echo "dmc_load=$(cat /sys/class/devfreq/dmc/load 2>/dev/null || echo unknown)"
+echo "dmc_governor=$(cat /sys/class/devfreq/dmc/governor 2>/dev/null || echo unknown)"
+echo "proc_ticks=$(awk '{{print $14 + $15}}' /proc/$pid/stat)"
+sed -n \
+    -e 's/^VmRSS:[[:space:]]*/proc_rss_kb=/p' \
+    -e 's/^VmSize:[[:space:]]*/proc_vmsize_kb=/p' \
+    -e 's/^VmSwap:[[:space:]]*/proc_swap_kb=/p' \
+    /proc/$pid/status | sed 's/[[:space:]]*kB$//'
+sed -n \
+    -e 's/^MemAvailable:[[:space:]]*/mem_available_kb=/p' \
+    -e 's/^SwapFree:[[:space:]]*/swap_free_kb=/p' \
+    /proc/meminfo | sed 's/[[:space:]]*kB$//'
+for zone in /sys/class/thermal/thermal_zone*; do
+    [ -d "$zone" ] || continue
+    name="$(tr -d '\n' <"$zone/type" 2>/dev/null | tr -c 'A-Za-z0-9_' '_')"
+    echo "temp_${{name}}_millic=$(cat "$zone/temp" 2>/dev/null || echo 0)"
+done
+"""
+        output = self.adb.shell(script)
+        result: dict[str, Any] = {}
+        for line in output.splitlines():
+            if "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            result[key] = numeric(value)
+        load_match = re.match(r"(\d+)@(\d+)", str(result.get("gpu_load", "")))
+        if load_match:
+            result["gpu_load_percent"] = int(load_match.group(1))
+            result["gpu_load_reported_hz"] = int(load_match.group(2))
+        dmc_match = re.match(r"(\d+)@(\d+)", str(result.get("dmc_load", "")))
+        if dmc_match:
+            result["dmc_load_percent"] = int(dmc_match.group(1))
+            result["dmc_load_reported_hz"] = int(dmc_match.group(2))
+        return result
+
+    def warm_up(self) -> None:
+        self.log(f"Warming up for {self.args.warmup:.1f} seconds")
+        deadline = time.monotonic() + self.args.warmup
+        while time.monotonic() < deadline:
+            if not self.process_alive():
+                raise BenchmarkError("PPSSPP exited during warm-up")
+            self.wait_with_trace(min(deadline, time.monotonic() + 0.5))
+
+    def sample(self) -> None:
+        if not self.websocket:
+            raise BenchmarkError("PPSSPP debugger is not connected")
+        sample_file = self.output / "samples.jsonl"
+        measurement_started = time.monotonic()
+        deadline = measurement_started + self.args.duration
+        next_sample = measurement_started
+        previous_ticks: int | None = None
+        previous_time: float | None = None
+        index = 0
+        with sample_file.open("w", encoding="utf-8") as handle:
+            while time.monotonic() < deadline:
+                if not self.process_alive():
+                    raise BenchmarkError("PPSSPP exited during measurement")
+                now = time.monotonic()
+                if now < next_sample:
+                    self.wait_with_trace(next_sample)
+                if index > 0 and time.monotonic() >= deadline:
+                    break
+                self.dispatch_input_trace()
+                requested_at = time.monotonic()
+                stats = self.request_gpu_stats(f"sample-{index}")
+                telemetry = self.telemetry()
+                current_ticks = int(telemetry.get("proc_ticks", 0))
+                if previous_ticks is not None and previous_time is not None:
+                    elapsed = requested_at - previous_time
+                    if elapsed > 0:
+                        telemetry["proc_cpu_percent"] = (
+                            (current_ticks - previous_ticks)
+                            / self.args.clock_ticks
+                            / elapsed
+                            * 100.0
+                        )
+                previous_ticks = current_ticks
+                previous_time = requested_at
+                record = {
+                    "index": index,
+                    "elapsed_seconds": requested_at - measurement_started,
+                    "host_time": time.time(),
+                    "gpu_stats": stats,
+                    "telemetry": telemetry,
+                }
+                self.samples.append(record)
+                handle.write(json.dumps(record, separators=(",", ":")) + "\n")
+                handle.flush()
+                fps = stats.get("fps", {}).get("actual")
+                vps = stats.get("vblanksPerSecond", {}).get("actual")
+                self.log(
+                    f"sample {index + 1}: rendered={fps} fps, emulation={vps} vblank/s, "
+                    f"GPU={telemetry.get('gpu_load', '?')}"
+                )
+                index += 1
+                next_sample += self.args.interval
+                if next_sample < time.monotonic() - self.args.interval:
+                    next_sample = time.monotonic()
+        if not self.samples:
+            raise BenchmarkError("Measurement window produced no samples")
+
+    def terminate_ppsspp(self) -> None:
+        pids = self.adb.process_ids("PPSSPPSDL")
+        if not pids:
+            return
+        signal = "-KILL" if self.args.exit_signal == "KILL" else "-TERM"
+        self.log(f"Terminating PPSSPP with SIG{self.args.exit_signal}: {pids}")
+        self.adb.shell(f"kill {signal} " + " ".join(str(pid) for pid in pids), check=False)
+        if not self.wait_process_gone(10.0):
+            remaining = self.adb.process_ids("PPSSPPSDL")
+            self.log(f"PPSSPP did not exit promptly; forcing SIGKILL: {remaining}")
+            self.adb.shell(
+                "kill -KILL " + " ".join(str(pid) for pid in remaining),
+                check=False,
+            )
+            self.wait_process_gone(5.0)
+
+    def trigger_daemon_exit(self) -> None:
+        signal = self.args.daemon_exit_signal
+        if not signal:
+            return
+        daemon_pids = self.adb.process_ids("loong_pangu")
+        if len(daemon_pids) != 1:
+            raise BenchmarkError(
+                f"Expected one loong_pangu daemon before lifecycle action, found {daemon_pids}"
+            )
+        old_pid = daemon_pids[0]
+        started = time.monotonic()
+        self.daemon_recovery = {
+            "signal": f"SIG{signal}",
+            "old_pid": old_pid,
+            "new_pid": None,
+            "completed": False,
+            "elapsed_seconds": None,
+            "ppsspp_gone": False,
+            "socket_ready": False,
+            "frontend_ready": False,
+        }
+        self.log(f"Terminating loong_pangu with SIG{signal}: [{old_pid}]")
+        shell_signal = "-KILL" if signal == "KILL" else "-TERM"
+        self.adb.shell(f"kill {shell_signal} {old_pid}")
+
+        required = [
+            name
+            for name in ("jawaka-launcher", "jawaka-osd", "weston")
+            if self.frontend_before.get(name)
+        ]
+        deadline = started + self.args.daemon_recovery_timeout
+        while time.monotonic() < deadline:
+            current_daemons = self.adb.process_ids("loong_pangu")
+            new_pids = [pid for pid in current_daemons if pid != old_pid]
+            ppsspp_gone = not self.adb.process_ids("PPSSPPSDL")
+            socket_ready = (
+                self.adb.shell(
+                    f"[ -S {quote(REMOTE_SOCKET)} ] && echo yes",
+                    check=False,
+                )
+                == "yes"
+            )
+            snapshot = self.adb.process_snapshot()
+            frontend_ready = all(snapshot[name] for name in required)
+            if new_pids and ppsspp_gone and socket_ready and frontend_ready:
+                elapsed = time.monotonic() - started
+                self.daemon_recovery.update(
+                    {
+                        "new_pid": new_pids[0],
+                        "completed": True,
+                        "elapsed_seconds": elapsed,
+                        "ppsspp_gone": True,
+                        "socket_ready": True,
+                        "frontend_ready": True,
+                    }
+                )
+                self.log(
+                    "Daemon recovery passed "
+                    f"old={old_pid} new={new_pids[0]} elapsed={elapsed:.2f}s"
+                )
+                return
+            time.sleep(0.5)
+
+        current_daemons = self.adb.process_ids("loong_pangu")
+        new_pids = [pid for pid in current_daemons if pid != old_pid]
+        snapshot = self.adb.process_snapshot()
+        self.daemon_recovery.update(
+            {
+                "new_pid": new_pids[0] if new_pids else None,
+                "elapsed_seconds": time.monotonic() - started,
+                "ppsspp_gone": not snapshot["PPSSPPSDL"],
+                "socket_ready": (
+                    self.adb.shell(
+                        f"[ -S {quote(REMOTE_SOCKET)} ] && echo yes",
+                        check=False,
+                    )
+                    == "yes"
+                ),
+                "frontend_ready": all(snapshot[name] for name in required),
+            }
+        )
+        raise BenchmarkError(
+            "Daemon recovery timed out: "
+            + json.dumps(self.daemon_recovery, sort_keys=True)
+        )
+
+    def wait_frontend(self, timeout: float = 30.0) -> bool:
+        required = [
+            name
+            for name in ("jawaka-launcher", "jawaka-osd", "weston")
+            if self.frontend_before.get(name)
+        ]
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            snapshot = self.adb.process_snapshot()
+            socket_ready = (
+                self.adb.shell(f"[ -S {quote(REMOTE_SOCKET)} ] && echo yes") == "yes"
+            )
+            if socket_ready and all(snapshot[name] for name in required):
+                self.frontend_after = snapshot
+                return True
+            time.sleep(0.5)
+        self.frontend_after = self.adb.process_snapshot()
+        return False
+
+    def release_input_trace(self) -> None:
+        if not self.input_trace or not self.websocket:
+            return
+        try:
+            self.input_trace.release(self.websocket)
+        except OSError as error:
+            self.log(f"Could not release input-trace state: {error}")
+
+    def close_debugger(self) -> None:
+        if self.websocket:
+            self.websocket.close()
+            self.websocket = None
+        if self.forward_active:
+            self.adb.command(
+                ["forward", "--remove", f"tcp:{self.args.debug_port}"],
+                check=False,
+            )
+            self.forward_active = False
+
+    def make_summary(self, frontend_restored: bool) -> dict[str, Any]:
+        fps_values = [
+            float(item["gpu_stats"]["fps"]["actual"])
+            for item in self.samples
+            if item.get("gpu_stats", {}).get("fps", {}).get("actual") is not None
+        ]
+        vps_values = [
+            float(item["gpu_stats"]["vblanksPerSecond"]["actual"])
+            for item in self.samples
+            if item.get("gpu_stats", {})
+            .get("vblanksPerSecond", {})
+            .get("actual")
+            is not None
+        ]
+        target_values = [
+            float(item["gpu_stats"]["vblanksPerSecond"]["target"])
+            for item in self.samples
+            if item.get("gpu_stats", {})
+            .get("vblanksPerSecond", {})
+            .get("target")
+        ]
+        target_vps = statistics.median(target_values) if target_values else 60.0 / 1.001
+        speed_values = [value / target_vps * 100.0 for value in vps_values]
+        final_frames = []
+        if self.samples:
+            final_frames = self.samples[-1]["gpu_stats"].get("timing", {}).get("frames", [])
+        frame_ms = [
+            float(value) * 1000.0
+            for value in final_frames
+            if isinstance(value, (int, float)) and 0.0 < float(value) < 2.0
+        ]
+        telemetry = [item.get("telemetry", {}) for item in self.samples]
+
+        def values_for(key: str) -> list[float]:
+            return [
+                float(item[key])
+                for item in telemetry
+                if isinstance(item.get(key), (int, float))
+            ]
+
+        temperatures: dict[str, dict[str, float | None]] = {}
+        temperature_keys = sorted(
+            {
+                key
+                for item in telemetry
+                for key in item
+                if key.startswith("temp_") and key.endswith("_millic")
+            }
+        )
+        for key in temperature_keys:
+            values = [value / 1000.0 for value in values_for(key)]
+            temperatures[key.removesuffix("_millic")] = {
+                "median_c": rounded(statistics.median(values) if values else None),
+                "max_c": rounded(max(values) if values else None),
+            }
+
+        expected_backend_argument = f"--graphics={self.args.core}"
+        command_line = str(self.backend_evidence.get("command_line", ""))
+        mappings = self.backend_evidence.get("graphics_mappings", [])
+        gpu_info = [
+            str(item.get("gpu_stats", {}).get("info", "")) for item in self.samples
+        ]
+        staged_vulkan_driver_observed = any(
+            "/runtime/graphics/vulkan/rk3566-g52-g29p1/lib/libmali.so.1"
+            in mapping
+            for mapping in mappings
+        )
+        system_gles_runtime_observed = (
+            any("/usr/lib/libSDL2-" in mapping for mapping in mappings)
+            and any("/usr/lib/libmali.so" in mapping for mapping in mappings)
+        )
+        stats_backend_observed = (
+            any("Pipelines loaded:" in info for info in gpu_info)
+            if self.args.core == "vulkan"
+            else any("Programs loaded:" in info for info in gpu_info)
+        )
+        backend_runtime_observed = (
+            staged_vulkan_driver_observed
+            if self.args.core == "vulkan"
+            else system_gles_runtime_observed
+        )
+        direct_drm_expected = self.args.core == "vulkan"
+        weston_before = bool(self.frontend_before.get("weston"))
+        weston_during = bool(self.frontend_during.get("weston"))
+        direct_drm_observed = (
+            weston_before and not weston_during
+            if direct_drm_expected
+            else weston_before and weston_during
+        )
+
+        return {
+            "schema_version": 1,
+            "status": "failed" if self.error else "completed",
+            "error": self.error,
+            "device_serial": self.adb.serial,
+            "sdcard_path": self.sdcard,
+            "rom_path": self.args.rom,
+            "core": self.args.core,
+            "core_id": CORE_IDS[self.args.core],
+            "game_status": self.game_status,
+            "preset": self.args.preset,
+            "scene_state": self.scene_state,
+            "input_trace": (
+                self.input_trace.metadata() if self.input_trace else None
+            ),
+            "warmup_seconds": self.args.warmup,
+            "measurement_seconds": self.args.duration,
+            "sample_interval_seconds": self.args.interval,
+            "sample_count": len(self.samples),
+            "exit_signal": (
+                f"SIG{self.args.daemon_exit_signal}"
+                if self.args.daemon_exit_signal
+                else f"SIG{self.args.exit_signal}"
+            ),
+            "exit_target": (
+                "loong_pangu"
+                if self.args.daemon_exit_signal
+                else "PPSSPPSDL"
+            ),
+            "daemon_recovery": self.daemon_recovery,
+            "transport_recovery": {
+                "adb_recoveries": self.adb.recoveries,
+                "debugger_reconnects": self.debugger_reconnects,
+            },
+            "started_unix": self.started_at,
+            "finished_unix": time.time(),
+            "ppsspp": {
+                "rendered_fps": {
+                    "median": rounded(statistics.median(fps_values) if fps_values else None),
+                    "min": rounded(min(fps_values) if fps_values else None),
+                    "p05": rounded(percentile(fps_values, 5)),
+                },
+                "vblanks_per_second": {
+                    "target": rounded(target_vps),
+                    "median": rounded(statistics.median(vps_values) if vps_values else None),
+                    "min": rounded(min(vps_values) if vps_values else None),
+                    "p05": rounded(percentile(vps_values, 5)),
+                },
+                "emulation_speed_percent": {
+                    "median": rounded(statistics.median(speed_values) if speed_values else None),
+                    "min": rounded(min(speed_values) if speed_values else None),
+                    "p05": rounded(percentile(speed_values, 5)),
+                },
+                "final_sample_frame_history_ms": {
+                    "count": len(frame_ms),
+                    "median": rounded(statistics.median(frame_ms) if frame_ms else None),
+                    "p95": rounded(percentile(frame_ms, 95)),
+                    "p99": rounded(percentile(frame_ms, 99)),
+                    "max": rounded(max(frame_ms) if frame_ms else None),
+                },
+            },
+            "device": {
+                "cpu_frequency_khz": {
+                    "median": rounded(
+                        statistics.median(values_for("cpu_cur_khz"))
+                        if values_for("cpu_cur_khz")
+                        else None
+                    ),
+                    "min": rounded(
+                        min(values_for("cpu_cur_khz"))
+                        if values_for("cpu_cur_khz")
+                        else None
+                    ),
+                },
+                "gpu_frequency_hz": {
+                    "median": rounded(
+                        statistics.median(values_for("gpu_cur_hz"))
+                        if values_for("gpu_cur_hz")
+                        else None
+                    ),
+                    "min": rounded(
+                        min(values_for("gpu_cur_hz"))
+                        if values_for("gpu_cur_hz")
+                        else None
+                    ),
+                },
+                "gpu_load_percent": {
+                    "median": rounded(
+                        statistics.median(values_for("gpu_load_percent"))
+                        if values_for("gpu_load_percent")
+                        else None
+                    ),
+                    "max": rounded(
+                        max(values_for("gpu_load_percent"))
+                        if values_for("gpu_load_percent")
+                        else None
+                    ),
+                },
+                "dmc_frequency_hz": {
+                    "median": rounded(
+                        statistics.median(values_for("dmc_cur_hz"))
+                        if values_for("dmc_cur_hz")
+                        else None
+                    ),
+                },
+                "process_cpu_percent": {
+                    "median": rounded(
+                        statistics.median(values_for("proc_cpu_percent"))
+                        if values_for("proc_cpu_percent")
+                        else None
+                    ),
+                    "max": rounded(
+                        max(values_for("proc_cpu_percent"))
+                        if values_for("proc_cpu_percent")
+                        else None
+                    ),
+                },
+                "process_rss_kb": {
+                    "median": rounded(
+                        statistics.median(values_for("proc_rss_kb"))
+                        if values_for("proc_rss_kb")
+                        else None
+                    ),
+                    "max": rounded(
+                        max(values_for("proc_rss_kb"))
+                        if values_for("proc_rss_kb")
+                        else None
+                    ),
+                },
+                "temperatures": temperatures,
+            },
+            "backend_evidence": {
+                **self.backend_evidence,
+                "expected_argument": expected_backend_argument,
+                "argument_observed": expected_backend_argument in command_line,
+                "vulkan_loader_observed": any(
+                    "libvulkan" in mapping for mapping in mappings
+                ),
+                "mali_driver_observed": any("libmali" in mapping for mapping in mappings),
+                "staged_vulkan_driver_observed": staged_vulkan_driver_observed,
+                "system_gles_runtime_observed": system_gles_runtime_observed,
+                "stats_backend_observed": stats_backend_observed,
+                "backend_runtime_observed": backend_runtime_observed,
+            },
+            "lifecycle": {
+                "direct_drm_expected": direct_drm_expected,
+                "display_lifecycle_observed": direct_drm_observed,
+                "frontend_restored": frontend_restored,
+                "before": self.frontend_before,
+                "during": self.frontend_during,
+                "after": self.frontend_after,
+            },
+        }
+
+    def run(self) -> int:
+        frontend_restored = False
+        try:
+            self.ensure_preflight()
+            self.capture_device_identity()
+            self.prepare_config()
+            self.mark_log_offsets()
+            self.launch()
+            self.frontend_during = self.adb.process_snapshot()
+            self.capture_backend_evidence()
+            self.connect_debugger()
+            if self.args.scene_state_action == "load":
+                self.apply_scene_state("load")
+                self.settle_after_scene_load()
+            self.warm_up()
+            if self.args.scene_state_action == "capture":
+                self.apply_scene_state("capture")
+            self.sample()
+            if self.args.daemon_exit_signal:
+                self.release_input_trace()
+                self.close_debugger()
+                self.trigger_daemon_exit()
+        except (BenchmarkError, OSError, ValueError, json.JSONDecodeError) as error:
+            self.error = str(error)
+            self.log(f"ERROR: {self.error}")
+        except KeyboardInterrupt:
+            self.error = "interrupted"
+            self.log("Interrupted; restoring PPSSPP and frontend state")
+        finally:
+            self.release_input_trace()
+            self.close_debugger()
+            self.terminate_ppsspp()
+            if self.frontend_before:
+                frontend_restored = self.wait_frontend()
+                self.log(
+                    "Frontend restoration passed"
+                    if frontend_restored
+                    else "Frontend restoration timed out"
+                )
+            try:
+                self.capture_log_slices()
+            except (BenchmarkError, OSError) as error:
+                self.log(f"Could not capture log slices: {error}")
+            try:
+                self.restore_config()
+            except (BenchmarkError, OSError) as error:
+                self.error = self.error or f"config restoration failed: {error}"
+                self.log(f"ERROR: config restoration failed: {error}")
+
+        summary = self.make_summary(frontend_restored)
+        if not self.error and not frontend_restored:
+            self.error = "frontend restoration timed out"
+        if not self.error and not summary["backend_evidence"]["argument_observed"]:
+            self.error = "requested graphics backend was not observed on the command line"
+        if not self.error and not summary["backend_evidence"]["backend_runtime_observed"]:
+            self.error = "requested graphics runtime was not observed in the process"
+        if not self.error and not summary["backend_evidence"]["stats_backend_observed"]:
+            self.error = "PPSSPP GPU stats did not confirm the requested backend"
+        if not self.error and not summary["lifecycle"]["display_lifecycle_observed"]:
+            self.error = "expected display-server lifecycle was not observed"
+        if (
+            not self.error
+            and self.args.daemon_exit_signal
+            and not (self.daemon_recovery or {}).get("completed")
+        ):
+            self.error = "daemon recovery did not complete"
+        if (
+            not self.error
+            and self.args.scene_state_action
+            and not (self.scene_state or {}).get("completed")
+        ):
+            self.error = "benchmark savestate action did not complete"
+        if self.error and summary["error"] != self.error:
+            self.log(f"ERROR: {self.error}")
+            summary = self.make_summary(frontend_restored)
+        (self.output / "summary.json").write_text(
+            json.dumps(summary, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        self.log(f"Evidence written to {self.output}")
+        if self.error:
+            return 1
+        return 0
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Benchmark PPSSPP through Jawaka on an attached MLP1 and preserve "
+            "GPU, thermal, memory, and lifecycle evidence."
+        )
+    )
+    parser.add_argument("--rom", required=True, help="Absolute ROM path on the device")
+    parser.add_argument(
+        "--core",
+        choices=tuple(CORE_IDS),
+        default="vulkan",
+        help="PPSSPP graphics backend to request (default: vulkan)",
+    )
+    parser.add_argument(
+        "--preset",
+        choices=("balanced", "performance"),
+        default="balanced",
+        help="Controlled PPSSPP preset (default: balanced)",
+    )
+    parser.add_argument(
+        "--preset-root",
+        default=str(DEFAULT_PRESET_ROOT),
+        help="Directory containing ppsspp-balanced.ini and ppsspp-performance.ini",
+    )
+    parser.add_argument("--warmup", type=float, default=15.0)
+    parser.add_argument("--duration", type=float, default=60.0)
+    parser.add_argument("--interval", type=float, default=1.0)
+    parser.add_argument(
+        "--input-trace",
+        help=(
+            "Schema 1 JSON input trace driven through PPSSPP's debugger from "
+            "debugger connection through warm-up and measurement"
+        ),
+    )
+    parser.add_argument(
+        "--scene-state-action",
+        choices=("capture", "load"),
+        help=(
+            "Capture the game-scoped benchmark savestate after warm-up or "
+            "load it before warm-up"
+        ),
+    )
+    parser.add_argument(
+        "--scene-expected-sha256",
+        help="Require the captured or loaded benchmark savestate to match this SHA-256",
+    )
+    parser.add_argument(
+        "--scene-settle",
+        type=float,
+        default=3.0,
+        help="Seconds to settle after loading a benchmark savestate (default: 3)",
+    )
+    parser.add_argument("--startup-timeout", type=float, default=30.0)
+    parser.add_argument("--debugger-timeout", type=float, default=30.0)
+    parser.add_argument("--debug-port", type=int, default=28000)
+    parser.add_argument(
+        "--max-debugger-reconnects",
+        type=int,
+        default=3,
+        help="Debugger transport recoveries allowed during one run (default: 3)",
+    )
+    parser.add_argument(
+        "--adb-retry-timeout",
+        type=float,
+        default=15.0,
+        help="Seconds to retry a transient ADB transport failure (default: 15)",
+    )
+    parser.add_argument(
+        "--exit-signal",
+        choices=("TERM", "KILL"),
+        default="TERM",
+        help=(
+            "Signal used to stop PPSSPP after measurement when "
+            "--daemon-exit-signal is not set (default: TERM)"
+        ),
+    )
+    parser.add_argument(
+        "--daemon-exit-signal",
+        choices=("TERM", "KILL"),
+        help=(
+            "Stop loong_pangu after measurement and require the session "
+            "supervisor to remove PPSSPP and restore the frontend"
+        ),
+    )
+    parser.add_argument(
+        "--daemon-recovery-timeout",
+        type=float,
+        default=30.0,
+        help="Seconds allowed for supervised daemon recovery (default: 30)",
+    )
+    parser.add_argument(
+        "--replace-running",
+        action="store_true",
+        help="Terminate an already-running PPSSPP before starting",
+    )
+    parser.add_argument(
+        "--remote-sd",
+        default=os.environ.get("REMOTE_SDCARD_PATH", "auto"),
+        help="Device SD mount or auto (default: auto)",
+    )
+    parser.add_argument("--serial", help="ADB device serial (defaults to ADB_SERIAL)")
+    parser.add_argument("--output", help="New evidence directory")
+    parser.add_argument(
+        "--clock-ticks",
+        type=float,
+        default=100.0,
+        help="Device USER_HZ for process CPU calculation (default: 100)",
+    )
+    args = parser.parse_args()
+    if args.warmup < 0 or args.duration <= 0 or args.interval <= 0:
+        parser.error("warmup must be >= 0; duration and interval must be > 0")
+    if not 1 <= args.debug_port <= 65535:
+        parser.error("debug port must be in 1..65535")
+    if args.max_debugger_reconnects < 0:
+        parser.error("max debugger reconnects must be >= 0")
+    if args.adb_retry_timeout < 0:
+        parser.error("ADB retry timeout must be >= 0")
+    if args.daemon_recovery_timeout <= 0:
+        parser.error("daemon recovery timeout must be > 0")
+    if args.scene_settle < 0:
+        parser.error("scene settle must be >= 0")
+    if args.scene_expected_sha256:
+        args.scene_expected_sha256 = args.scene_expected_sha256.lower()
+        if not re.fullmatch(r"[0-9a-f]{64}", args.scene_expected_sha256):
+            parser.error("scene expected SHA-256 must contain exactly 64 hex digits")
+        if not args.scene_state_action:
+            parser.error("scene expected SHA-256 requires --scene-state-action")
+    return args
+
+
+def main() -> int:
+    try:
+        return BenchmarkSession(parse_args()).run()
+    except (BenchmarkError, FileExistsError) as error:
+        print(f"ppsspp-benchmark: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
