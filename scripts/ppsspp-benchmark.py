@@ -695,6 +695,7 @@ class BenchmarkSession:
         self.backend_evidence: dict[str, Any] = {}
         self.game_status: dict[str, Any] = {}
         self.debugger_reconnects = 0
+        self.daemon_recovery: dict[str, Any] | None = None
         self.trace_started_at: float | None = None
         self.input_trace = (
             InputTrace(Path(args.input_trace), args.warmup + args.duration)
@@ -934,6 +935,9 @@ sync
             "umrk-launcher.log": (
                 f"{self.sdcard}/.userdata/mlp1/logs/umrk-launcher.log"
             ),
+            "umrk-leaf-session.log": (
+                f"{self.sdcard}/.userdata/mlp1/logs/umrk-leaf-session.log"
+            ),
         }
         self.log_offsets = {
             remote: self.remote_file_size(remote) for remote in paths.values()
@@ -946,6 +950,9 @@ sync
             "ppsspp.log": f"{self.sdcard}/.userdata/mlp1/logs/ppsspp.log",
             "umrk-launcher.log": (
                 f"{self.sdcard}/.userdata/mlp1/logs/umrk-launcher.log"
+            ),
+            "umrk-leaf-session.log": (
+                f"{self.sdcard}/.userdata/mlp1/logs/umrk-leaf-session.log"
             ),
         }
         for local_name, remote in paths.items():
@@ -1361,6 +1368,92 @@ done
             )
             self.wait_process_gone(5.0)
 
+    def trigger_daemon_exit(self) -> None:
+        signal = self.args.daemon_exit_signal
+        if not signal:
+            return
+        daemon_pids = self.adb.process_ids("loong_pangu")
+        if len(daemon_pids) != 1:
+            raise BenchmarkError(
+                f"Expected one loong_pangu daemon before lifecycle action, found {daemon_pids}"
+            )
+        old_pid = daemon_pids[0]
+        started = time.monotonic()
+        self.daemon_recovery = {
+            "signal": f"SIG{signal}",
+            "old_pid": old_pid,
+            "new_pid": None,
+            "completed": False,
+            "elapsed_seconds": None,
+            "ppsspp_gone": False,
+            "socket_ready": False,
+            "frontend_ready": False,
+        }
+        self.log(f"Terminating loong_pangu with SIG{signal}: [{old_pid}]")
+        shell_signal = "-KILL" if signal == "KILL" else "-TERM"
+        self.adb.shell(f"kill {shell_signal} {old_pid}")
+
+        required = [
+            name
+            for name in ("jawaka-launcher", "jawaka-osd", "weston")
+            if self.frontend_before.get(name)
+        ]
+        deadline = started + self.args.daemon_recovery_timeout
+        while time.monotonic() < deadline:
+            current_daemons = self.adb.process_ids("loong_pangu")
+            new_pids = [pid for pid in current_daemons if pid != old_pid]
+            ppsspp_gone = not self.adb.process_ids("PPSSPPSDL")
+            socket_ready = (
+                self.adb.shell(
+                    f"[ -S {quote(REMOTE_SOCKET)} ] && echo yes",
+                    check=False,
+                )
+                == "yes"
+            )
+            snapshot = self.adb.process_snapshot()
+            frontend_ready = all(snapshot[name] for name in required)
+            if new_pids and ppsspp_gone and socket_ready and frontend_ready:
+                elapsed = time.monotonic() - started
+                self.daemon_recovery.update(
+                    {
+                        "new_pid": new_pids[0],
+                        "completed": True,
+                        "elapsed_seconds": elapsed,
+                        "ppsspp_gone": True,
+                        "socket_ready": True,
+                        "frontend_ready": True,
+                    }
+                )
+                self.log(
+                    "Daemon recovery passed "
+                    f"old={old_pid} new={new_pids[0]} elapsed={elapsed:.2f}s"
+                )
+                return
+            time.sleep(0.5)
+
+        current_daemons = self.adb.process_ids("loong_pangu")
+        new_pids = [pid for pid in current_daemons if pid != old_pid]
+        snapshot = self.adb.process_snapshot()
+        self.daemon_recovery.update(
+            {
+                "new_pid": new_pids[0] if new_pids else None,
+                "elapsed_seconds": time.monotonic() - started,
+                "ppsspp_gone": not snapshot["PPSSPPSDL"],
+                "socket_ready": (
+                    self.adb.shell(
+                        f"[ -S {quote(REMOTE_SOCKET)} ] && echo yes",
+                        check=False,
+                    )
+                    == "yes"
+                ),
+                "frontend_ready": all(snapshot[name] for name in required),
+            }
+        )
+        raise BenchmarkError(
+            "Daemon recovery timed out: "
+            + json.dumps(self.daemon_recovery, sort_keys=True)
+        )
+
     def wait_frontend(self, timeout: float = 30.0) -> bool:
         required = [
             name
@@ -1507,7 +1600,17 @@ done
             "measurement_seconds": self.args.duration,
             "sample_interval_seconds": self.args.interval,
             "sample_count": len(self.samples),
-            "exit_signal": f"SIG{self.args.exit_signal}",
+            "exit_signal": (
+                f"SIG{self.args.daemon_exit_signal}"
+                if self.args.daemon_exit_signal
+                else f"SIG{self.args.exit_signal}"
+            ),
+            "exit_target": (
+                "loong_pangu"
+                if self.args.daemon_exit_signal
+                else "PPSSPPSDL"
+            ),
+            "daemon_recovery": self.daemon_recovery,
             "transport_recovery": {
                 "adb_recoveries": self.adb.recoveries,
                 "debugger_reconnects": self.debugger_reconnects,
@@ -1645,6 +1748,10 @@ done
             self.connect_debugger()
             self.warm_up()
             self.sample()
+            if self.args.daemon_exit_signal:
+                self.release_input_trace()
+                self.close_debugger()
+                self.trigger_daemon_exit()
         except (BenchmarkError, OSError, ValueError, json.JSONDecodeError) as error:
             self.error = str(error)
             self.log(f"ERROR: {self.error}")
@@ -1683,6 +1790,12 @@ done
             self.error = "PPSSPP GPU stats did not confirm the requested backend"
         if not self.error and not summary["lifecycle"]["display_lifecycle_observed"]:
             self.error = "expected display-server lifecycle was not observed"
+        if (
+            not self.error
+            and self.args.daemon_exit_signal
+            and not (self.daemon_recovery or {}).get("completed")
+        ):
+            self.error = "daemon recovery did not complete"
         if self.error and summary["error"] != self.error:
             self.log(f"ERROR: {self.error}")
             summary = self.make_summary(frontend_restored)
@@ -1750,7 +1863,24 @@ def parse_args() -> argparse.Namespace:
         "--exit-signal",
         choices=("TERM", "KILL"),
         default="TERM",
-        help="Signal used after measurement; KILL exercises crash recovery",
+        help=(
+            "Signal used to stop PPSSPP after measurement when "
+            "--daemon-exit-signal is not set (default: TERM)"
+        ),
+    )
+    parser.add_argument(
+        "--daemon-exit-signal",
+        choices=("TERM", "KILL"),
+        help=(
+            "Stop loong_pangu after measurement and require the session "
+            "supervisor to remove PPSSPP and restore the frontend"
+        ),
+    )
+    parser.add_argument(
+        "--daemon-recovery-timeout",
+        type=float,
+        default=30.0,
+        help="Seconds allowed for supervised daemon recovery (default: 30)",
     )
     parser.add_argument(
         "--replace-running",
@@ -1779,6 +1909,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("max debugger reconnects must be >= 0")
     if args.adb_retry_timeout < 0:
         parser.error("ADB retry timeout must be >= 0")
+    if args.daemon_recovery_timeout <= 0:
+        parser.error("daemon recovery timeout must be > 0")
     return args
 
 
