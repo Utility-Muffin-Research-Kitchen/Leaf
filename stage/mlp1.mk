@@ -19,6 +19,8 @@ MLP1_METADATA_DIR  ?= $(UMRK_WORKSPACE_DIR)/plans/retroarch/generated/mlp1
 MLP1_CORE_REPORT_TOOL ?= $(CORES_SPRUCE_DIR)/scripts/mlp1-core-report.py
 MLP1_CORE_PROBE_RUNNER ?= $(CORES_SPRUCE_DIR)/probe-mlp1-cores-adb.sh
 MLP1_PPSSPP_PACKAGE ?= $(PPSSPP_SPRUCE_DIR)/output/mlp1/ppsspp
+MLP1_GRAPHICS_RUNTIME ?= $(LEAF_ROOT)/build/mlp1/runtime/graphics
+MLP1_VULKAN_RUNTIME ?= $(MLP1_GRAPHICS_RUNTIME)/vulkan/rk3566-g52-g29p1
 MLP1_DRASTIC_PACKAGE ?= $(LEAF_ROOT)/build/drastic/mlp1/drastic
 MLP1_MUPEN64PLUS_PACKAGE ?= $(N64_STANDALONE_DIR)/output/mlp1/mupen64plus
 MLP1_RETROARCH_PATCH_SET ?= portrait-rotation,command-menu,jawaka-load-content,controller-bindings
@@ -215,9 +217,12 @@ stage-emulator:
 	case "$(EMULATOR)" in \
 		ppsspp) \
 			test -d "$(PPSSPP_SPRUCE_DIR)" || { echo "missing repo: $(PPSSPP_SPRUCE_DIR) (run: make bootstrap)" >&2; exit 1; }; \
+			MLP1_GRAPHICS_RUNTIME_DIR="$(MLP1_GRAPHICS_RUNTIME)" \
+				"$(LEAF_ROOT)/scripts/build-mlp1-graphics-runtime.sh"; \
 			$(MAKE) -C "$(PPSSPP_SPRUCE_DIR)" package-mlp1; \
 			package_dir="$(MLP1_PPSSPP_PACKAGE)"; \
 			remote_name="ppsspp"; \
+			vulkan_runtime="$(MLP1_VULKAN_RUNTIME)"; \
 			;; \
 		drastic) \
 			test -d "$(STEWARD_NDS_DIR)" || { echo "missing repo: $(STEWARD_NDS_DIR) (run: make bootstrap)" >&2; exit 1; }; \
@@ -256,11 +261,18 @@ stage-emulator:
 	if [ -z "$$remote_system" ]; then remote_system="$$remote_sd/.system/leaf"; fi; \
 	remote_platform="$(REMOTE_PLATFORM_PATH)"; \
 	if [ -z "$$remote_platform" ]; then remote_platform="$$remote_system/platforms/mlp1"; fi; \
+	if [ -n "$${vulkan_runtime:-}" ]; then \
+		test -d "$$vulkan_runtime" || { echo "missing Vulkan runtime: $$vulkan_runtime" >&2; exit 1; }; \
+		remote_vulkan="$$remote_platform/runtime/graphics/vulkan/rk3566-g52-g29p1"; \
+		echo "Deploying shared Vulkan runtime to $$remote_vulkan"; \
+		"$${ADB[@]}" shell "rm -rf \"$$remote_vulkan\" && mkdir -p \"$$remote_vulkan\""; \
+		"$${ADB[@]}" push "$$vulkan_runtime/." "$$remote_vulkan/" >/dev/null; \
+	fi; \
 	remote_dir="$$remote_platform/emulators/$$remote_name"; \
 	echo "Deploying $(EMULATOR) emulator to $$remote_dir"; \
 	"$${ADB[@]}" shell "rm -rf \"$$remote_dir\" && mkdir -p \"$$remote_dir\""; \
 	"$${ADB[@]}" push "$$package_dir/." "$$remote_dir/" >/dev/null; \
-	"$${ADB[@]}" shell "chmod 755 \"$$remote_dir/launch.sh\" \"$$remote_dir/bin/\"* \"$$remote_dir/lib/\"* 2>/dev/null || true"; \
+	"$${ADB[@]}" shell "chmod 755 \"$$remote_dir\"/launch*.sh \"$$remote_dir/bin/\"* \"$$remote_dir/lib/\"* 2>/dev/null || true"; \
 	if [ -d "$(DEVICE_OVERLAY)/defaults" ]; then \
 		echo "Refreshing platform defaults at $$remote_platform/defaults"; \
 		"$${ADB[@]}" shell "rm -rf '$$remote_platform/defaults' && mkdir -p '$$remote_platform/defaults'"; \
@@ -353,6 +365,8 @@ release-zips:
 	MLP1_CORES_DIR="$(MLP1_CORES_DIR)" \
 	MLP1_CORES_REPORT="$(MLP1_CORES_REPORT)" \
 	MLP1_PPSSPP_PACKAGE="$(MLP1_PPSSPP_PACKAGE)" \
+	MLP1_GRAPHICS_RUNTIME="$(MLP1_GRAPHICS_RUNTIME)" \
+	MLP1_VULKAN_RUNTIME="$(MLP1_VULKAN_RUNTIME)" \
 	MLP1_DRASTIC_PACKAGE="$(MLP1_DRASTIC_PACKAGE)" \
 	MLP1_MUPEN64PLUS_PACKAGE="$(MLP1_MUPEN64PLUS_PACKAGE)" \
 	MLP1_RETROARCH_PATCH_SET="$(MLP1_RETROARCH_PATCH_SET)" \
@@ -379,6 +393,8 @@ release-sd-zip:
 	MLP1_CORES_DIR="$(MLP1_CORES_DIR)" \
 	MLP1_CORES_REPORT="$(MLP1_CORES_REPORT)" \
 	MLP1_PPSSPP_PACKAGE="$(MLP1_PPSSPP_PACKAGE)" \
+	MLP1_GRAPHICS_RUNTIME="$(MLP1_GRAPHICS_RUNTIME)" \
+	MLP1_VULKAN_RUNTIME="$(MLP1_VULKAN_RUNTIME)" \
 	MLP1_DRASTIC_PACKAGE="$(MLP1_DRASTIC_PACKAGE)" \
 	MLP1_MUPEN64PLUS_PACKAGE="$(MLP1_MUPEN64PLUS_PACKAGE)" \
 	MLP1_RETROARCH_PATCH_SET="$(MLP1_RETROARCH_PATCH_SET)" \

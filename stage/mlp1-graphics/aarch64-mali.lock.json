@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "kind": "jeffycn-libmali-raw",
+  "name": "libmali-bifrost-g52-g29p1",
+  "architecture": "arm64",
+  "release": {
+    "repo": "JeffyCN/mirrors",
+    "branch": "libmali-next",
+    "commit": "4233031d818e97a19e8a9cdbbd5c15795ededd93"
+  },
+  "asset": {
+    "filename": "libmali-bifrost-g52-g29p1.so",
+    "path": "lib/aarch64-linux-gnu/libmali-bifrost-g52-g29p1.so",
+    "url": "https://raw.githubusercontent.com/JeffyCN/mirrors/4233031d818e97a19e8a9cdbbd5c15795ededd93/lib/aarch64-linux-gnu/libmali-bifrost-g52-g29p1.so",
+    "size": 59855128,
+    "sha256": "605e3a5caf1be62bb48d97b1168434257355d56db5e3be9b515cfa742c173118"
+  },
+  "icd": {
+    "filename": "rk_vk_g29.json",
+    "library_path": "libmali.so.1",
+    "api_version": "1.3.276"
+  },
+  "license": {
+    "filename": "END_USER_LICENCE_AGREEMENT.txt",
+    "url": "https://raw.githubusercontent.com/JeffyCN/mirrors/4233031d818e97a19e8a9cdbbd5c15795ededd93/END_USER_LICENCE_AGREEMENT.txt",
+    "size": 10040,
+    "sha256": "a78acc73de9909efb879800d4daa4640c4aaa55cd751238a133954aba15e4285"
+  },
+  "packaging_reference": "Utility-Muffin-Research-Kitchen/PortMaster-mlp1"
+}

@@ -32,6 +32,8 @@ MLP1_RETROARCH_MANIFEST="${MLP1_RETROARCH_MANIFEST:-$RETROARCH_BUILDS_DIR/output
 MLP1_CORES_DIR="${MLP1_CORES_DIR:-$CORES_SPRUCE_DIR/output/mlp1/cores}"
 MLP1_CORES_REPORT="${MLP1_CORES_REPORT:-$CORES_SPRUCE_DIR/output/mlp1/build-report.json}"
 MLP1_PPSSPP_PACKAGE="${MLP1_PPSSPP_PACKAGE:-$PPSSPP_SPRUCE_DIR/output/mlp1/ppsspp}"
+MLP1_GRAPHICS_RUNTIME="${MLP1_GRAPHICS_RUNTIME:-$LEAF_ROOT/build/mlp1/runtime/graphics}"
+MLP1_VULKAN_RUNTIME="${MLP1_VULKAN_RUNTIME:-$MLP1_GRAPHICS_RUNTIME/vulkan/rk3566-g52-g29p1}"
 MLP1_DRASTIC_PACKAGE="${MLP1_DRASTIC_PACKAGE:-$LEAF_ROOT/build/drastic/mlp1/drastic}"
 MLP1_MUPEN64PLUS_PACKAGE="${MLP1_MUPEN64PLUS_PACKAGE:-$N64_STANDALONE_DIR/output/mlp1/mupen64plus}"
 MLP1_RETROARCH_PATCH_SET="${MLP1_RETROARCH_PATCH_SET:-portrait-rotation,command-menu,jawaka-load-content}"
@@ -328,7 +330,8 @@ for e in packaged:
         expected_sos.add(so)
         if not os.path.isfile(os.path.join(cores_dir, so)):
             missing_bin.append("%s (%s)" % (cid, so))
-    if not os.path.isfile(os.path.join(lic_dir, cid + ".txt")):
+    license_id = {"ppsspp_gles": "ppsspp"}.get(cid, cid)
+    if not os.path.isfile(os.path.join(lic_dir, license_id + ".txt")):
         missing_lic.append(cid)
 staged = sorted(f for f in os.listdir(cores_dir)
                 if f.endswith("_libretro.so")) if os.path.isdir(cores_dir) else []
@@ -393,6 +396,7 @@ expected_core = {
     "supports_savestate": False,
     "supports_disk_control": False,
     "needs_swap": False,
+    "requires_direct_drm": False,
     "platforms": ["mlp1"],
     "status": "packaged",
 }
@@ -559,6 +563,27 @@ package_emulator() {
     cp -R "$package_dir" "$RELEASE_ROOT/platforms/mlp1/emulators/$remote_name"
 }
 
+package_graphics_runtime() {
+    MLP1_GRAPHICS_RUNTIME_DIR="$MLP1_GRAPHICS_RUNTIME" \
+        "$LEAF_ROOT/scripts/build-mlp1-graphics-runtime.sh"
+
+    [ -d "$MLP1_VULKAN_RUNTIME" ] || \
+        die "missing shared Vulkan runtime: $MLP1_VULKAN_RUNTIME"
+
+    local graphics_root="$RELEASE_ROOT/platforms/mlp1/runtime/graphics"
+    rm -rf "$graphics_root/vulkan/rk3566-g52-g29p1"
+    mkdir -p "$graphics_root/vulkan"
+    cp -R "$MLP1_VULKAN_RUNTIME" \
+        "$graphics_root/vulkan/rk3566-g52-g29p1"
+    chmod 755 "$graphics_root/vulkan/rk3566-g52-g29p1/lib/libmali.so.1"
+}
+
+validate_ppsspp_vulkan_release() {
+    local platform_dir="$RELEASE_ROOT/platforms/mlp1"
+    python3 "$LEAF_ROOT/scripts/validate-ppsspp-vulkan-release.py" "$platform_dir" ||
+        die "PPSSPP Vulkan release validation failed"
+}
+
 validate_standalone_n64_release() {
     local platform_dir="$RELEASE_ROOT/platforms/mlp1"
 
@@ -713,10 +738,12 @@ build_install_zip() {
 
     cp -R "$PAYLOAD_ROOT/.system/leaf/platforms/mlp1" "$RELEASE_ROOT/platforms/mlp1"
 
+    package_graphics_runtime
     for emulator in $STAGE_EMULATORS; do
         package_emulator "$emulator"
     done
     validate_standalone_n64_release
+    validate_ppsspp_vulkan_release
 
     cp -R "$LEAF_ROOT/stage/licenses" "$RELEASE_ROOT/licenses"
     validate_packaged_cores "$RELEASE_ROOT"
