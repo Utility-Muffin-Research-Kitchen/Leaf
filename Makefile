@@ -22,7 +22,7 @@ LARGE_LIBRARY_FIXTURE_ENV = \
 	REMOTE_SDCARD_PATH="$(REMOTE_SDCARD_PATH)"
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap doctor status status-internal pakrat-local-feed-test adb-enable-marker adb-disable-marker adb-tail-logs adb-large-library-create adb-large-library-clean adb-large-library-status adb-install-wrapper adb-uninstall-wrapper
+.PHONY: help bootstrap doctor status status-internal pakrat-local-feed-test adb-enable-marker adb-disable-marker adb-tail-logs adb-large-library-create adb-large-library-clean adb-large-library-status adb-install-wrapper adb-uninstall-wrapper benchmark-ppsspp
 
 help:
 	@echo "Leaf workspace commands (DEVICE=$(DEVICE), WORKSPACE_DIR=$(WORKSPACE_DIR)):"
@@ -56,6 +56,7 @@ help:
 	@echo "  make adb-large-library-clean              remove fake large-library fixture"
 	@echo "  make adb-install-wrapper                  install Leaf init hook (compat alias)"
 	@echo "  make adb-uninstall-wrapper                remove Leaf init hook (compat alias)"
+	@echo "  make benchmark-ppsspp ROM=/path CORE=vulkan PRESET=balanced"
 
 bootstrap:
 	@LEAF_WORKSPACE_DIR="$(WORKSPACE_DIR)" scripts/bootstrap.sh $(REQUIRED_REPOS) --optional $(OPTIONAL_PRIVATE_REPOS)
@@ -115,3 +116,11 @@ adb-install-wrapper:
 
 adb-uninstall-wrapper:
 	scripts/adb-uninstall-wrapper.sh
+
+benchmark-ppsspp:
+	@test -n "$(ROM)" || { echo "usage: make benchmark-ppsspp ROM=/device/path [CORE=vulkan|gles] [PRESET=balanced|performance] [BENCHMARK_ARGS='...']" >&2; exit 1; }
+	scripts/ppsspp-benchmark.py \
+		--rom "$(ROM)" \
+		--core "$(if $(CORE),$(CORE),vulkan)" \
+		--preset "$(if $(PRESET),$(PRESET),balanced)" \
+		$(BENCHMARK_ARGS)

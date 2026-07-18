@@ -52,6 +52,10 @@ def validate(platform: Path) -> None:
         raise SystemExit("error: PPSSPP and Vulkan runtime manifests disagree")
     if manifest.get("fallback_entrypoint") != "launch-gles.sh":
         raise SystemExit("error: PPSSPP package does not declare the GLES fallback")
+    if manifest.get("fallback_sdl_video_driver") != "wayland":
+        raise SystemExit("error: PPSSPP GLES fallback is not compositor-safe")
+    if manifest.get("fallback_display_rotation") != 0:
+        raise SystemExit("error: PPSSPP GLES fallback must use compositor rotation")
     for rel in ("launch.sh", "launch-gles.sh", "bin/PPSSPPSDL"):
         path = package / rel
         if not path.is_file() or not os.access(path, os.X_OK):
@@ -75,6 +79,11 @@ def validate(platform: Path) -> None:
         raise SystemExit("error: PPSSPP launcher still writes release-managed state")
     if 'OLD_STATE_ROOT="$PLATFORM_ROOT/state/ppsspp"' not in launch_lines:
         raise SystemExit("error: PPSSPP launcher lost the one-time legacy state migration")
+    fallback_text = (package / "launch-gles.sh").read_text(encoding="utf-8")
+    if 'PPSSPP_GLES_SDL_VIDEODRIVER:-wayland' not in fallback_text:
+        raise SystemExit("error: PPSSPP GLES fallback does not select Wayland")
+    if 'PPSSPP_GLES_DISPLAY_ROTATION:-0' not in fallback_text:
+        raise SystemExit("error: PPSSPP GLES fallback still forces panel rotation")
 
     cores = load_json(platform / "defaults/cores.json").get("cores")
     systems = load_json(platform / "defaults/systems.json").get("systems")
