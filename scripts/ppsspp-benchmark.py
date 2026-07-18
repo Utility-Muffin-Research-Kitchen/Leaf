@@ -36,6 +36,52 @@ DEFAULT_PRESET_ROOT = PPSSPP_ROOT / "output/mlp1/ppsspp/defaults"
 DEFAULT_OUTPUT_ROOT = LEAF_ROOT / "build/benchmarks/ppsspp"
 REMOTE_SOCKET = "/tmp/jawaka-runtime/jawakad.sock"
 CORE_IDS = {"vulkan": "ppsspp", "gles": "ppsspp_gles"}
+TRANSIENT_ADB_ERRORS = (
+    "device not found",
+    "device offline",
+    "no devices/emulators found",
+    "closed",
+    "connection reset",
+    "protocol fault",
+    "transport error",
+    "transport is closing",
+)
+TRACE_EVENTS = {
+    "input.buttons.press",
+    "input.buttons.send",
+    "input.analog.send",
+}
+TRACE_BUTTONS = {
+    "back",
+    "circle",
+    "cross",
+    "disc",
+    "down",
+    "forward",
+    "hold",
+    "home",
+    "l2",
+    "l3",
+    "left",
+    "ltrigger",
+    "memstick",
+    "note",
+    "playpause",
+    "r2",
+    "r3",
+    "remote_hold",
+    "right",
+    "rtrigger",
+    "screen",
+    "select",
+    "square",
+    "start",
+    "triangle",
+    "up",
+    "vol_down",
+    "vol_up",
+    "wlan",
+}
 
 
 class BenchmarkError(RuntimeError):
@@ -71,7 +117,7 @@ def run(
 
 
 class Adb:
-    def __init__(self, serial: str | None) -> None:
+    def __init__(self, serial: str | None, retry_timeout: float = 15.0) -> None:
         if serial:
             self.serial = serial
         else:
@@ -85,7 +131,27 @@ class Adb:
             if not self.serial:
                 raise BenchmarkError("No online adb device found")
         self.prefix = ["adb", "-s", self.serial]
-        run(self.prefix + ["get-state"])
+        self.retry_timeout = retry_timeout
+        self.recoveries: list[dict[str, Any]] = []
+        self.command(["get-state"])
+
+    @staticmethod
+    def _detail(result: subprocess.CompletedProcess[Any], text: bool) -> str:
+        if text:
+            stderr = result.stderr.strip()
+            stdout = result.stdout.strip()
+        else:
+            stderr = result.stderr.decode(errors="replace").strip()
+            stdout = result.stdout.decode(errors="replace").strip()
+        return stderr or stdout or f"exit {result.returncode}"
+
+    @staticmethod
+    def _transient(detail: str) -> bool:
+        lowered = detail.lower()
+        return (
+            any(pattern in lowered for pattern in TRANSIENT_ADB_ERRORS)
+            or bool(re.search(r"(?:adb|error): device .+ not found", lowered))
+        )
 
     def command(
         self,
@@ -95,12 +161,36 @@ class Adb:
         text: bool = True,
         timeout: float | None = None,
     ) -> subprocess.CompletedProcess[Any]:
-        return run(
-            self.prefix + arguments,
-            check=check,
-            text=text,
-            timeout=timeout,
-        )
+        command = self.prefix + arguments
+        deadline = time.monotonic() + self.retry_timeout
+        attempts = 0
+        first_error = ""
+        while True:
+            result = run(command, check=False, text=text, timeout=timeout)
+            if result.returncode == 0:
+                if attempts:
+                    self.recoveries.append(
+                        {
+                            "host_time": time.time(),
+                            "command": shlex.join(command),
+                            "attempts": attempts + 1,
+                            "first_error": first_error,
+                        }
+                    )
+                return result
+            detail = self._detail(result, text)
+            if (
+                not self._transient(detail)
+                or time.monotonic() >= deadline
+                or self.retry_timeout <= 0
+            ):
+                if check:
+                    raise BenchmarkError(f"{shlex.join(command)}: {detail}")
+                return result
+            if not first_error:
+                first_error = detail
+            attempts += 1
+            time.sleep(0.5)
 
     def shell(
         self,
@@ -222,6 +312,199 @@ def numeric(value: str) -> int | float | str:
             return float(value)
         except ValueError:
             return value
+
+
+class InputTrace:
+    """Validated, time-based PPSSPP debugger input sequence."""
+
+    def __init__(self, path: Path, horizon: float) -> None:
+        self.path = path.resolve()
+        try:
+            raw = self.path.read_bytes()
+        except OSError as error:
+            raise BenchmarkError(
+                f"Could not read PPSSPP input trace {self.path}: {error}"
+            ) from error
+        try:
+            document = json.loads(raw)
+        except json.JSONDecodeError as error:
+            raise BenchmarkError(f"Invalid PPSSPP input trace JSON: {error}") from error
+        if not isinstance(document, dict) or document.get("schema") != 1:
+            raise BenchmarkError("PPSSPP input trace must be a schema 1 object")
+        name = document.get("name")
+        if not isinstance(name, str) or not name.strip():
+            raise BenchmarkError("PPSSPP input trace requires a non-empty name")
+        game_id = document.get("game_id")
+        if game_id is not None and (
+            not isinstance(game_id, str) or not game_id.strip()
+        ):
+            raise BenchmarkError("PPSSPP input trace game_id must be a string")
+        source_events = document.get("events")
+        if not isinstance(source_events, list) or not source_events:
+            raise BenchmarkError("PPSSPP input trace requires at least one event")
+
+        self.name = name
+        self.game_id = game_id
+        self.description = str(document.get("description", ""))
+        self.sha256 = hashlib.sha256(raw).hexdigest()
+        self.events: list[tuple[float, str, dict[str, Any]]] = []
+        self.used_buttons: set[str] = set()
+        self.next_index = 0
+        self.dispatched = 0
+        self.skipped_late = 0
+
+        for index, item in enumerate(source_events):
+            self._append_source_event(item, index, horizon)
+        self.events.sort(key=lambda event: event[0])
+
+    def _append_source_event(
+        self,
+        item: Any,
+        index: int,
+        horizon: float,
+    ) -> None:
+        label = f"input trace event {index}"
+        if not isinstance(item, dict):
+            raise BenchmarkError(f"{label} must be an object")
+        at = item.get("at")
+        event = item.get("event")
+        if (
+            not isinstance(at, (int, float))
+            or isinstance(at, bool)
+            or not math.isfinite(float(at))
+            or at < 0
+        ):
+            raise BenchmarkError(f"{label} requires a finite, non-negative at value")
+        if event not in TRACE_EVENTS:
+            raise BenchmarkError(f"{label} uses unsupported event: {event!r}")
+        repeat_every = item.get("repeat_every")
+        if repeat_every is not None and (
+            not isinstance(repeat_every, (int, float))
+            or isinstance(repeat_every, bool)
+            or not math.isfinite(float(repeat_every))
+            or repeat_every <= 0
+        ):
+            raise BenchmarkError(f"{label} repeat_every must be positive")
+        repeat_until = item.get("repeat_until", horizon)
+        if (
+            not isinstance(repeat_until, (int, float))
+            or isinstance(repeat_until, bool)
+            or not math.isfinite(float(repeat_until))
+        ):
+            raise BenchmarkError(f"{label} repeat_until must be finite")
+
+        parameters = {
+            key: value
+            for key, value in item.items()
+            if key not in {"at", "event", "repeat_every", "repeat_until"}
+        }
+        self._validate_parameters(str(event), parameters, label)
+
+        current = float(at)
+        limit = min(float(repeat_until), horizon)
+        while current <= limit + 1e-9:
+            self.events.append((current, str(event), parameters.copy()))
+            if repeat_every is None:
+                break
+            current += float(repeat_every)
+
+    def _validate_parameters(
+        self,
+        event: str,
+        parameters: dict[str, Any],
+        label: str,
+    ) -> None:
+        if event == "input.buttons.press":
+            button = parameters.get("button")
+            duration = parameters.get("duration", 1)
+            if button not in TRACE_BUTTONS:
+                raise BenchmarkError(f"{label} has unsupported button: {button!r}")
+            if not isinstance(duration, int) or isinstance(duration, bool) or duration < 0:
+                raise BenchmarkError(f"{label} duration must be a non-negative integer")
+            if set(parameters) - {"button", "duration"}:
+                raise BenchmarkError(f"{label} has unsupported button-press parameters")
+            self.used_buttons.add(str(button))
+            return
+        if event == "input.buttons.send":
+            buttons = parameters.get("buttons")
+            if not isinstance(buttons, dict) or not buttons:
+                raise BenchmarkError(f"{label} buttons must be a non-empty object")
+            if set(parameters) != {"buttons"}:
+                raise BenchmarkError(f"{label} has unsupported button-state parameters")
+            for button, state in buttons.items():
+                if button not in TRACE_BUTTONS:
+                    raise BenchmarkError(f"{label} has unsupported button: {button!r}")
+                if state is not None and not isinstance(state, bool):
+                    raise BenchmarkError(f"{label} button states must be boolean or null")
+                self.used_buttons.add(button)
+            return
+
+        stick = parameters.get("stick", "left")
+        x = parameters.get("x")
+        y = parameters.get("y")
+        if set(parameters) - {"stick", "x", "y"}:
+            raise BenchmarkError(f"{label} has unsupported analog parameters")
+        if stick not in {"left", "right"}:
+            raise BenchmarkError(f"{label} stick must be left or right")
+        for axis, value in (("x", x), ("y", y)):
+            if (
+                not isinstance(value, (int, float))
+                or isinstance(value, bool)
+                or not math.isfinite(float(value))
+                or not -1.0 <= float(value) <= 1.0
+            ):
+                raise BenchmarkError(f"{label} {axis} must be between -1.0 and 1.0")
+
+    def dispatch_due(
+        self,
+        websocket: "WebSocketClient",
+        elapsed: float,
+        *,
+        late_tolerance: float = 1.0,
+    ) -> None:
+        while (
+            self.next_index < len(self.events)
+            and self.events[self.next_index][0] <= elapsed
+        ):
+            scheduled, event, parameters = self.events[self.next_index]
+            self.next_index += 1
+            if elapsed - scheduled > late_tolerance:
+                self.skipped_late += 1
+                continue
+            websocket.notify(event, parameters)
+            self.dispatched += 1
+
+    def next_at(self) -> float | None:
+        if self.next_index >= len(self.events):
+            return None
+        return self.events[self.next_index][0]
+
+    def release(self, websocket: "WebSocketClient") -> None:
+        websocket.notify(
+            "input.analog.send",
+            {"stick": "left", "x": 0.0, "y": 0.0},
+        )
+        websocket.notify(
+            "input.analog.send",
+            {"stick": "right", "x": 0.0, "y": 0.0},
+        )
+        if self.used_buttons:
+            websocket.notify(
+                "input.buttons.send",
+                {"buttons": {button: False for button in sorted(self.used_buttons)}},
+            )
+
+    def metadata(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "game_id": self.game_id,
+            "description": self.description,
+            "source_path": str(self.path),
+            "sha256": self.sha256,
+            "expanded_event_count": len(self.events),
+            "dispatched_event_count": self.dispatched,
+            "skipped_late_event_count": self.skipped_late,
+        }
 
 
 class WebSocketClient:
@@ -359,6 +642,19 @@ class WebSocketClient:
     def request_gpu_stats(self, ticket: str) -> dict[str, Any]:
         return self.request("gpu.stats.get", ticket)
 
+    def notify(
+        self,
+        event: str,
+        parameters: dict[str, Any] | None = None,
+    ) -> None:
+        message = {"event": event}
+        if parameters:
+            message.update(parameters)
+        self._send_frame(
+            0x1,
+            json.dumps(message, separators=(",", ":")).encode("utf-8"),
+        )
+
     def close(self) -> None:
         try:
             self._send_frame(0x8, struct.pack("!H", 1000))
@@ -370,7 +666,10 @@ class WebSocketClient:
 class BenchmarkSession:
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
-        self.adb = Adb(args.serial or os.environ.get("ADB_SERIAL"))
+        self.adb = Adb(
+            args.serial or os.environ.get("ADB_SERIAL"),
+            retry_timeout=args.adb_retry_timeout,
+        )
         timestamp = time.strftime("%Y%m%d-%H%M%S")
         output = Path(args.output) if args.output else (
             DEFAULT_OUTPUT_ROOT / f"{timestamp}-{args.core}-{args.preset}"
@@ -394,6 +693,18 @@ class BenchmarkSession:
         self.error: str | None = None
         self.effective_config = ""
         self.backend_evidence: dict[str, Any] = {}
+        self.game_status: dict[str, Any] = {}
+        self.debugger_reconnects = 0
+        self.trace_started_at: float | None = None
+        self.input_trace = (
+            InputTrace(Path(args.input_trace), args.warmup + args.duration)
+            if args.input_trace
+            else None
+        )
+        if self.input_trace:
+            (self.output / "input-trace.json").write_bytes(
+                self.input_trace.path.read_bytes()
+            )
         self.started_at = time.time()
 
     def resolve_sdcard(self) -> str:
@@ -512,6 +823,9 @@ fi
                     "preset_path": str(preset_path),
                     "effective_config_sha256": config_sha,
                     "backend_command_line": self.args.core,
+                    "input_trace": (
+                        self.input_trace.metadata() if self.input_trace else None
+                    ),
                     "debugger": {
                         "port": self.args.debug_port,
                         "on_startup": True,
@@ -771,7 +1085,13 @@ done
             encoding="utf-8",
         )
 
-    def connect_debugger(self) -> None:
+    def connect_debugger(self, *, reconnecting: bool = False) -> None:
+        if self.websocket:
+            try:
+                self.websocket.close()
+            except OSError:
+                pass
+            self.websocket = None
         self.adb.command(
             ["forward", "--remove", f"tcp:{self.args.debug_port}"],
             check=False,
@@ -806,8 +1126,25 @@ done
                     candidate.close()
                     time.sleep(0.5)
                     continue
+                expected_game_id = (
+                    self.input_trace.game_id if self.input_trace else None
+                )
+                actual_game_id = game_status.get("game", {}).get("id")
+                if expected_game_id and actual_game_id != expected_game_id:
+                    candidate.close()
+                    raise ValueError(
+                        "PPSSPP input trace expects game "
+                        f"{expected_game_id}, observed {actual_game_id or 'unknown'}"
+                    )
+                self.game_status = game_status
                 self.websocket = candidate
-                self.log("Connected to PPSSPP GPU statistics debugger")
+                if self.trace_started_at is None:
+                    self.trace_started_at = time.monotonic()
+                self.log(
+                    "Reconnected to PPSSPP GPU statistics debugger"
+                    if reconnecting
+                    else "Connected to PPSSPP GPU statistics debugger"
+                )
                 return
             except (OSError, BenchmarkError) as error:
                 last_error = error
@@ -815,6 +1152,80 @@ done
                     candidate.close()
                 time.sleep(0.5)
         raise BenchmarkError(f"Timed out connecting to PPSSPP debugger: {last_error}")
+
+    @staticmethod
+    def _debugger_transport_error(error: Exception) -> bool:
+        if isinstance(error, (OSError, json.JSONDecodeError)):
+            return True
+        detail = str(error).lower()
+        return any(
+            marker in detail
+            for marker in (
+                "websocket closed",
+                "websocket accept",
+                "closed during websocket",
+                "timed out",
+            )
+        )
+
+    def request_gpu_stats(self, ticket: str) -> dict[str, Any]:
+        if not self.websocket:
+            raise BenchmarkError("PPSSPP debugger is not connected")
+        while True:
+            try:
+                return self.websocket.request_gpu_stats(ticket)
+            except (BenchmarkError, OSError, json.JSONDecodeError) as error:
+                if (
+                    not self._debugger_transport_error(error)
+                    or self.debugger_reconnects >= self.args.max_debugger_reconnects
+                ):
+                    raise
+                self.debugger_reconnects += 1
+                self.log(
+                    "Debugger transport interrupted; reconnecting "
+                    f"({self.debugger_reconnects}/"
+                    f"{self.args.max_debugger_reconnects}): {error}"
+                )
+                self.connect_debugger(reconnecting=True)
+
+    def trace_elapsed(self) -> float:
+        if self.trace_started_at is None:
+            return 0.0
+        return time.monotonic() - self.trace_started_at
+
+    def dispatch_input_trace(self) -> None:
+        if not self.input_trace or not self.websocket:
+            return
+        try:
+            self.input_trace.dispatch_due(self.websocket, self.trace_elapsed())
+        except OSError as error:
+            if self.debugger_reconnects >= self.args.max_debugger_reconnects:
+                raise
+            self.debugger_reconnects += 1
+            self.log(
+                "Input-trace debugger transport interrupted; reconnecting "
+                f"({self.debugger_reconnects}/"
+                f"{self.args.max_debugger_reconnects}): {error}"
+            )
+            self.connect_debugger(reconnecting=True)
+            self.input_trace.dispatch_due(self.websocket, self.trace_elapsed())
+
+    def wait_with_trace(self, deadline: float) -> None:
+        while time.monotonic() < deadline:
+            self.dispatch_input_trace()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            sleep_for = min(0.1 if self.input_trace else 0.5, remaining)
+            if self.input_trace:
+                next_at = self.input_trace.next_at()
+                if next_at is not None:
+                    sleep_for = min(
+                        sleep_for,
+                        max(0.0, next_at - self.trace_elapsed()),
+                    )
+            if sleep_for > 0:
+                time.sleep(sleep_for)
 
     def telemetry(self) -> dict[str, Any]:
         if not self.pid:
@@ -874,7 +1285,7 @@ done
         while time.monotonic() < deadline:
             if not self.process_alive():
                 raise BenchmarkError("PPSSPP exited during warm-up")
-            time.sleep(min(0.5, max(0.0, deadline - time.monotonic())))
+            self.wait_with_trace(min(deadline, time.monotonic() + 0.5))
 
     def sample(self) -> None:
         if not self.websocket:
@@ -892,11 +1303,12 @@ done
                     raise BenchmarkError("PPSSPP exited during measurement")
                 now = time.monotonic()
                 if now < next_sample:
-                    time.sleep(next_sample - now)
+                    self.wait_with_trace(next_sample)
                 if index > 0 and time.monotonic() >= deadline:
                     break
+                self.dispatch_input_trace()
                 requested_at = time.monotonic()
-                stats = self.websocket.request_gpu_stats(f"sample-{index}")
+                stats = self.request_gpu_stats(f"sample-{index}")
                 telemetry = self.telemetry()
                 current_ticks = int(telemetry.get("proc_ticks", 0))
                 if previous_ticks is not None and previous_time is not None:
@@ -967,6 +1379,14 @@ done
             time.sleep(0.5)
         self.frontend_after = self.adb.process_snapshot()
         return False
+
+    def release_input_trace(self) -> None:
+        if not self.input_trace or not self.websocket:
+            return
+        try:
+            self.input_trace.release(self.websocket)
+        except OSError as error:
+            self.log(f"Could not release input-trace state: {error}")
 
     def close_debugger(self) -> None:
         if self.websocket:
@@ -1078,12 +1498,20 @@ done
             "rom_path": self.args.rom,
             "core": self.args.core,
             "core_id": CORE_IDS[self.args.core],
+            "game_status": self.game_status,
             "preset": self.args.preset,
+            "input_trace": (
+                self.input_trace.metadata() if self.input_trace else None
+            ),
             "warmup_seconds": self.args.warmup,
             "measurement_seconds": self.args.duration,
             "sample_interval_seconds": self.args.interval,
             "sample_count": len(self.samples),
             "exit_signal": f"SIG{self.args.exit_signal}",
+            "transport_recovery": {
+                "adb_recoveries": self.adb.recoveries,
+                "debugger_reconnects": self.debugger_reconnects,
+            },
             "started_unix": self.started_at,
             "finished_unix": time.time(),
             "ppsspp": {
@@ -1224,6 +1652,7 @@ done
             self.error = "interrupted"
             self.log("Interrupted; restoring PPSSPP and frontend state")
         finally:
+            self.release_input_trace()
             self.close_debugger()
             self.terminate_ppsspp()
             if self.frontend_before:
@@ -1295,9 +1724,28 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--warmup", type=float, default=15.0)
     parser.add_argument("--duration", type=float, default=60.0)
     parser.add_argument("--interval", type=float, default=1.0)
+    parser.add_argument(
+        "--input-trace",
+        help=(
+            "Schema 1 JSON input trace driven through PPSSPP's debugger from "
+            "debugger connection through warm-up and measurement"
+        ),
+    )
     parser.add_argument("--startup-timeout", type=float, default=30.0)
     parser.add_argument("--debugger-timeout", type=float, default=30.0)
     parser.add_argument("--debug-port", type=int, default=28000)
+    parser.add_argument(
+        "--max-debugger-reconnects",
+        type=int,
+        default=3,
+        help="Debugger transport recoveries allowed during one run (default: 3)",
+    )
+    parser.add_argument(
+        "--adb-retry-timeout",
+        type=float,
+        default=15.0,
+        help="Seconds to retry a transient ADB transport failure (default: 15)",
+    )
     parser.add_argument(
         "--exit-signal",
         choices=("TERM", "KILL"),
@@ -1327,6 +1775,10 @@ def parse_args() -> argparse.Namespace:
         parser.error("warmup must be >= 0; duration and interval must be > 0")
     if not 1 <= args.debug_port <= 65535:
         parser.error("debug port must be in 1..65535")
+    if args.max_debugger_reconnects < 0:
+        parser.error("max debugger reconnects must be >= 0")
+    if args.adb_retry_timeout < 0:
+        parser.error("ADB retry timeout must be >= 0")
     return args
 
 
