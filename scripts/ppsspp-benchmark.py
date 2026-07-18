@@ -696,6 +696,7 @@ class BenchmarkSession:
         self.game_status: dict[str, Any] = {}
         self.debugger_reconnects = 0
         self.daemon_recovery: dict[str, Any] | None = None
+        self.scene_state: dict[str, Any] | None = None
         self.trace_started_at: float | None = None
         self.input_trace = (
             InputTrace(Path(args.input_trace), args.warmup + args.duration)
@@ -827,6 +828,11 @@ fi
                     "input_trace": (
                         self.input_trace.metadata() if self.input_trace else None
                     ),
+                    "scene_state": {
+                        "action": self.args.scene_state_action,
+                        "expected_sha256": self.args.scene_expected_sha256,
+                        "settle_seconds": self.args.scene_settle,
+                    },
                     "debugger": {
                         "port": self.args.debug_port,
                         "on_startup": True,
@@ -1194,6 +1200,128 @@ done
                     f"{self.args.max_debugger_reconnects}): {error}"
                 )
                 self.connect_debugger(reconnecting=True)
+
+    def scene_state_file_evidence(self, path: str) -> dict[str, Any]:
+        lowered = path.lower()
+        userdata_root = f"{self.sdcard}/.userdata/mlp1/".lower()
+        if (
+            "\n" in path
+            or not lowered.startswith(userdata_root)
+            or "/psp/ppsspp_state/umrk-benchmark-" not in lowered
+            or not lowered.endswith(".ppst")
+        ):
+            raise BenchmarkError(
+                f"PPSSPP debugger returned an unsafe benchmark savestate path: {path!r}"
+            )
+        output = self.adb.shell(
+            f"""
+set -eu
+file={quote(path)}
+[ -f "$file" ]
+printf 'size='
+wc -c <"$file"
+printf 'sha256='
+sha256sum "$file" | awk '{{print $1}}'
+"""
+        )
+        values = dict(
+            line.split("=", 1)
+            for line in output.splitlines()
+            if "=" in line
+        )
+        try:
+            size = int(values["size"])
+            sha256 = values["sha256"].lower()
+        except (KeyError, ValueError) as error:
+            raise BenchmarkError(
+                f"Could not read benchmark savestate evidence: {output!r}"
+            ) from error
+        if size <= 0 or not re.fullmatch(r"[0-9a-f]{64}", sha256):
+            raise BenchmarkError(
+                f"Invalid benchmark savestate evidence: size={size} sha256={sha256!r}"
+            )
+        expected = self.args.scene_expected_sha256
+        if expected and sha256 != expected:
+            raise BenchmarkError(
+                "Benchmark savestate hash mismatch: "
+                f"expected {expected}, observed {sha256}"
+            )
+        return {
+            "path": path,
+            "size_bytes": size,
+            "sha256": sha256,
+        }
+
+    def apply_scene_state(self, action: str) -> None:
+        if not self.websocket:
+            raise BenchmarkError("PPSSPP debugger is not connected")
+        event = (
+            "game.savestate.save"
+            if action == "capture"
+            else "game.savestate.load"
+        )
+        started = time.monotonic()
+        self.log(
+            "Capturing deterministic benchmark savestate"
+            if action == "capture"
+            else "Loading deterministic benchmark savestate"
+        )
+        response = self.websocket.request(event, f"harness-scene-{action}")
+        if response.get("status") != "success":
+            raise BenchmarkError(
+                f"PPSSPP benchmark savestate {action} returned "
+                f"{response.get('status', 'unknown')}: {response.get('message', '')}"
+            )
+        path = response.get("path")
+        if not isinstance(path, str) or not path:
+            raise BenchmarkError(
+                f"PPSSPP benchmark savestate {action} returned no path"
+            )
+        evidence = self.scene_state_file_evidence(path)
+        status = self.websocket.request(
+            "game.status",
+            f"harness-scene-{action}-game-status",
+        )
+        expected_game = self.game_status.get("game", {}).get("id")
+        observed_game = status.get("game", {}).get("id")
+        if not expected_game or observed_game != expected_game:
+            raise BenchmarkError(
+                "Benchmark savestate changed the running game: "
+                f"expected {expected_game or 'unknown'}, "
+                f"observed {observed_game or 'unknown'}"
+            )
+        self.game_status = status
+        self.scene_state = {
+            "action": action,
+            "completed": True,
+            "elapsed_seconds": time.monotonic() - started,
+            "game_id": observed_game,
+            "game_version": status.get("game", {}).get("version"),
+            "response": response,
+            **evidence,
+        }
+        (self.output / "scene-state.json").write_text(
+            json.dumps(self.scene_state, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        self.log(
+            f"Benchmark savestate {action} passed: "
+            f"{evidence['size_bytes']} bytes sha256={evidence['sha256']}"
+        )
+
+    def settle_after_scene_load(self) -> None:
+        if self.args.scene_settle <= 0:
+            self.trace_started_at = time.monotonic()
+            return
+        self.log(
+            f"Settling loaded benchmark scene for {self.args.scene_settle:.1f} seconds"
+        )
+        deadline = time.monotonic() + self.args.scene_settle
+        while time.monotonic() < deadline:
+            if not self.process_alive():
+                raise BenchmarkError("PPSSPP exited while settling loaded scene")
+            time.sleep(min(0.5, max(0.0, deadline - time.monotonic())))
+        self.trace_started_at = time.monotonic()
 
     def trace_elapsed(self) -> float:
         if self.trace_started_at is None:
@@ -1593,6 +1721,7 @@ done
             "core_id": CORE_IDS[self.args.core],
             "game_status": self.game_status,
             "preset": self.args.preset,
+            "scene_state": self.scene_state,
             "input_trace": (
                 self.input_trace.metadata() if self.input_trace else None
             ),
@@ -1746,7 +1875,12 @@ done
             self.frontend_during = self.adb.process_snapshot()
             self.capture_backend_evidence()
             self.connect_debugger()
+            if self.args.scene_state_action == "load":
+                self.apply_scene_state("load")
+                self.settle_after_scene_load()
             self.warm_up()
+            if self.args.scene_state_action == "capture":
+                self.apply_scene_state("capture")
             self.sample()
             if self.args.daemon_exit_signal:
                 self.release_input_trace()
@@ -1796,6 +1930,12 @@ done
             and not (self.daemon_recovery or {}).get("completed")
         ):
             self.error = "daemon recovery did not complete"
+        if (
+            not self.error
+            and self.args.scene_state_action
+            and not (self.scene_state or {}).get("completed")
+        ):
+            self.error = "benchmark savestate action did not complete"
         if self.error and summary["error"] != self.error:
             self.log(f"ERROR: {self.error}")
             summary = self.make_summary(frontend_restored)
@@ -1843,6 +1983,24 @@ def parse_args() -> argparse.Namespace:
             "Schema 1 JSON input trace driven through PPSSPP's debugger from "
             "debugger connection through warm-up and measurement"
         ),
+    )
+    parser.add_argument(
+        "--scene-state-action",
+        choices=("capture", "load"),
+        help=(
+            "Capture the game-scoped benchmark savestate after warm-up or "
+            "load it before warm-up"
+        ),
+    )
+    parser.add_argument(
+        "--scene-expected-sha256",
+        help="Require the captured or loaded benchmark savestate to match this SHA-256",
+    )
+    parser.add_argument(
+        "--scene-settle",
+        type=float,
+        default=3.0,
+        help="Seconds to settle after loading a benchmark savestate (default: 3)",
     )
     parser.add_argument("--startup-timeout", type=float, default=30.0)
     parser.add_argument("--debugger-timeout", type=float, default=30.0)
@@ -1911,6 +2069,14 @@ def parse_args() -> argparse.Namespace:
         parser.error("ADB retry timeout must be >= 0")
     if args.daemon_recovery_timeout <= 0:
         parser.error("daemon recovery timeout must be > 0")
+    if args.scene_settle < 0:
+        parser.error("scene settle must be >= 0")
+    if args.scene_expected_sha256:
+        args.scene_expected_sha256 = args.scene_expected_sha256.lower()
+        if not re.fullmatch(r"[0-9a-f]{64}", args.scene_expected_sha256):
+            parser.error("scene expected SHA-256 must contain exactly 64 hex digits")
+        if not args.scene_state_action:
+            parser.error("scene expected SHA-256 requires --scene-state-action")
     return args
 
 
