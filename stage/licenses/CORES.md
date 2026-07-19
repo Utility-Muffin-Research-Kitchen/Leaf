@@ -27,6 +27,7 @@ from the named upstream release asset.
 | fbneo | FB Neo (non-commercial) | https://github.com/libretro/FBNeo |
 | fceumm | GPL-2.0 | https://github.com/libretro/libretro-fceumm |
 | flycast | GPL-2.0 | https://github.com/flyinghead/flycast |
+| flycast_standalone (standalone) | GPL-2.0 / bundled third-party notices | https://github.com/flyinghead/flycast |
 | gambatte | GPL-2.0 | https://github.com/libretro/gambatte-libretro |
 | genesis_plus_gx | Genesis Plus GX (non-commercial) | https://github.com/libretro/Genesis-Plus-GX |
 | gpsp | GPL-2.0 | https://github.com/libretro/gpsp/tree/69e86ebe89f14c3f5f75b809c12c0a953b3d6ce4 |

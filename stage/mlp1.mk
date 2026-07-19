@@ -3,7 +3,7 @@
 
 # Apps staged by `make stage`.
 STAGE_APPS ?= ssh-server Thing-File CentralScrutinizer Fugazi joes-calibrage retroarch-builds
-STAGE_EMULATORS ?= ppsspp drastic mupen64plus
+STAGE_EMULATORS ?= ppsspp drastic mupen64plus flycast
 PUBLIC_ROOT_DIRS ?= Roms Images Apps BIOS Saves States Cheats
 
 # --- Launcher payload assembly inputs --------------------------------------
@@ -23,6 +23,7 @@ MLP1_GRAPHICS_RUNTIME ?= $(LEAF_ROOT)/build/mlp1/runtime/graphics
 MLP1_VULKAN_RUNTIME ?= $(MLP1_GRAPHICS_RUNTIME)/vulkan/rk3566-g52-g29p1
 MLP1_DRASTIC_PACKAGE ?= $(LEAF_ROOT)/build/drastic/mlp1/drastic
 MLP1_MUPEN64PLUS_PACKAGE ?= $(N64_STANDALONE_DIR)/output/mlp1/mupen64plus
+MLP1_FLYCAST_PACKAGE ?= $(FLYCAST_STANDALONE_DIR)/output/mlp1/flycast
 MLP1_RETROARCH_PATCH_SET ?= portrait-rotation,command-menu,jawaka-load-content,controller-bindings
 UMRK_ENV_SCRIPT    ?= $(LAUNCHER_SWITCHER_DIR)/device/umrk-env.sh
 REMOTE_SDCARD_PATH ?= auto
@@ -239,6 +240,12 @@ stage-emulator:
 			package_dir="$(MLP1_MUPEN64PLUS_PACKAGE)"; \
 			remote_name="mupen64plus"; \
 			;; \
+		flycast) \
+			test -d "$(FLYCAST_STANDALONE_DIR)" || { echo "missing repo: $(FLYCAST_STANDALONE_DIR)" >&2; exit 1; }; \
+			$(MAKE) -C "$(FLYCAST_STANDALONE_DIR)" package-mlp1 TOOLCHAIN_IMAGE="$(TOOLCHAIN_IMAGE)"; \
+			package_dir="$(MLP1_FLYCAST_PACKAGE)"; \
+			remote_name="flycast"; \
+			;; \
 		*) \
 			echo "unsupported emulator policy: $(EMULATOR) for DEVICE=$(DEVICE)" >&2; \
 			exit 1; \
@@ -356,6 +363,7 @@ release-zips:
 	PPSSPP_SPRUCE_DIR="$(PPSSPP_SPRUCE_DIR)" \
 	STEWARD_NDS_DIR="$(STEWARD_NDS_DIR)" \
 	N64_STANDALONE_DIR="$(N64_STANDALONE_DIR)" \
+	FLYCAST_STANDALONE_DIR="$(FLYCAST_STANDALONE_DIR)" \
 	RETROARCH_BUILDS_DIR="$(RETROARCH_BUILDS_DIR)" \
 	CORES_SPRUCE_DIR="$(CORES_SPRUCE_DIR)" \
 	LAUNCHER_SWITCHER_DIR="$(LAUNCHER_SWITCHER_DIR)" \
@@ -369,6 +377,7 @@ release-zips:
 	MLP1_VULKAN_RUNTIME="$(MLP1_VULKAN_RUNTIME)" \
 	MLP1_DRASTIC_PACKAGE="$(MLP1_DRASTIC_PACKAGE)" \
 	MLP1_MUPEN64PLUS_PACKAGE="$(MLP1_MUPEN64PLUS_PACKAGE)" \
+	MLP1_FLYCAST_PACKAGE="$(MLP1_FLYCAST_PACKAGE)" \
 	MLP1_RETROARCH_PATCH_SET="$(MLP1_RETROARCH_PATCH_SET)" \
 	"$(LEAF_ROOT)/scripts/make-sd-release-zip.sh" both
 
@@ -384,6 +393,7 @@ release-sd-zip:
 	PPSSPP_SPRUCE_DIR="$(PPSSPP_SPRUCE_DIR)" \
 	STEWARD_NDS_DIR="$(STEWARD_NDS_DIR)" \
 	N64_STANDALONE_DIR="$(N64_STANDALONE_DIR)" \
+	FLYCAST_STANDALONE_DIR="$(FLYCAST_STANDALONE_DIR)" \
 	RETROARCH_BUILDS_DIR="$(RETROARCH_BUILDS_DIR)" \
 	CORES_SPRUCE_DIR="$(CORES_SPRUCE_DIR)" \
 	LAUNCHER_SWITCHER_DIR="$(LAUNCHER_SWITCHER_DIR)" \
@@ -397,6 +407,7 @@ release-sd-zip:
 	MLP1_VULKAN_RUNTIME="$(MLP1_VULKAN_RUNTIME)" \
 	MLP1_DRASTIC_PACKAGE="$(MLP1_DRASTIC_PACKAGE)" \
 	MLP1_MUPEN64PLUS_PACKAGE="$(MLP1_MUPEN64PLUS_PACKAGE)" \
+	MLP1_FLYCAST_PACKAGE="$(MLP1_FLYCAST_PACKAGE)" \
 	MLP1_RETROARCH_PATCH_SET="$(MLP1_RETROARCH_PATCH_SET)" \
 	"$(LEAF_ROOT)/scripts/make-sd-release-zip.sh" install
 
