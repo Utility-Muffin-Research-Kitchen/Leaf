@@ -94,8 +94,8 @@ def fixture(root: Path) -> Path:
         "systems": [
             {
                 "id": "DC",
-                "default_core": "flycast",
-                "alternate_cores": ["flycast_standalone"],
+                "default_core": "flycast_standalone",
+                "alternate_cores": ["flycast"],
             }
         ]
     }
@@ -186,6 +186,15 @@ def main() -> None:
         lambda platform: os.chmod(platform / "emulators/flycast/launch.sh", 0o644),
         False,
     )
+
+    def restore_retroarch_default(platform: Path) -> None:
+        path = platform / "defaults/systems.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data["systems"][0]["default_core"] = "flycast"
+        data["systems"][0]["alternate_cores"] = ["flycast_standalone"]
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+    run_case("retroarch-default", restore_retroarch_default, False)
     print("Flycast standalone release policy checks passed")
 
 

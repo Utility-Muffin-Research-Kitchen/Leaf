@@ -110,9 +110,10 @@ def validate(platform_dir: Path) -> None:
     alternates = dc.get("alternate_cores")
     if not isinstance(alternates, list):
         fail("DC alternate_cores must be an array")
-    references = [dc.get("default_core"), *alternates]
-    if CORE_ID not in references:
-        fail("DC must expose flycast_standalone as a default or alternate")
+    if dc.get("default_core") != CORE_ID:
+        fail("DC must default to flycast_standalone")
+    if "flycast" not in alternates:
+        fail("DC must retain the RetroArch Flycast core as a fallback")
 
     core_rows = [row for row in cores if row.get("id") == CORE_ID]
     if len(core_rows) != 1:
