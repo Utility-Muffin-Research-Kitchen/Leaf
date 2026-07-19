@@ -22,7 +22,7 @@ LARGE_LIBRARY_FIXTURE_ENV = \
 	REMOTE_SDCARD_PATH="$(REMOTE_SDCARD_PATH)"
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap doctor status status-internal pakrat-local-feed-test adb-enable-marker adb-disable-marker adb-tail-logs adb-large-library-create adb-large-library-clean adb-large-library-status adb-install-wrapper adb-uninstall-wrapper benchmark-ppsspp
+.PHONY: help bootstrap doctor status status-internal pakrat-local-feed-test flycast-release-policy-smoke adb-enable-marker adb-disable-marker adb-tail-logs adb-large-library-create adb-large-library-clean adb-large-library-status adb-install-wrapper adb-uninstall-wrapper benchmark-ppsspp
 
 help:
 	@echo "Leaf workspace commands (DEVICE=$(DEVICE), WORKSPACE_DIR=$(WORKSPACE_DIR)):"
@@ -38,6 +38,7 @@ help:
 	@echo "  make stage-emulator EMULATOR=ppsspp DEVICE=mlp1 stage a standalone emulator"
 	@echo "  make stage-emulator EMULATOR=drastic DEVICE=mlp1 stage DraStic"
 	@echo "  make stage-emulator EMULATOR=mupen64plus DEVICE=mlp1 stage standalone N64"
+	@echo "  make stage-emulator EMULATOR=flycast DEVICE=mlp1 stage standalone Dreamcast"
 	@echo "  make stage-emulators DEVICE=mlp1          stage standalone emulators"
 	@echo "  make stage-app APP=CentralScrutinizer DEVICE=mlp1 stage a single app repo"
 	@echo "  make stage-app APP=Leaf-Itchio-Pak DEVICE=mlp1 explicitly stage the optional Itch.io app"
@@ -48,6 +49,7 @@ help:
 	@echo "  make release-sd-zip DEVICE=mlp1           build end-user install ZIP"
 	@echo "  make release-recovery-zip DEVICE=mlp1     build end-user recovery ZIP"
 	@echo "  make pakrat-local-feed-test               test multi-app and exact-artifact local feeds"
+	@echo "  make flycast-release-policy-smoke         test standalone Flycast release gates"
 	@echo "  make adb-enable-marker                    enable Leaf launcher marker"
 	@echo "  make adb-disable-marker                   disable Leaf launcher marker"
 	@echo "  make adb-tail-logs                        tail launcher logs"
@@ -60,6 +62,9 @@ help:
 
 bootstrap:
 	@LEAF_WORKSPACE_DIR="$(WORKSPACE_DIR)" scripts/bootstrap.sh $(REQUIRED_REPOS) --optional $(OPTIONAL_PRIVATE_REPOS)
+
+flycast-release-policy-smoke:
+	@python3 scripts/validate-flycast-standalone-release-test.py
 
 doctor:
 	@LEAF_WORKSPACE_DIR="$(WORKSPACE_DIR)" TOOLCHAIN_IMAGE="$(TOOLCHAIN_IMAGE)" scripts/doctor.sh

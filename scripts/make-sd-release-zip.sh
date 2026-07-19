@@ -9,7 +9,7 @@ WORKSPACE_DIR="${LEAF_WORKSPACE_DIR:-$(cd "$LEAF_ROOT/.." && pwd)}"
 
 DEVICE="${DEVICE:-mlp1}"
 STAGE_APPS="${STAGE_APPS-ssh-server Thing-File CentralScrutinizer Fugazi joes-calibrage retroarch-builds}"
-STAGE_EMULATORS="${STAGE_EMULATORS-ppsspp drastic mupen64plus}"
+STAGE_EMULATORS="${STAGE_EMULATORS-ppsspp drastic mupen64plus flycast}"
 PUBLIC_ROOT_DIRS="${PUBLIC_ROOT_DIRS-Roms Images Apps BIOS Saves States Cheats}"
 RELEASE_BUILD="${RELEASE_BUILD:-$LEAF_ROOT/build/release}"
 STAGE_BUILD="${STAGE_BUILD:-$LEAF_ROOT/build/stage/mlp1}"
@@ -20,6 +20,7 @@ JAWAKA_DIR="${JAWAKA_DIR:-$WORKSPACE_DIR/Jawaka}"
 PPSSPP_SPRUCE_DIR="${PPSSPP_SPRUCE_DIR:-$WORKSPACE_DIR/PPSSPP-spruce}"
 STEWARD_NDS_DIR="${STEWARD_NDS_DIR:-$WORKSPACE_DIR/steward-fu-nds}"
 N64_STANDALONE_DIR="${N64_STANDALONE_DIR:-$WORKSPACE_DIR/N64-standalone}"
+FLYCAST_STANDALONE_DIR="${FLYCAST_STANDALONE_DIR:-$WORKSPACE_DIR/Flycast-standalone}"
 RETROARCH_BUILDS_DIR="${RETROARCH_BUILDS_DIR:-$WORKSPACE_DIR/retroarch-builds}"
 CORES_SPRUCE_DIR="${CORES_SPRUCE_DIR:-$WORKSPACE_DIR/Cores-spruce}"
 LAUNCHER_SWITCHER_DIR="${LAUNCHER_SWITCHER_DIR:-$WORKSPACE_DIR/miniloong-launcher-switcher}"
@@ -36,6 +37,7 @@ MLP1_GRAPHICS_RUNTIME="${MLP1_GRAPHICS_RUNTIME:-$LEAF_ROOT/build/mlp1/runtime/gr
 MLP1_VULKAN_RUNTIME="${MLP1_VULKAN_RUNTIME:-$MLP1_GRAPHICS_RUNTIME/vulkan/rk3566-g52-g29p1}"
 MLP1_DRASTIC_PACKAGE="${MLP1_DRASTIC_PACKAGE:-$LEAF_ROOT/build/drastic/mlp1/drastic}"
 MLP1_MUPEN64PLUS_PACKAGE="${MLP1_MUPEN64PLUS_PACKAGE:-$N64_STANDALONE_DIR/output/mlp1/mupen64plus}"
+MLP1_FLYCAST_PACKAGE="${MLP1_FLYCAST_PACKAGE:-$FLYCAST_STANDALONE_DIR/output/mlp1/flycast}"
 MLP1_RETROARCH_PATCH_SET="${MLP1_RETROARCH_PATCH_SET:-portrait-rotation,command-menu,jawaka-load-content}"
 
 usage() {
@@ -48,7 +50,7 @@ Environment:
   LEAF_WORKSPACE_DIR=<workspace root>
   TOOLCHAIN_IMAGE=<MLP1 cross-compile Docker image>
   STAGE_APPS="ssh-server Thing-File CentralScrutinizer Fugazi joes-calibrage retroarch-builds"
-  STAGE_EMULATORS="ppsspp drastic mupen64plus"
+  STAGE_EMULATORS="ppsspp drastic mupen64plus flycast"
 EOF
 }
 
@@ -330,7 +332,10 @@ for e in packaged:
         expected_sos.add(so)
         if not os.path.isfile(os.path.join(cores_dir, so)):
             missing_bin.append("%s (%s)" % (cid, so))
-    license_id = {"ppsspp_gles": "ppsspp"}.get(cid, cid)
+    license_id = {
+        "ppsspp_gles": "ppsspp",
+        "flycast_standalone": "flycast",
+    }.get(cid, cid)
     if not os.path.isfile(os.path.join(lic_dir, license_id + ".txt")):
         missing_lic.append(cid)
 staged = sorted(f for f in os.listdir(cores_dir)
@@ -552,6 +557,12 @@ package_emulator() {
             package_dir="$MLP1_MUPEN64PLUS_PACKAGE"
             remote_name="mupen64plus"
             ;;
+        flycast)
+            [ -d "$FLYCAST_STANDALONE_DIR" ] || die "missing Flycast standalone repo: $FLYCAST_STANDALONE_DIR"
+            make -C "$FLYCAST_STANDALONE_DIR" package-mlp1 TOOLCHAIN_IMAGE="$TOOLCHAIN_IMAGE"
+            package_dir="$MLP1_FLYCAST_PACKAGE"
+            remote_name="flycast"
+            ;;
         *)
             die "unsupported release emulator policy: $emulator for DEVICE=$DEVICE"
             ;;
@@ -618,6 +629,13 @@ if not rel or not target.is_file():
 
 print(f"N64 standalone release gate: {rel}")
 PY
+}
+
+validate_standalone_flycast_release() {
+    local platform_dir="$RELEASE_ROOT/platforms/mlp1"
+    python3 "$LEAF_ROOT/scripts/validate-flycast-standalone-release.py" \
+        "$platform_dir" ||
+        die "Flycast standalone release validation failed"
 }
 
 write_install_readme() {
@@ -743,6 +761,7 @@ build_install_zip() {
         package_emulator "$emulator"
     done
     validate_standalone_n64_release
+    validate_standalone_flycast_release
     validate_ppsspp_vulkan_release
 
     cp -R "$LEAF_ROOT/stage/licenses" "$RELEASE_ROOT/licenses"
