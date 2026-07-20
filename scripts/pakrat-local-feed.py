@@ -8,17 +8,20 @@ touch leaf-docs or the production leaf.game catalog.
 from __future__ import annotations
 
 import argparse
+import copy
 import contextlib
 import hashlib
 import http.server
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import socket
 import subprocess
 import sys
 import time
+from urllib.parse import unquote, urlsplit
 import zipfile
 
 
@@ -26,6 +29,17 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 LEAF_ROOT = SCRIPT_DIR.parent
 DEFAULT_OUTPUT = LEAF_ROOT / "build" / "pakrat-local"
 FEED_PREFIX = Path("pakrat") / "v1"
+VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
+SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+ARTIFACT_KEYS = (
+    "url",
+    "name",
+    "archive",
+    "size",
+    "installed_size",
+    "sha256",
+)
+MAX_VERSIONS_PER_PACKAGE = 16
 
 
 def die(message: str) -> None:
@@ -178,6 +192,279 @@ def require_metadata_string(meta: dict, key: str, source: Path) -> str:
     return value
 
 
+def require_path_segment(value: str, label: str, source: Path) -> str:
+    if (
+        not value
+        or value in (".", "..")
+        or "/" in value
+        or "\\" in value
+        or Path(value).name != value
+    ):
+        die(f"{source}: unsafe {label}: {value!r}")
+    return value
+
+
+def require_version(value: object, label: str, source: Path) -> str:
+    if not isinstance(value, str) or not VERSION_RE.fullmatch(value):
+        die(f"{source}: {label} must be an exact MAJOR.MINOR.PATCH string")
+    components = tuple(int(part) for part in value.split("."))
+    if any(part > 9999 for part in components):
+        die(f"{source}: {label} component exceeds 9999")
+    return value
+
+
+def version_key(value: str) -> tuple[int, int, int]:
+    major, minor, patch = value.split(".")
+    return int(major), int(minor), int(patch)
+
+
+def optional_min_leaf_version(meta: dict, source: Path) -> str | None:
+    if "min_leaf_version" not in meta:
+        return None
+    return require_version(
+        meta.get("min_leaf_version"), "min_leaf_version", source
+    )
+
+
+def artifact_facts(artifact: object, source: Path) -> dict:
+    if not isinstance(artifact, dict):
+        die(f"{source}: artifact must be an object")
+    facts = {key: artifact.get(key) for key in ARTIFACT_KEYS}
+    if not isinstance(facts["url"], str) or not facts["url"]:
+        die(f"{source}: artifact.url must be a non-empty string")
+    if not isinstance(facts["name"], str) or not facts["name"].endswith(".zip"):
+        die(f"{source}: artifact.name must end with .zip")
+    require_path_segment(facts["name"], "artifact.name", source)
+    if facts["archive"] != "zip":
+        die(f"{source}: artifact.archive must be zip")
+    for key in ("size", "installed_size"):
+        if (
+            isinstance(facts[key], bool)
+            or not isinstance(facts[key], int)
+            or facts[key] <= 0
+        ):
+            die(f"{source}: artifact.{key} must be a positive integer")
+    if not isinstance(facts["sha256"], str) or not SHA256_RE.fullmatch(
+        facts["sha256"]
+    ):
+        die(f"{source}: artifact.sha256 must be 64 hexadecimal characters")
+    facts["sha256"] = facts["sha256"].lower()
+    return facts
+
+
+def version_entry(entry: object, source: Path) -> dict:
+    if not isinstance(entry, dict):
+        die(f"{source}: version entry must be an object")
+    result = {
+        "version": require_version(entry.get("version"), "version", source),
+        "artifact": artifact_facts(entry.get("artifact"), source),
+    }
+    minimum = optional_min_leaf_version(entry, source)
+    if minimum is not None:
+        result["min_leaf_version"] = minimum
+    return result
+
+
+def normalized_history_package(app: dict, package: object, source: Path) -> dict:
+    if not isinstance(package, dict):
+        die(f"{source}: package must be an object")
+    platform = require_metadata_string(package, "platform", source)
+    install_name = require_metadata_string(package, "install_name", source)
+    require_path_segment(install_name, "install_name", source)
+    if not install_name.endswith(".pak"):
+        die(f"{source}: install_name must end with .pak")
+    runtime = package.get("runtime", "leaf")
+    if runtime != "leaf":
+        die(f"{source}: package runtime must be leaf")
+    runtime_manifest_path = package.get("runtime_manifest_path", "pak.json")
+    if not isinstance(runtime_manifest_path, str) or not runtime_manifest_path:
+        die(f"{source}: runtime_manifest_path must be a non-empty string")
+
+    legacy = version_entry(package, source)
+    if "min_leaf_version" in legacy:
+        die(f"{source}: legacy package version must be an ungated safe floor")
+    versions_value = package.get("versions")
+    legacy_import = versions_value is None
+    if legacy_import:
+        versions = [legacy]
+    else:
+        if not isinstance(versions_value, list) or not versions_value:
+            die(f"{source}: versions must be a non-empty array")
+        if len(versions_value) > MAX_VERSIONS_PER_PACKAGE:
+            die(
+                f"{source}: versions exceeds the "
+                f"{MAX_VERSIONS_PER_PACKAGE}-entry client limit"
+            )
+        versions = [version_entry(value, source) for value in versions_value]
+        keys = [version_key(value["version"]) for value in versions]
+        if any(left <= right for left, right in zip(keys, keys[1:])):
+            die(f"{source}: versions must be unique and strictly descending")
+
+    by_version = {value["version"]: value for value in versions}
+    if len(by_version) != len(versions):
+        die(f"{source}: duplicate package version")
+    floors = [value for value in versions if "min_leaf_version" not in value]
+    if not floors:
+        die(f"{source}: package history has no ungated safe floor")
+    floor = max(floors, key=lambda value: version_key(value["version"]))
+    if (
+        legacy["version"] != floor["version"]
+        or legacy["artifact"] != floor["artifact"]
+        or app.get("version") != floor["version"]
+    ):
+        die(f"{source}: legacy app/package fields do not match the safe floor")
+
+    return {
+        "platform": platform,
+        "runtime": "leaf",
+        "install_name": install_name,
+        "runtime_manifest_path": runtime_manifest_path,
+        "versions": versions,
+        "legacy_import": legacy_import,
+    }
+
+
+def load_history_index(path: Path | None) -> dict[tuple[str, str, str], dict]:
+    if path is None:
+        return {}
+    catalog = load_json(path)
+    if catalog.get("schema") != 1 or catalog.get("product") != "pak-rat":
+        die(f"{path}: history must be a Pak Rat schema-1 storefront")
+    apps = catalog.get("apps")
+    if not isinstance(apps, list):
+        die(f"{path}: history apps must be an array")
+    result: dict[tuple[str, str, str], dict] = {}
+    seen_ids: set[str] = set()
+    for app in apps:
+        if not isinstance(app, dict):
+            die(f"{path}: history app must be an object")
+        app_id = require_metadata_string(app, "id", path)
+        if app_id in seen_ids:
+            die(f"{path}: duplicate history app id: {app_id}")
+        seen_ids.add(app_id)
+        packages = app.get("packages")
+        if not isinstance(packages, list) or not packages:
+            die(f"{path}: history app packages must be a non-empty array")
+        for package in packages:
+            normalized = normalized_history_package(app, package, path)
+            key = (
+                app_id,
+                normalized["platform"],
+                normalized["install_name"].casefold(),
+            )
+            if key in result:
+                die(f"{path}: duplicate history package for {app_id}")
+            normalized["source_path"] = path
+            result[key] = normalized
+    return result
+
+
+def local_history_artifact_path(history_path: Path, artifact: dict) -> Path | None:
+    url_path = unquote(urlsplit(artifact["url"]).path)
+    marker = "/artifacts/"
+    if marker not in url_path:
+        return None
+    relative = Path(url_path.split(marker, 1)[1])
+    if relative.is_absolute() or ".." in relative.parts:
+        die(f"{history_path}: unsafe historical artifact URL {artifact['url']!r}")
+    return history_path.parent / "artifacts" / relative
+
+
+def verify_artifact_file(path: Path, artifact: dict, source: Path) -> None:
+    if path.stat().st_size != artifact["size"] or file_sha256(path) != artifact["sha256"]:
+        die(f"{source}: historical artifact bytes disagree with catalog facts: {path}")
+
+
+def materialize_history_versions(
+    history: dict,
+    app_id: str,
+    artifacts_root: Path,
+    base_url: str,
+) -> list[dict]:
+    versions = copy.deepcopy(history["versions"])
+    source_path: Path = history["source_path"]
+    for value in versions:
+        artifact = value["artifact"]
+        expected_relative = Path(app_id) / value["version"] / artifact["name"]
+        source_artifact = local_history_artifact_path(source_path, artifact)
+        if source_artifact is not None and source_artifact.is_file():
+            verify_artifact_file(source_artifact, artifact, source_path)
+            destination = artifacts_root / expected_relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            if destination.exists():
+                verify_artifact_file(destination, artifact, source_path)
+            elif source_artifact.resolve() != destination.resolve():
+                shutil.copy2(source_artifact, destination)
+        elif urlsplit(artifact["url"]).scheme not in ("https",):
+            die(f"{source_path}: missing local historical artifact for {artifact['url']}")
+
+        url_path = unquote(urlsplit(artifact["url"]).path)
+        expected_suffix = "/artifacts/" + expected_relative.as_posix()
+        if not url_path.endswith(expected_suffix):
+            if history["legacy_import"]:
+                artifact["url"] = base_url + f"artifacts/{expected_relative.as_posix()}"
+            elif urlsplit(artifact["url"]).scheme != "https":
+                die(
+                    f"{source_path}: historical artifact URL is not version-qualified: "
+                    f"{artifact['url']}"
+                )
+    return versions
+
+
+def merge_package_history(
+    history: dict | None,
+    current: dict,
+    app_id: str,
+    runtime_manifest_path: str,
+    artifacts_root: Path,
+    base_url: str,
+    source: Path,
+) -> tuple[list[dict], dict]:
+    if history is None:
+        versions: list[dict] = []
+    else:
+        if (
+            history["runtime"] != "leaf"
+            or history["runtime_manifest_path"] != runtime_manifest_path
+        ):
+            die(f"{source}: package identity disagrees with history")
+        versions = materialize_history_versions(
+            history, app_id, artifacts_root, base_url
+        )
+
+    existing = next(
+        (value for value in versions if value["version"] == current["version"]),
+        None,
+    )
+    if existing is not None:
+        if existing != current:
+            die(
+                f"{source}: immutable history conflict for "
+                f"{app_id} {current['version']}"
+            )
+    else:
+        if versions and version_key(current["version"]) <= max(
+            version_key(value["version"]) for value in versions
+        ):
+            die(f"{source}: new package version must be newer than history")
+        versions.append(current)
+
+    versions.sort(key=lambda value: version_key(value["version"]), reverse=True)
+    if len(versions) > MAX_VERSIONS_PER_PACKAGE:
+        die(
+            f"{source}: versions exceeds the "
+            f"{MAX_VERSIONS_PER_PACKAGE}-entry client limit"
+        )
+    floors = [value for value in versions if "min_leaf_version" not in value]
+    if not floors:
+        die(
+            f"{source}: gated version {current['version']} requires explicit "
+            "history with an ungated safe floor"
+        )
+    floor = max(floors, key=lambda value: version_key(value["version"]))
+    return versions, floor
+
+
 def resolve_app_dirs(args: argparse.Namespace) -> list[Path]:
     if args.app_dir:
         app_dirs = [Path(value).expanduser().resolve() for value in args.app_dir]
@@ -220,9 +507,16 @@ def default_lan_ip() -> str:
 
 def build_storefront(args: argparse.Namespace) -> Path:
     output_root = require_output_root(args.output)
-    if output_root.exists():
-        shutil.rmtree(output_root)
     feed_root = output_root / FEED_PREFIX
+    storefront_path = feed_root / "storefront.json"
+    explicit_history = (
+        Path(args.history).expanduser().resolve() if args.history else None
+    )
+    history_path = explicit_history
+    if history_path is None and storefront_path.is_file():
+        history_path = storefront_path
+    history_index = load_history_index(history_path)
+
     artifacts_root = feed_root / "artifacts"
     artifacts_root.mkdir(parents=True, exist_ok=True)
 
@@ -232,7 +526,7 @@ def build_storefront(args: argparse.Namespace) -> Path:
     apps: list[dict] = []
     seen_ids: set[str] = set()
     seen_install_names: set[str] = set()
-    seen_artifact_names: set[str] = set()
+    used_history_keys: set[tuple[str, str, str]] = set()
 
     for app_dir in app_dirs:
         metadata_path = app_dir / "pakrat.json"
@@ -240,6 +534,7 @@ def build_storefront(args: argparse.Namespace) -> Path:
         if meta.get("schema") != 1:
             die(f"{metadata_path}: schema must be 1")
         app_id = require_metadata_string(meta, "id", metadata_path)
+        require_path_segment(app_id, "app id", metadata_path)
         if app_id in seen_ids:
             die(f"duplicate app id: {app_id}")
         seen_ids.add(app_id)
@@ -254,8 +549,11 @@ def build_storefront(args: argparse.Namespace) -> Path:
             die(f"--artifact override for {app_id} requires exactly one MLP1 package")
 
         app_packages: list[dict] = []
-        app_versions: set[str] = set()
+        app_floor_versions: set[str] = set()
+        current_versions: set[str] = set()
         for pkg in selected:
+            if not isinstance(pkg, dict):
+                die(f"{metadata_path}: package must be an object")
             package_dir_raw = pkg.get("package_dir")
             artifact_name = pkg.get("artifact_name")
             install_name = pkg.get("install_name")
@@ -264,19 +562,21 @@ def build_storefront(args: argparse.Namespace) -> Path:
                 die(f"{metadata_path}: package_dir must be a non-empty string")
             if not isinstance(artifact_name, str) or not artifact_name.endswith(".zip"):
                 die(f"{metadata_path}: artifact_name must end with .zip")
+            require_path_segment(artifact_name, "artifact_name", metadata_path)
             if not isinstance(install_name, str) or not install_name.endswith(".pak"):
                 die(f"{metadata_path}: install_name must end with .pak")
+            require_path_segment(install_name, "install_name", metadata_path)
             if not isinstance(runtime_manifest_path, str) or not runtime_manifest_path:
                 die(f"{metadata_path}: runtime_manifest_path must be a non-empty string")
+            version = require_version(
+                pkg.get("version"), "package version", metadata_path
+            )
+            minimum = optional_min_leaf_version(pkg, metadata_path)
 
             install_key = install_name.casefold()
             if install_key in seen_install_names:
                 die(f"duplicate install name: {install_name}")
             seen_install_names.add(install_key)
-            artifact_key = artifact_name.casefold()
-            if artifact_key in seen_artifact_names:
-                die(f"duplicate artifact name: {artifact_name}")
-            seen_artifact_names.add(artifact_key)
 
             package_dir = (app_dir / package_dir_raw).resolve()
             try:
@@ -298,7 +598,13 @@ def build_storefront(args: argparse.Namespace) -> Path:
                     die(f"{metadata_path}: build_command must be a string array")
                 run_command(build_command, app_dir)
 
-            artifact_path = artifacts_root / artifact_name
+            artifact_relative = Path(app_id) / version / artifact_name
+            artifact_path = artifacts_root / artifact_relative
+            artifact_path.parent.mkdir(parents=True, exist_ok=True)
+            candidate_path = artifact_path.with_name(
+                ".candidate-" + artifact_path.name
+            )
+            candidate_path.unlink(missing_ok=True)
             if override is not None:
                 if override.name != artifact_name:
                     die(
@@ -307,44 +613,84 @@ def build_storefront(args: argparse.Namespace) -> Path:
                     )
                 if not override.is_file():
                     die(f"missing exact artifact override: {override}")
-                shutil.copy2(override, artifact_path)
+                shutil.copy2(override, candidate_path)
             else:
-                zip_pak_dir(package_dir, artifact_path)
+                zip_pak_dir(package_dir, candidate_path)
 
             runtime, installed_size = inspect_zip_artifact(
-                artifact_path, install_name, runtime_manifest_path
+                candidate_path, install_name, runtime_manifest_path
             )
-            version = pkg.get("version") or runtime.get("pak_version")
-            if not isinstance(version, str) or not version:
-                die(f"{metadata_path}: package version must be a non-empty string")
             if version != runtime.get("pak_version"):
                 die(
-                    f"{artifact_path}: runtime pak_version "
+                    f"{candidate_path}: runtime pak_version "
                     f"{runtime.get('pak_version')!r} does not match Pak Rat "
                     f"version {version!r}"
                 )
-            app_versions.add(version)
+            runtime_has_minimum = "min_leaf_version" in runtime
+            runtime_minimum = runtime.get("min_leaf_version")
+            if (
+                (minimum is None and runtime_has_minimum)
+                or (minimum is not None and runtime_minimum != minimum)
+            ):
+                die(
+                    f"{candidate_path}: runtime min_leaf_version "
+                    f"{runtime_minimum!r} does not match Pak Rat "
+                    f"min_leaf_version {minimum!r}"
+                )
+
+            artifact = {
+                "url": base_url + f"artifacts/{artifact_relative.as_posix()}",
+                "name": artifact_name,
+                "archive": "zip",
+                "size": candidate_path.stat().st_size,
+                "installed_size": installed_size,
+                "sha256": file_sha256(candidate_path),
+            }
+            current = {
+                "version": version,
+                "artifact": artifact,
+            }
+            if minimum is not None:
+                current["min_leaf_version"] = minimum
+
+            history_key = (app_id, "mlp1", install_name.casefold())
+            history = history_index.get(history_key)
+            if history is None and any(
+                key[0] == app_id for key in history_index
+            ):
+                die(f"{metadata_path}: package identity disagrees with history")
+            if history is not None:
+                used_history_keys.add(history_key)
+            versions, floor = merge_package_history(
+                history,
+                current,
+                app_id,
+                runtime_manifest_path,
+                artifacts_root,
+                base_url,
+                metadata_path,
+            )
+            candidate_path.replace(artifact_path)
+
+            current_versions.add(version)
+            app_floor_versions.add(floor["version"])
             app_packages.append(
                 {
                     "platform": "mlp1",
                     "runtime": "leaf",
-                    "version": version,
+                    "version": floor["version"],
                     "install_name": install_name,
                     "runtime_manifest_path": runtime_manifest_path,
-                    "artifact": {
-                        "url": base_url + f"artifacts/{artifact_name}",
-                        "name": artifact_name,
-                        "archive": "zip",
-                        "size": artifact_path.stat().st_size,
-                        "installed_size": installed_size,
-                        "sha256": file_sha256(artifact_path),
-                    },
+                    "artifact": copy.deepcopy(floor["artifact"]),
+                    "versions": versions,
                 }
             )
 
-        if len(app_versions) != 1:
+        if len(current_versions) != 1:
             die(f"{metadata_path}: all MLP1 packages must use one app version")
-        app_version = next(iter(app_versions))
+        if len(app_floor_versions) != 1:
+            die(f"{metadata_path}: all MLP1 packages must use one safe-floor version")
+        app_version = next(iter(app_floor_versions))
         categories = meta.get("categories", [])
         if not isinstance(categories, list) or not all(
             isinstance(value, str) and value for value in categories
@@ -367,6 +713,13 @@ def build_storefront(args: argparse.Namespace) -> Path:
     unknown_overrides = sorted(set(artifact_overrides) - seen_ids)
     if unknown_overrides:
         die(f"--artifact references unknown app ids: {', '.join(unknown_overrides)}")
+    unused_history = sorted(set(history_index) - used_history_keys)
+    if unused_history:
+        app_id, platform, install_name = unused_history[0]
+        die(
+            "history contains a package that was not regenerated: "
+            f"{app_id} {platform} {install_name}"
+        )
 
     generated_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     storefront = {
@@ -377,14 +730,18 @@ def build_storefront(args: argparse.Namespace) -> Path:
         "apps": apps,
     }
 
-    storefront_path = feed_root / "storefront.json"
-    storefront_path.write_text(json.dumps(storefront, indent=2) + "\n", encoding="utf-8")
+    storefront_partial = storefront_path.with_suffix(".json.partial")
+    storefront_partial.write_text(
+        json.dumps(storefront, indent=2) + "\n", encoding="utf-8"
+    )
+    storefront_partial.replace(storefront_path)
     print(f"Wrote {storefront_path}")
     for app in apps:
         for pkg in app["packages"]:
-            artifact = pkg["artifact"]
+            artifact = pkg["versions"][0]["artifact"]
             print(
-                f"  {app['id']} {artifact['name']} "
+                f"  {app['id']} {pkg['versions'][0]['version']} "
+                f"{artifact['name']} "
                 f"size={artifact['size']} sha256={artifact['sha256']}"
             )
     return storefront_path
@@ -466,6 +823,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--host", default="127.0.0.1", help="serve host")
     parser.add_argument("--port", type=int, default=8765, help="serve port")
     parser.add_argument("--base-url", help="catalog artifact base URL")
+    parser.add_argument(
+        "--history",
+        help=(
+            "schema-1 storefront whose immutable version history should be "
+            "merged; defaults to the existing output storefront"
+        ),
+    )
     parser.add_argument("--serve", action="store_true", help="serve after generating")
     parser.add_argument("--skip-build", action="store_true", help="use existing package dir")
     parser.add_argument("--adb-configure", action="store_true", help="write dev-catalog-url to an attached device")

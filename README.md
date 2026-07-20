@@ -159,6 +159,25 @@ choose it explicitly:
 make release-zips DEVICE=mlp1 RELEASE_ID=2026-06-05-test1
 ```
 
+Stable release builds deliberately keep the filesystem/build identity separate
+from the compatibility version. They require an explicit semantic version and
+matching Git tag:
+
+```sh
+make release-zips DEVICE=mlp1 \
+  RELEASE_ID=2026-07-20-gabc1234 \
+  LEAF_RELEASE_CHANNEL=stable \
+  LEAF_RELEASE_VERSION=0.7.0 \
+  LEAF_RELEASE_TAG=v0.7.0
+```
+
+The build fails before packaging if those values disagree, or if Leaf, the
+launcher, the launcher switcher, Catastrophe, or a bundled app has uncommitted
+changes. Exact component commits are recorded inside the release at
+`provenance/components.json`. Unqualified local builds use the `dev` channel;
+their version may fall back to `RELEASE_ID`. Stable output is only selected
+when `LEAF_RELEASE_CHANNEL=stable` is passed with the version and tag above.
+
 The install ZIP is extracted directly to the SD-card root. It must not be
 placed inside another folder. The SD card should be FAT32 or ext4; do not use
 exFAT because the MLP1 stock update path ignores exFAT media.

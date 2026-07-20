@@ -60,6 +60,7 @@ assemble-jawaka: jawaka-build
 	@cp -f "$(JAWAKA_BUILD_DIR)/bin/jawaka-menu" "$(PAYLOAD_DIR)/bin/jawaka-menu"
 	@cp -f "$(JAWAKA_BUILD_DIR)/bin/jawaka-osd" "$(PAYLOAD_DIR)/bin/jawaka-osd"
 	@cp -f "$(JAWAKA_BUILD_DIR)/bin/jawaka-platformctl" "$(PAYLOAD_DIR)/bin/jawaka-platformctl"
+	@cp -f "$(JAWAKA_BUILD_DIR)/bin/jawaka-inhibitctl" "$(PAYLOAD_DIR)/bin/jawaka-inhibitctl"
 	@cp -f "$(JAWAKA_BUILD_DIR)/bin/jawaka-retroarchctl" "$(PAYLOAD_DIR)/bin/jawaka-retroarchctl"
 	@cp -f "$(JAWAKA_BUILD_DIR)/bin/jawaka-retroarch-runner" "$(PAYLOAD_DIR)/bin/jawaka-retroarch-runner"
 	@cp -f "$(JAWAKA_BUILD_DIR)/bin/jawaka-update-runner" "$(PAYLOAD_DIR)/bin/jawaka-update-runner"
