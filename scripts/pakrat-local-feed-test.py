@@ -19,6 +19,7 @@ import zipfile
 LEAF_ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = LEAF_ROOT / "scripts" / "pakrat-local-feed.py"
 OUTPUT_BASE = LEAF_ROOT / "build" / "pakrat-local"
+MATCH_METADATA = object()
 
 
 class LocalFeedTest(unittest.TestCase):
@@ -38,21 +39,27 @@ class LocalFeedTest(unittest.TestCase):
         install_name: str,
         artifact_name: str,
         version: str = "1.0.0",
+        min_leaf_version: str | None = None,
+        runtime_min_leaf_version: str | None | object = MATCH_METADATA,
     ) -> Path:
         app_dir = self.apps_root / directory
         package_dir = app_dir / "build" / "mlp1" / "package" / install_name
         package_dir.mkdir(parents=True)
+        runtime = {
+            "name": directory,
+            "icon": "res/icon.png",
+            "platform": "mlp1",
+            "pak_version": version,
+        }
+        runtime_minimum = (
+            min_leaf_version
+            if runtime_min_leaf_version is MATCH_METADATA
+            else runtime_min_leaf_version
+        )
+        if runtime_minimum is not None:
+            runtime["min_leaf_version"] = runtime_minimum
         (package_dir / "pak.json").write_text(
-            json.dumps(
-                {
-                    "name": directory,
-                    "icon": "res/icon.png",
-                    "platform": "mlp1",
-                    "pak_version": version,
-                }
-            )
-            + "\n",
-            encoding="utf-8",
+            json.dumps(runtime) + "\n", encoding="utf-8"
         )
         (package_dir / "payload.bin").write_bytes(f"payload-{app_id}".encode())
         metadata = {
@@ -78,10 +85,50 @@ class LocalFeedTest(unittest.TestCase):
                 ]
             },
         }
+        if min_leaf_version is not None:
+            metadata["leaf"]["packages"][0]["min_leaf_version"] = min_leaf_version
         (app_dir / "pakrat.json").write_text(
             json.dumps(metadata, indent=2) + "\n", encoding="utf-8"
         )
         return app_dir
+
+    def update_app(
+        self,
+        app_dir: Path,
+        version: str,
+        min_leaf_version: str | None,
+        *,
+        runtime_min_leaf_version: str | None | object = MATCH_METADATA,
+        payload: bytes | None = None,
+    ) -> None:
+        metadata_path = app_dir / "pakrat.json"
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        package = metadata["leaf"]["packages"][0]
+        package["version"] = version
+        if min_leaf_version is None:
+            package.pop("min_leaf_version", None)
+        else:
+            package["min_leaf_version"] = min_leaf_version
+        metadata_path.write_text(
+            json.dumps(metadata, indent=2) + "\n", encoding="utf-8"
+        )
+
+        package_dir = app_dir / package["package_dir"]
+        runtime_path = package_dir / package["runtime_manifest_path"]
+        runtime = json.loads(runtime_path.read_text(encoding="utf-8"))
+        runtime["pak_version"] = version
+        runtime_minimum = (
+            min_leaf_version
+            if runtime_min_leaf_version is MATCH_METADATA
+            else runtime_min_leaf_version
+        )
+        if runtime_minimum is None:
+            runtime.pop("min_leaf_version", None)
+        else:
+            runtime["min_leaf_version"] = runtime_minimum
+        runtime_path.write_text(json.dumps(runtime) + "\n", encoding="utf-8")
+        if payload is not None:
+            (package_dir / "payload.bin").write_bytes(payload)
 
     def run_feed(
         self,
@@ -130,8 +177,17 @@ class LocalFeedTest(unittest.TestCase):
         )
         for app in catalog["apps"]:
             artifact = app["packages"][0]["artifact"]
+            package = app["packages"][0]
+            self.assertEqual(package["version"], "1.0.0")
+            self.assertEqual(package["versions"][0]["version"], "1.0.0")
             artifact_path = (
-                self.output / "pakrat" / "v1" / "artifacts" / artifact["name"]
+                self.output
+                / "pakrat"
+                / "v1"
+                / "artifacts"
+                / app["id"]
+                / "1.0.0"
+                / artifact["name"]
             )
             self.assertTrue(artifact_path.is_file())
             self.assertEqual(artifact["size"], artifact_path.stat().st_size)
@@ -179,10 +235,209 @@ class LocalFeedTest(unittest.TestCase):
             "--artifact",
             f"org.example.exact={exact}",
         )
-        copied = self.output / "pakrat" / "v1" / "artifacts" / exact.name
+        copied = (
+            self.output
+            / "pakrat"
+            / "v1"
+            / "artifacts"
+            / "org.example.exact"
+            / "1.0.0"
+            / exact.name
+        )
         self.assertEqual(copied.read_bytes(), exact.read_bytes())
         package = self.catalog()["apps"][0]["packages"][0]
         self.assertEqual(package["artifact"]["installed_size"], len(runtime) + len(payload))
+
+    def test_gated_version_requires_ungated_history(self) -> None:
+        app = self.write_app(
+            "Gated",
+            "org.example.gated",
+            "Gated.pak",
+            "Gated.pak.zip",
+            version="2.0.0",
+            min_leaf_version="0.7.0",
+        )
+        result = self.run_feed([app], expected_ok=False)
+        self.assertIn("requires explicit history with an ungated safe floor", result.stderr)
+
+    def test_repeated_generation_merges_history_and_pins_safe_floor(self) -> None:
+        app = self.write_app(
+            "History",
+            "org.example.history",
+            "History.pak",
+            "History.pak.zip",
+        )
+        self.run_feed([app])
+        floor_path = (
+            self.output
+            / "pakrat"
+            / "v1"
+            / "artifacts"
+            / "org.example.history"
+            / "1.0.0"
+            / "History.pak.zip"
+        )
+        floor_bytes = floor_path.read_bytes()
+
+        self.update_app(
+            app,
+            "2.0.0",
+            "0.7.0",
+            payload=b"new-version-payload",
+        )
+        self.run_feed([app])
+        catalog = self.catalog()
+        catalog_app = catalog["apps"][0]
+        package = catalog_app["packages"][0]
+        self.assertEqual(catalog_app["version"], "1.0.0")
+        self.assertEqual(package["version"], "1.0.0")
+        self.assertEqual(
+            [entry["version"] for entry in package["versions"]],
+            ["2.0.0", "1.0.0"],
+        )
+        self.assertEqual(package["versions"][0]["min_leaf_version"], "0.7.0")
+        self.assertEqual(package["artifact"], package["versions"][1]["artifact"])
+        self.assertEqual(floor_path.read_bytes(), floor_bytes)
+        self.assertTrue(
+            (
+                self.output
+                / "pakrat"
+                / "v1"
+                / "artifacts"
+                / "org.example.history"
+                / "2.0.0"
+                / "History.pak.zip"
+            ).is_file()
+        )
+
+    def test_explicit_history_materializes_prior_artifact(self) -> None:
+        app = self.write_app(
+            "Explicit",
+            "org.example.explicit",
+            "Explicit.pak",
+            "Explicit.pak.zip",
+        )
+        self.run_feed([app])
+        history_root = self.apps_root / "history-feed"
+        shutil.copytree(self.output / "pakrat" / "v1", history_root)
+        shutil.rmtree(self.output)
+
+        self.update_app(app, "2.0.0", "0.7.0", payload=b"explicit-new")
+        self.run_feed(
+            [app],
+            "--history",
+            str(history_root / "storefront.json"),
+        )
+        package = self.catalog()["apps"][0]["packages"][0]
+        self.assertEqual(
+            [entry["version"] for entry in package["versions"]],
+            ["2.0.0", "1.0.0"],
+        )
+        self.assertTrue(
+            (
+                self.output
+                / "pakrat"
+                / "v1"
+                / "artifacts"
+                / "org.example.explicit"
+                / "1.0.0"
+                / "Explicit.pak.zip"
+            ).is_file()
+        )
+
+    def test_published_version_facts_are_immutable(self) -> None:
+        app = self.write_app(
+            "Immutable",
+            "org.example.immutable",
+            "Immutable.pak",
+            "Immutable.pak.zip",
+        )
+        self.run_feed([app])
+        before = self.catalog()
+        self.update_app(app, "1.0.0", None, payload=b"changed-without-version-bump")
+        result = self.run_feed([app], expected_ok=False)
+        self.assertIn("immutable history conflict", result.stderr)
+        self.assertEqual(self.catalog(), before)
+
+    def test_history_cannot_exceed_client_version_limit(self) -> None:
+        app = self.write_app(
+            "HistoryLimit",
+            "org.example.history-limit",
+            "HistoryLimit.pak",
+            "HistoryLimit.pak.zip",
+        )
+        self.run_feed([app])
+        history = self.catalog()
+        package = history["apps"][0]["packages"][0]
+        floor = package["versions"][0]
+        package["versions"] = [
+            {
+                "version": f"{major}.0.0",
+                **({"min_leaf_version": "0.7.0"} if major > 1 else {}),
+                "artifact": {
+                    **floor["artifact"],
+                    "url": (
+                        "https://example.invalid/artifacts/"
+                        f"org.example.history-limit/{major}.0.0/"
+                        "HistoryLimit.pak.zip"
+                    ),
+                },
+            }
+            for major in range(17, 0, -1)
+        ]
+        history_path = self.apps_root / "too-much-history.json"
+        history_path.write_text(json.dumps(history), encoding="utf-8")
+        self.update_app(app, "18.0.0", "0.7.0")
+        result = self.run_feed(
+            [app],
+            "--history",
+            str(history_path),
+            expected_ok=False,
+        )
+        self.assertIn("16-entry client limit", result.stderr)
+
+    def test_existing_history_cannot_be_silently_dropped(self) -> None:
+        first = self.write_app(
+            "KeepFirst",
+            "org.example.keep-first",
+            "KeepFirst.pak",
+            "KeepFirst.pak.zip",
+        )
+        second = self.write_app(
+            "KeepSecond",
+            "org.example.keep-second",
+            "KeepSecond.pak",
+            "KeepSecond.pak.zip",
+        )
+        self.run_feed([first, second])
+        before = self.catalog()
+        result = self.run_feed([first], expected_ok=False)
+        self.assertIn("history contains a package that was not regenerated", result.stderr)
+        self.assertEqual(self.catalog(), before)
+
+    def test_runtime_minimum_must_match_authored_gate(self) -> None:
+        app = self.write_app(
+            "Mismatch",
+            "org.example.mismatch",
+            "Mismatch.pak",
+            "Mismatch.pak.zip",
+            version="2.0.0",
+            min_leaf_version="0.7.0",
+            runtime_min_leaf_version="0.8.0",
+        )
+        result = self.run_feed([app], expected_ok=False)
+        self.assertIn("runtime min_leaf_version", result.stderr)
+
+    def test_package_versions_are_exact_numeric_triples(self) -> None:
+        app = self.write_app(
+            "BadVersion",
+            "org.example.bad-version",
+            "BadVersion.pak",
+            "BadVersion.pak.zip",
+            version="v1.0.0",
+        )
+        result = self.run_feed([app], expected_ok=False)
+        self.assertIn("exact MAJOR.MINOR.PATCH", result.stderr)
 
     def test_unsafe_exact_artifact_is_rejected(self) -> None:
         app = self.write_app(

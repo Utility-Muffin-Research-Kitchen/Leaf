@@ -97,8 +97,25 @@ INSTALL_ZIP="$RELEASE_BUILD/leaf-mlp1-sd-$RELEASE_ID.zip"
 RECOVERY_ZIP="$RELEASE_BUILD/leaf-mlp1-recovery-$RELEASE_ID.zip"
 UPDATE_MANIFEST="$RELEASE_BUILD/leaf-update.json"
 SHA256SUMS_FILE="$RELEASE_BUILD/SHA256SUMS"
-LEAF_RELEASE_VERSION="${LEAF_RELEASE_VERSION:-${VERSION:-$RELEASE_ID}}"
-LEAF_RELEASE_CHANNEL="${LEAF_RELEASE_CHANNEL:-stable}"
+LEAF_RELEASE_CHANNEL="${LEAF_RELEASE_CHANNEL:-dev}"
+LEAF_RELEASE_VERSION="${LEAF_RELEASE_VERSION:-${VERSION:-}}"
+if [ -z "$LEAF_RELEASE_VERSION" ] && [ "$LEAF_RELEASE_CHANNEL" != "stable" ]; then
+    LEAF_RELEASE_VERSION="$RELEASE_ID"
+fi
+LEAF_RELEASE_TAG="${LEAF_RELEASE_TAG:-}"
+if [ -z "$LEAF_RELEASE_TAG" ] && [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+    LEAF_RELEASE_TAG="${GITHUB_REF_NAME:-}"
+fi
+if [ "$LEAF_RELEASE_CHANNEL" = "beta" ]; then
+    DEFAULT_RELEASE_REPOSITORY="Utility-Muffin-Research-Kitchen/Leaf-beta"
+else
+    DEFAULT_RELEASE_REPOSITORY="Utility-Muffin-Research-Kitchen/Leaf"
+fi
+LEAF_RELEASE_REPOSITORY="${LEAF_RELEASE_REPOSITORY:-$DEFAULT_RELEASE_REPOSITORY}"
+RELEASE_POLICY_TOOL="$LEAF_ROOT/scripts/validate-leaf-release.py"
+PROVENANCE_PREFLIGHT="$RELEASE_BUILD/.components-$RELEASE_ID.preflight.json"
+RELEASE_COMPONENT_ARGS=()
+REQUIRED_COMPONENT_ARGS=()
 BUILT_INSTALL=0
 BUILT_RECOVERY=0
 
@@ -108,6 +125,76 @@ validate_json_scalar() {
     case "$value" in
         *'"'*|*\\*|*$'\n'*|*$'\r'*)
             die "$name contains characters unsupported by release metadata: $value"
+            ;;
+    esac
+}
+
+configure_release_components() {
+    local app
+    RELEASE_COMPONENT_ARGS=(
+        --component "leaf=$LEAF_ROOT"
+        --component "catastrophe=$CATASTROPHE_DIR"
+        --component "launcher=$JAWAKA_DIR"
+        --component "launcher-switcher=$LAUNCHER_SWITCHER_DIR"
+    )
+    REQUIRED_COMPONENT_ARGS=(
+        --required-component "leaf"
+        --required-component "catastrophe"
+        --required-component "launcher"
+        --required-component "launcher-switcher"
+    )
+    for app in $STAGE_APPS; do
+        RELEASE_COMPONENT_ARGS+=(--component "app:$app=$WORKSPACE_DIR/$app")
+        REQUIRED_COMPONENT_ARGS+=(--required-component "app:$app")
+    done
+}
+
+write_component_provenance() {
+    local output="$1"
+    local clean_args=()
+    if [ "$LEAF_RELEASE_CHANNEL" = "stable" ]; then
+        clean_args+=(--require-clean)
+    fi
+    python3 "$RELEASE_POLICY_TOOL" provenance \
+        --channel "$LEAF_RELEASE_CHANNEL" \
+        --version "$LEAF_RELEASE_VERSION" \
+        --tag "$LEAF_RELEASE_TAG" \
+        --release-id "$RELEASE_ID" \
+        "${clean_args[@]}" \
+        "${RELEASE_COMPONENT_ARGS[@]}" \
+        --output "$output"
+}
+
+prepare_release_policy() {
+    [ "$MODE" = "recovery" ] && return 0
+    [ -f "$RELEASE_POLICY_TOOL" ] || die "missing Leaf release policy tool: $RELEASE_POLICY_TOOL"
+    python3 "$RELEASE_POLICY_TOOL" identity \
+        --channel "$LEAF_RELEASE_CHANNEL" \
+        --version "$LEAF_RELEASE_VERSION" \
+        --tag "$LEAF_RELEASE_TAG" \
+        --release-id "$RELEASE_ID"
+    configure_release_components
+    write_component_provenance "$PROVENANCE_PREFLIGHT"
+}
+
+finalize_component_provenance() {
+    local provenance_dir="$RELEASE_ROOT/provenance"
+    local final="$provenance_dir/components.json"
+    local candidate="$provenance_dir/components.json.candidate"
+    mkdir -p "$provenance_dir"
+    write_component_provenance "$candidate"
+    cmp -s "$PROVENANCE_PREFLIGHT" "$candidate" || \
+        die "release component revisions or worktree state changed during assembly"
+    mv "$candidate" "$final"
+    echo "Wrote $final"
+}
+
+validate_configured_source_consumers() {
+    case " $STAGE_APPS " in
+        *" CentralScrutinizer "*)
+            echo "Validating bundled configured-source consumer"
+            make -C "$WORKSPACE_DIR/CentralScrutinizer" \
+                test-native TEST=tests/native/test_paths.c
             ;;
     esac
 }
@@ -217,14 +304,16 @@ write_release_manifest() {
 
     validate_json_scalar "LEAF_RELEASE_VERSION" "$LEAF_RELEASE_VERSION"
     validate_json_scalar "LEAF_RELEASE_CHANNEL" "$LEAF_RELEASE_CHANNEL"
+    validate_json_scalar "LEAF_RELEASE_REPOSITORY" "$LEAF_RELEASE_REPOSITORY"
     validate_json_scalar "RELEASE_ID" "$RELEASE_ID"
 
-    local install_name recovery_name published_at install_size install_installed_size install_sha
+    local install_name recovery_name published_at install_size install_installed_size install_sha release_url_ref
     install_name="$(basename "$INSTALL_ZIP")"
     install_size="$(file_size "$INSTALL_ZIP")"
     install_installed_size="$(tree_size "$INSTALL_STAGE")"
     install_sha="$(file_sha256 "$INSTALL_ZIP")"
     published_at="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    release_url_ref="${LEAF_RELEASE_TAG:-$RELEASE_ID}"
 
     {
         cat <<EOF
@@ -277,7 +366,7 @@ EOF
   },
   "notes": {
     "summary": "Leaf $RELEASE_ID",
-    "url": "https://github.com/Utility-Muffin-Research-Kitchen/Leaf/releases/tag/$RELEASE_ID"
+    "url": "https://github.com/$LEAF_RELEASE_REPOSITORY/releases/tag/$release_url_ref"
   }
 }
 EOF
@@ -729,6 +818,7 @@ zip_stage() {
 
 build_install_zip() {
     echo "Building Leaf MLP1 install ZIP release=$RELEASE_ID"
+    validate_configured_source_consumers
     build_missing_platform_bits
 
     make -C "$LEAF_ROOT" \
@@ -775,15 +865,28 @@ build_install_zip() {
     validate_pakrat_owned_apps "$RELEASE_ROOT"
     validate_portmaster_integration "$RELEASE_ROOT"
     audit_mlp1_build_tuning "$RELEASE_ROOT"
+    finalize_component_provenance
 
+    local release_version_args=()
+    if [ "$LEAF_RELEASE_CHANNEL" = "stable" ] || \
+            [ "$LEAF_RELEASE_VERSION" != "$RELEASE_ID" ]; then
+        release_version_args+=(--release-version "$LEAF_RELEASE_VERSION")
+    fi
     python3 "$LAUNCHER_SWITCHER_DIR/make_launcher_switcher_sd.py" \
         --force \
         --mode managed-install \
         --release-id "$RELEASE_ID" \
+        "${release_version_args[@]}" \
         --no-require-adb-pinned \
         --completion-action reboot \
         "$INSTALL_STAGE"
 
+    python3 "$RELEASE_POLICY_TOOL" candidate \
+        --release-root "$RELEASE_ROOT" \
+        --install-stage "$INSTALL_STAGE" \
+        --version "$LEAF_RELEASE_VERSION" \
+        --release-id "$RELEASE_ID" \
+        "${REQUIRED_COMPONENT_ARGS[@]}"
     validate_install_stage_clean "$INSTALL_STAGE"
     write_install_readme
     zip_stage "$INSTALL_STAGE" "$INSTALL_ZIP"
@@ -807,6 +910,7 @@ build_recovery_zip() {
 }
 
 mkdir -p "$RELEASE_BUILD"
+prepare_release_policy
 
 case "$MODE" in
     both)
