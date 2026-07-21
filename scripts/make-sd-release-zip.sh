@@ -106,6 +106,12 @@ LEAF_RELEASE_TAG="${LEAF_RELEASE_TAG:-}"
 if [ -z "$LEAF_RELEASE_TAG" ] && [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
     LEAF_RELEASE_TAG="${GITHUB_REF_NAME:-}"
 fi
+if [ "$LEAF_RELEASE_CHANNEL" = "beta" ]; then
+    DEFAULT_RELEASE_REPOSITORY="Utility-Muffin-Research-Kitchen/Leaf-beta"
+else
+    DEFAULT_RELEASE_REPOSITORY="Utility-Muffin-Research-Kitchen/Leaf"
+fi
+LEAF_RELEASE_REPOSITORY="${LEAF_RELEASE_REPOSITORY:-$DEFAULT_RELEASE_REPOSITORY}"
 RELEASE_POLICY_TOOL="$LEAF_ROOT/scripts/validate-leaf-release.py"
 PROVENANCE_PREFLIGHT="$RELEASE_BUILD/.components-$RELEASE_ID.preflight.json"
 RELEASE_COMPONENT_ARGS=()
@@ -298,6 +304,7 @@ write_release_manifest() {
 
     validate_json_scalar "LEAF_RELEASE_VERSION" "$LEAF_RELEASE_VERSION"
     validate_json_scalar "LEAF_RELEASE_CHANNEL" "$LEAF_RELEASE_CHANNEL"
+    validate_json_scalar "LEAF_RELEASE_REPOSITORY" "$LEAF_RELEASE_REPOSITORY"
     validate_json_scalar "RELEASE_ID" "$RELEASE_ID"
 
     local install_name recovery_name published_at install_size install_installed_size install_sha release_url_ref
@@ -359,7 +366,7 @@ EOF
   },
   "notes": {
     "summary": "Leaf $RELEASE_ID",
-    "url": "https://github.com/Utility-Muffin-Research-Kitchen/Leaf/releases/tag/$release_url_ref"
+    "url": "https://github.com/$LEAF_RELEASE_REPOSITORY/releases/tag/$release_url_ref"
   }
 }
 EOF

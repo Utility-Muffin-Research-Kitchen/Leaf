@@ -177,6 +177,9 @@ changes. Exact component commits are recorded inside the release at
 `provenance/components.json`. Unqualified local builds use the `dev` channel;
 their version may fall back to `RELEASE_ID`. Stable output is only selected
 when `LEAF_RELEASE_CHANNEL=stable` is passed with the version and tag above.
+Beta-channel manifests link to the tester release in `Leaf-beta`; other
+channels default to the main Leaf repository. `LEAF_RELEASE_REPOSITORY` can
+override the target for an intentional alternate release host.
 
 The install ZIP is extracted directly to the SD-card root. It must not be
 placed inside another folder. The SD card should be FAT32 or ext4; do not use
