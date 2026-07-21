@@ -75,6 +75,9 @@ class ProvenanceTests(unittest.TestCase):
                 repo = base / name
                 init_repo(repo)
                 components.append(f"{name}={repo}")
+            app_repo = base / "Thing-File"
+            init_repo(app_repo)
+            components.append(f"app:Thing-File={app_repo}")
             args = SimpleNamespace(
                 channel="stable",
                 version="0.7.0",
@@ -89,6 +92,7 @@ class ProvenanceTests(unittest.TestCase):
                 "leaf",
                 "launcher",
                 "launcher-switcher",
+                "app:Thing-File",
             ])
             self.assertTrue(all(len(row["commit"]) == 40 for row in rows))
             self.assertTrue(all(row["dirty"] is False for row in rows))
@@ -148,7 +152,12 @@ class CandidateTests(unittest.TestCase):
             },
             "components": [
                 {"name": name, "commit": "a" * 40, "dirty": False, "remote": None}
-                for name in ("leaf", "launcher", "launcher-switcher", "app:example")
+                for name in (
+                    "leaf",
+                    "launcher",
+                    "launcher-switcher",
+                    "app:Thing-File",
+                )
             ],
         }
         provenance_path = root / "provenance" / "components.json"
@@ -172,7 +181,7 @@ class CandidateTests(unittest.TestCase):
                 "leaf",
                 "launcher",
                 "launcher-switcher",
-                "app:example",
+                "app:Thing-File",
             ],
         )
 

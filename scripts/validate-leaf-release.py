@@ -18,7 +18,7 @@ VERSION_RE = re.compile(
     r"(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
     r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
 )
-COMPONENT_NAME_RE = re.compile(r"[a-z0-9][a-z0-9_.:-]*")
+COMPONENT_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]*")
 REQUIRED_PATH_LISTS = {
     "SDCARD_PATHS": ("/mnt/sdcard", "/media/sdcard1"),
     "ROMS_PATHS": ("/mnt/sdcard/Roms", "/media/sdcard1/Roms"),
