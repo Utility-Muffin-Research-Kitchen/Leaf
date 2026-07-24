@@ -64,6 +64,12 @@ def validate(platform: Path) -> None:
     launch_text = (package / "launch.sh").read_text(encoding="utf-8")
     if "USERDATA_PATH" not in launch_text:
         raise SystemExit("error: PPSSPP launcher does not use USERDATA_PATH")
+    if 'SDL_JOYSTICK_DEVICE="$JAWAKA_INPUT_VIRTUAL_EVENT"' not in launch_text:
+        raise SystemExit("error: PPSSPP launcher does not select Jawaka calibrated input")
+    if "controls-square-triangle-v1" not in launch_text:
+        raise SystemExit("error: PPSSPP launcher does not migrate the legacy face mapping")
+    if "controls-analog-up-v1" not in launch_text:
+        raise SystemExit("error: PPSSPP launcher does not migrate analog up")
     launch_lines = launch_text.splitlines()
     if not any(
         line.strip() == 'ROTATION_MODE="${ROTATION_MODE:-native}"'
@@ -84,6 +90,21 @@ def validate(platform: Path) -> None:
         raise SystemExit("error: PPSSPP GLES fallback does not select Wayland")
     if 'PPSSPP_GLES_DISPLAY_ROTATION:-0' not in fallback_text:
         raise SystemExit("error: PPSSPP GLES fallback still forces panel rotation")
+
+    controls_text = (package / "defaults/controls.ini").read_text(
+        encoding="utf-8-sig"
+    )
+    controls = {}
+    for line in controls_text.splitlines():
+        key, separator, value = line.partition("=")
+        if separator:
+            controls[key.strip()] = value.strip()
+    if controls.get("Square") != "1-29,10-188":
+        raise SystemExit("error: PPSSPP Square mapping is not the MLP1 mapping")
+    if controls.get("Triangle") != "1-47,10-191":
+        raise SystemExit("error: PPSSPP Triangle mapping is not the MLP1 mapping")
+    if controls.get("An.Up") != "1-37,10-4003":
+        raise SystemExit("error: PPSSPP analog up is not SDL Y-axis negative")
 
     cores = load_json(platform / "defaults/cores.json").get("cores")
     systems = load_json(platform / "defaults/systems.json").get("systems")
