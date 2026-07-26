@@ -140,6 +140,15 @@ class CandidateTests(unittest.TestCase):
         env_path = launcher / "env.sh"
         env_path.parent.mkdir(parents=True, exist_ok=True)
         env_path.write_text("\n".join(env_lines) + "\n", encoding="utf-8")
+        autoconfig = root / "platforms" / "mlp1" / "autoconfig" / "Loong Gamepad.cfg"
+        autoconfig.parent.mkdir(parents=True, exist_ok=True)
+        autoconfig.write_text(
+            'input_l3_btn = "7"\ninput_l3_btn_label = "L3"\n',
+            encoding="utf-8",
+        )
+        defaults = root / "platforms" / "mlp1" / "defaults" / "retroarch.cfg"
+        defaults.parent.mkdir(parents=True, exist_ok=True)
+        defaults.write_text('input_player1_l3_btn = "7"\n', encoding="utf-8")
 
         provenance = {
             "schema": 1,
@@ -223,6 +232,34 @@ class CandidateTests(unittest.TestCase):
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(MODULE.PolicyError, "ROMS_PATHS mismatch"):
+                MODULE.validate_candidate(args)
+
+    def test_candidate_rejects_incomplete_l3_autoconfig(self):
+        with tempfile.TemporaryDirectory() as raw:
+            args = self.make_candidate(Path(raw))
+            config = (
+                args.release_root
+                / "platforms"
+                / "mlp1"
+                / "autoconfig"
+                / "Loong Gamepad.cfg"
+            )
+            config.write_text('input_l3_btn = "7"\n', encoding="utf-8")
+            with self.assertRaisesRegex(MODULE.PolicyError, "input_l3_btn_label"):
+                MODULE.validate_candidate(args)
+
+    def test_candidate_rejects_incomplete_l3_defaults(self):
+        with tempfile.TemporaryDirectory() as raw:
+            args = self.make_candidate(Path(raw))
+            config = (
+                args.release_root
+                / "platforms"
+                / "mlp1"
+                / "defaults"
+                / "retroarch.cfg"
+            )
+            config.write_text('input_player1_l3_btn = "nul"\n', encoding="utf-8")
+            with self.assertRaisesRegex(MODULE.PolicyError, "input_player1_l3_btn"):
                 MODULE.validate_candidate(args)
 
 
