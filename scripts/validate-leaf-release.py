@@ -195,6 +195,48 @@ def require_file(path: Path, label: str, executable: bool = False) -> None:
         raise PolicyError(f"{label} is not executable: {path}")
 
 
+def read_retroarch_config(path: Path, label: str) -> dict[str, str]:
+    require_file(path, label)
+    values: dict[str, str] = {}
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError) as exc:
+        raise PolicyError(f"cannot read {label} {path}: {exc}") from exc
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        key, separator, raw_value = stripped.partition("=")
+        if not separator:
+            continue
+        value = raw_value.strip()
+        if len(value) >= 2 and value[0] == value[-1] == '"':
+            value = value[1:-1]
+        values[key.strip()] = value
+    return values
+
+
+def validate_mlp1_retroarch_input_profile(platform: Path) -> None:
+    autoconfig = read_retroarch_config(
+        platform / "autoconfig" / "Loong Gamepad.cfg",
+        "MLP1 RetroArch gamepad autoconfig",
+    )
+    defaults = read_retroarch_config(
+        platform / "defaults" / "retroarch.cfg",
+        "MLP1 RetroArch defaults",
+    )
+    expected = (
+        (autoconfig, "input_l3_btn", "7"),
+        (autoconfig, "input_l3_btn_label", "L3"),
+        (defaults, "input_player1_l3_btn", "7"),
+    )
+    for config, key, value in expected:
+        if config.get(key) != value:
+            raise PolicyError(
+                f"MLP1 RetroArch L3 mapping mismatch: {key} must be {value!r}"
+            )
+
+
 def read_staged_environment(env_path: Path) -> dict[str, str]:
     result = subprocess.run(
         [
@@ -235,6 +277,7 @@ def validate_candidate(args: argparse.Namespace) -> None:
     require_file(daemon, "launcher daemon", executable=True)
     require_file(inhibit, "launcher inhibit helper", executable=True)
     require_file(env_path, "runtime environment")
+    validate_mlp1_retroarch_input_profile(platform)
     if b"relocate-games-v1" not in daemon.read_bytes():
         raise PolicyError("launcher daemon does not advertise relocate-games-v1")
 
