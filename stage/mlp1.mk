@@ -24,7 +24,9 @@ MLP1_VULKAN_RUNTIME ?= $(MLP1_GRAPHICS_RUNTIME)/vulkan/rk3566-g52-g29p1
 MLP1_DRASTIC_PACKAGE ?= $(LEAF_ROOT)/build/drastic/mlp1/drastic
 MLP1_MUPEN64PLUS_PACKAGE ?= $(N64_STANDALONE_DIR)/output/mlp1/mupen64plus
 MLP1_FLYCAST_PACKAGE ?= $(FLYCAST_STANDALONE_DIR)/output/mlp1/flycast
-MLP1_RETROARCH_PATCH_SET ?= portrait-rotation,command-menu,jawaka-load-content,controller-bindings,sysfs-rumble
+MLP1_RETROARCH_PATCH_SET_FILE ?= $(LEAF_ROOT)/config/mlp1-retroarch-patch-set.txt
+MLP1_RETROARCH_PATCH_SET ?= $(shell grep -v '^\#' "$(MLP1_RETROARCH_PATCH_SET_FILE)" | grep -v '^$$' | head -1)
+MLP1_RETROARCH_VALIDATOR ?= $(LEAF_ROOT)/scripts/validate-mlp1-retroarch-build.py
 UMRK_ENV_SCRIPT    ?= $(LAUNCHER_SWITCHER_DIR)/device/umrk-env.sh
 REMOTE_SDCARD_PATH ?= auto
 REMOTE_SYSTEM_PATH ?=
@@ -87,9 +89,14 @@ assemble-jawaka: jawaka-build
 		find "$(PLATFORM_PAYLOAD_DIR)/platform.d" -type f -exec chmod 755 {} \;; \
 	fi
 	@if [ -f "$(MLP1_RETROARCH_BIN)" ]; then \
+		python3 "$(MLP1_RETROARCH_VALIDATOR)" \
+			--binary "$(MLP1_RETROARCH_BIN)" \
+			--manifest "$(MLP1_RETROARCH_MANIFEST)" \
+			--expected-patch-set "$(MLP1_RETROARCH_PATCH_SET)" \
+		|| { echo "refusing to stage an unverified RetroArch; run: make stage-retroarch DEVICE=mlp1" >&2; exit 1; }; \
 		mkdir -p "$(PLATFORM_PAYLOAD_DIR)/bin"; \
 		cp -f "$(MLP1_RETROARCH_BIN)" "$(PLATFORM_PAYLOAD_DIR)/bin/retroarch"; \
-		if [ -f "$(MLP1_RETROARCH_MANIFEST)" ]; then cp -f "$(MLP1_RETROARCH_MANIFEST)" "$(PLATFORM_PAYLOAD_DIR)/bin/retroarch.build-manifest.json"; fi; \
+		cp -f "$(MLP1_RETROARCH_MANIFEST)" "$(PLATFORM_PAYLOAD_DIR)/bin/retroarch.build-manifest.json"; \
 		chmod 755 "$(PLATFORM_PAYLOAD_DIR)/bin/retroarch"; \
 	else \
 		echo "warning: MLP1 RetroArch not found at $(MLP1_RETROARCH_BIN); launches will fail until built (make stage-retroarch)."; \
@@ -123,9 +130,16 @@ stage-jawaka: assemble-jawaka
 # Build or reuse the current MLP1 RetroArch/core outputs, then refresh only the
 # platform runtime folders on the SD card.
 stage-retroarch:
-	@if [ ! -f "$(MLP1_RETROARCH_BIN)" ]; then \
-		echo "MLP1 RetroArch missing; building in $(RETROARCH_BUILDS_DIR)"; \
+	@if ! python3 "$(MLP1_RETROARCH_VALIDATOR)" \
+			--binary "$(MLP1_RETROARCH_BIN)" \
+			--manifest "$(MLP1_RETROARCH_MANIFEST)" \
+			--expected-patch-set "$(MLP1_RETROARCH_PATCH_SET)"; then \
+		echo "building MLP1 RetroArch in $(RETROARCH_BUILDS_DIR)"; \
 		cd "$(RETROARCH_BUILDS_DIR)" && MLP1_PATCH_SET="$(MLP1_RETROARCH_PATCH_SET)" ./build-mlp1.sh; \
+		cd "$(LEAF_ROOT)" && python3 "$(MLP1_RETROARCH_VALIDATOR)" \
+			--binary "$(MLP1_RETROARCH_BIN)" \
+			--manifest "$(MLP1_RETROARCH_MANIFEST)" \
+			--expected-patch-set "$(MLP1_RETROARCH_PATCH_SET)"; \
 	fi
 	@if ! ( [ -d "$(MLP1_CORES_DIR)" ] && find "$(MLP1_CORES_DIR)" -maxdepth 1 -type f -name '*_libretro.so' | grep -q . ); then \
 		echo "MLP1 cores missing; building in $(CORES_SPRUCE_DIR)"; \

@@ -1,0 +1,9 @@
+# The canonical MLP1 RetroArch patch set. Read by stage/mlp1.mk and by
+# scripts/make-sd-release-zip.sh so the staging and release paths cannot drift
+# apart -- keeping two hand-maintained defaults in step failed twice.
+#
+# Order is significant: build-mlp1.sh applies patches in the order listed here,
+# and the build manifest records the string verbatim.
+#
+# Comments and blank lines are ignored; the first remaining line is the set.
+portrait-rotation,command-menu,jawaka-load-content,controller-bindings,sysfs-rumble

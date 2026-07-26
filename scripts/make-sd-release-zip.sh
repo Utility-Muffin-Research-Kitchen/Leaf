@@ -38,10 +38,13 @@ MLP1_VULKAN_RUNTIME="${MLP1_VULKAN_RUNTIME:-$MLP1_GRAPHICS_RUNTIME/vulkan/rk3566
 MLP1_DRASTIC_PACKAGE="${MLP1_DRASTIC_PACKAGE:-$LEAF_ROOT/build/drastic/mlp1/drastic}"
 MLP1_MUPEN64PLUS_PACKAGE="${MLP1_MUPEN64PLUS_PACKAGE:-$N64_STANDALONE_DIR/output/mlp1/mupen64plus}"
 MLP1_FLYCAST_PACKAGE="${MLP1_FLYCAST_PACKAGE:-$FLYCAST_STANDALONE_DIR/output/mlp1/flycast}"
-# Keep in step with MLP1_RETROARCH_PATCH_SET in stage/mlp1.mk. Running this
-# script directly uses this default, so a stale value here silently ships a
-# RetroArch missing patches the device depends on (in-game rumble, bindings UI).
-MLP1_RETROARCH_PATCH_SET="${MLP1_RETROARCH_PATCH_SET:-portrait-rotation,command-menu,jawaka-load-content,controller-bindings,sysfs-rumble}"
+# Read the canonical patch set rather than carrying a second copy of it. Two
+# hand-maintained defaults drifted apart twice; the file is the single source.
+MLP1_RETROARCH_PATCH_SET_FILE="${MLP1_RETROARCH_PATCH_SET_FILE:-$LEAF_ROOT/config/mlp1-retroarch-patch-set.txt}"
+if [ -z "${MLP1_RETROARCH_PATCH_SET:-}" ]; then
+    MLP1_RETROARCH_PATCH_SET="$(grep -v '^#' "$MLP1_RETROARCH_PATCH_SET_FILE" | grep -v '^$' | head -1)"
+fi
+MLP1_RETROARCH_VALIDATOR="${MLP1_RETROARCH_VALIDATOR:-$LEAF_ROOT/scripts/validate-mlp1-retroarch-build.py}"
 
 usage() {
     cat >&2 <<'EOF'
@@ -565,32 +568,19 @@ audit_mlp1_build_tuning() {
     python3 "$audit_script" "$release_root" || die "MLP1 build tuning audit failed"
 }
 
-# True when no RetroArch binary exists, or when the one on disk was built from a
-# different patch set than the release wants. Without the second test a binary
-# left over from an earlier patch set is packaged verbatim -- the release looks
-# fine and quietly lacks whatever the set has since gained.
-mlp1_retroarch_needs_build() {
-    [ -f "$MLP1_RETROARCH_BIN" ] || return 0
-    [ -f "$MLP1_RETROARCH_MANIFEST" ] || {
-        echo "MLP1 RetroArch has no build manifest; rebuilding to be sure" >&2
-        return 0
-    }
-    local built
-    built="$(python3 -c 'import json,sys
-m=json.load(open(sys.argv[1]))
-print(m.get("patch_controls",{}).get("MLP1_PATCH_SET",""))' "$MLP1_RETROARCH_MANIFEST" 2>/dev/null)" || return 0
-    if [ "$built" != "$MLP1_RETROARCH_PATCH_SET" ]; then
-        echo "MLP1 RetroArch was built with patch set '$built'," >&2
-        echo "  but this release wants '$MLP1_RETROARCH_PATCH_SET'; rebuilding" >&2
-        return 0
-    fi
-    return 1
+# Shared with stage/mlp1.mk so staging and release make the same reuse decision.
+mlp1_retroarch_reusable() {
+    python3 "$MLP1_RETROARCH_VALIDATOR" \
+        --binary "$MLP1_RETROARCH_BIN" \
+        --manifest "$MLP1_RETROARCH_MANIFEST" \
+        --expected-patch-set "$MLP1_RETROARCH_PATCH_SET"
 }
 
 build_missing_platform_bits() {
-    if mlp1_retroarch_needs_build; then
+    if ! mlp1_retroarch_reusable; then
         echo "building MLP1 RetroArch in $RETROARCH_BUILDS_DIR"
         (cd "$RETROARCH_BUILDS_DIR" && MLP1_PATCH_SET="$MLP1_RETROARCH_PATCH_SET" ./build-mlp1.sh)
+        mlp1_retroarch_reusable || die "MLP1 RetroArch still does not match $MLP1_RETROARCH_PATCH_SET after rebuild"
     fi
 
     if ! ( [ -d "$MLP1_CORES_DIR" ] && find "$MLP1_CORES_DIR" -maxdepth 1 -type f -name '*_libretro.so' | grep -q . ); then
