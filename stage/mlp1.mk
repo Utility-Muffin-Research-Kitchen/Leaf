@@ -12,6 +12,8 @@ DEVICE_OVERLAY   ?= $(LAUNCHER_SWITCHER_DIR)/device/mlp1
 CATASTROPHE_ASSETS_DIR ?= $(CATASTROPHE_DIR)/res/assets
 MLP1_RETROARCH_BIN ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/bin/retroarch
 MLP1_RETROARCH_MANIFEST ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/build-manifest.json
+MLP1_SHADERS_DIR    ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/shaders
+MLP1_SHADER_TOOL    ?= $(RETROARCH_BUILDS_DIR)/scripts/mlp1_shader_bundle.py
 MLP1_CORES_DIR     ?= $(CORES_SPRUCE_DIR)/output/mlp1/cores
 MLP1_CORES_REPORT  ?= $(CORES_SPRUCE_DIR)/output/mlp1/build-report.json
 MLP1_INFO_DIR      ?= $(CORES_SPRUCE_DIR)/output/mlp1/info
@@ -38,16 +40,21 @@ LEAF_SYSTEM_PAYLOAD_DIR := $(PAYLOAD_ROOT)/.system/leaf
 PLATFORM_PAYLOAD_DIR := $(LEAF_SYSTEM_PAYLOAD_DIR)/platforms/mlp1
 PAYLOAD_DIR          := $(PLATFORM_PAYLOAD_DIR)/launcher
 
-.PHONY: stage stage-app stage-emulator stage-emulators stage-public-root stage-retroarch stage-refresh refresh-jawaka jawaka-build assemble-jawaka stage-jawaka release-zips release-sd-zip release-recovery-zip
+.PHONY: stage stage-app stage-emulator stage-emulators stage-public-root stage-retroarch stage-refresh refresh-jawaka jawaka-build shader-bundle-mlp1 assemble-jawaka stage-jawaka release-zips release-sd-zip release-recovery-zip
 
 # Build the Jawaka MLP1 binaries (cross-compile via its own Docker target).
 jawaka-build:
 	$(MAKE) -C "$(JAWAKA_DIR)" mlp1
 
+shader-bundle-mlp1:
+	$(MAKE) -C "$(RETROARCH_BUILDS_DIR)" shaders-mlp1 MLP1_SHADER_OUTPUT="$(MLP1_SHADERS_DIR)"
+	python3 "$(MLP1_SHADER_TOOL)" validate --output "$(MLP1_SHADERS_DIR)"
+
 # Assemble the launcher payload tree from Jawaka + Catastrophe + RetroArch +
-# cores. Mirrors the former miniloong-launcher-switcher `jawaka-package` target;
-# the device overlay still comes from launcher-switcher (device/mlp1 defaults).
-assemble-jawaka: jawaka-build
+# cores + shaders. Mirrors the former miniloong-launcher-switcher
+# `jawaka-package` target; the device overlay still comes from
+# launcher-switcher (device/mlp1 defaults).
+assemble-jawaka: jawaka-build shader-bundle-mlp1
 	$(MAKE) -C "$(CATASTROPHE_DIR)" assets
 	@for scale in 1 2 3 4; do \
 		asset="$(CATASTROPHE_ASSETS_DIR)/assets@$${scale}x.png"; \
@@ -106,6 +113,10 @@ assemble-jawaka: jawaka-build
 		mkdir -p "$(PLATFORM_PAYLOAD_DIR)/info"; \
 		find "$(MLP1_INFO_DIR)" -maxdepth 1 -type f -name '*_libretro.info' -exec cp -f {} "$(PLATFORM_PAYLOAD_DIR)/info/" \;; \
 	fi
+	@test -d "$(MLP1_SHADERS_DIR)" || { echo "missing MLP1 shader bundle: $(MLP1_SHADERS_DIR)" >&2; exit 1; }
+	@mkdir -p "$(PLATFORM_PAYLOAD_DIR)/shaders"
+	@cp -Rf "$(MLP1_SHADERS_DIR)/." "$(PLATFORM_PAYLOAD_DIR)/shaders/"
+	@python3 "$(MLP1_SHADER_TOOL)" validate --output "$(PLATFORM_PAYLOAD_DIR)/shaders"
 	@test -f "$(PLATFORM_PAYLOAD_DIR)/cores/build-report.json" || { echo "missing MLP1 core build report: $(PLATFORM_PAYLOAD_DIR)/cores/build-report.json" >&2; exit 1; }
 	@python3 "$(UMRK_WORKSPACE_DIR)/scripts/retroarch_validate_package.py" \
 		--metadata-dir "$(MLP1_METADATA_DIR)" \
@@ -139,6 +150,8 @@ stage-retroarch:
 	fi
 	@test -f "$(MLP1_RETROARCH_BIN)" || { echo "missing RetroArch binary: $(MLP1_RETROARCH_BIN)" >&2; exit 1; }
 	@test -d "$(MLP1_CORES_DIR)" || { echo "missing cores dir: $(MLP1_CORES_DIR)" >&2; exit 1; }
+	@$(MAKE) -C "$(RETROARCH_BUILDS_DIR)" shaders-mlp1 MLP1_SHADER_OUTPUT="$(MLP1_SHADERS_DIR)"
+	@python3 "$(MLP1_SHADER_TOOL)" validate --output "$(MLP1_SHADERS_DIR)"
 	@if ! python3 "$(MLP1_CORE_REPORT_TOOL)" verify \
 			--report "$(MLP1_CORES_REPORT)" \
 			--cores-dir "$(MLP1_CORES_DIR)"; then \
@@ -171,7 +184,7 @@ stage-retroarch:
 	if [ -z "$$remote_system" ]; then remote_system="$$remote_sd/.system/leaf"; fi; \
 	remote_platform="$(REMOTE_PLATFORM_PATH)"; \
 	if [ -z "$$remote_platform" ]; then remote_platform="$$remote_system/platforms/mlp1"; fi; \
-	"$${ADB[@]}" shell "mkdir -p '$$remote_platform' && rm -rf '$$remote_platform/bin' '$$remote_platform/cores' '$$remote_platform/info' && mkdir -p '$$remote_platform/bin' '$$remote_platform/cores' '$$remote_platform/info'"; \
+	"$${ADB[@]}" shell "mkdir -p '$$remote_platform' && rm -rf '$$remote_platform/bin' '$$remote_platform/cores' '$$remote_platform/info' '$$remote_platform/shaders' && mkdir -p '$$remote_platform/bin' '$$remote_platform/cores' '$$remote_platform/info' '$$remote_platform/shaders'"; \
 	"$${ADB[@]}" push "$(MLP1_RETROARCH_BIN)" "$$remote_platform/bin/retroarch" >/dev/null; \
 	if [ -f "$(MLP1_RETROARCH_MANIFEST)" ]; then \
 		"$${ADB[@]}" push "$(MLP1_RETROARCH_MANIFEST)" "$$remote_platform/bin/retroarch.build-manifest.json" >/dev/null; \
@@ -183,6 +196,7 @@ stage-retroarch:
 	if [ -d "$(MLP1_INFO_DIR)" ]; then \
 		"$${ADB[@]}" push "$(MLP1_INFO_DIR)/." "$$remote_platform/info/" >/dev/null; \
 	fi; \
+	"$${ADB[@]}" push "$(MLP1_SHADERS_DIR)/." "$$remote_platform/shaders/" >/dev/null; \
 	"$${ADB[@]}" shell "chmod 755 '$$remote_platform/bin/retroarch' '$$remote_platform/cores/'*_libretro.so 2>/dev/null || true"; \
 	"$${ADB[@]}" shell sync; \
 	echo "RetroArch platform payload staged."
@@ -371,6 +385,7 @@ release-zips:
 	TOOLCHAIN_IMAGE="$(TOOLCHAIN_IMAGE)" \
 	MLP1_RETROARCH_BIN="$(MLP1_RETROARCH_BIN)" \
 	MLP1_RETROARCH_MANIFEST="$(MLP1_RETROARCH_MANIFEST)" \
+	MLP1_SHADERS_DIR="$(MLP1_SHADERS_DIR)" \
 	MLP1_CORES_DIR="$(MLP1_CORES_DIR)" \
 	MLP1_CORES_REPORT="$(MLP1_CORES_REPORT)" \
 	MLP1_PPSSPP_PACKAGE="$(MLP1_PPSSPP_PACKAGE)" \
@@ -401,6 +416,7 @@ release-sd-zip:
 	TOOLCHAIN_IMAGE="$(TOOLCHAIN_IMAGE)" \
 	MLP1_RETROARCH_BIN="$(MLP1_RETROARCH_BIN)" \
 	MLP1_RETROARCH_MANIFEST="$(MLP1_RETROARCH_MANIFEST)" \
+	MLP1_SHADERS_DIR="$(MLP1_SHADERS_DIR)" \
 	MLP1_CORES_DIR="$(MLP1_CORES_DIR)" \
 	MLP1_CORES_REPORT="$(MLP1_CORES_REPORT)" \
 	MLP1_PPSSPP_PACKAGE="$(MLP1_PPSSPP_PACKAGE)" \

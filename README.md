@@ -75,7 +75,7 @@ make stage DEVICE=mlp1                      # full: launcher payload + all apps
 make stage-refresh DEVICE=mlp1              # full stage, then restart Jawaka GUI
 make refresh-jawaka DEVICE=mlp1             # restart Jawaka/Loong GUI stack only
 make stage-jawaka DEVICE=mlp1               # launcher payload only
-make stage-retroarch DEVICE=mlp1            # RetroArch binary + cores + info
+make stage-retroarch DEVICE=mlp1            # RetroArch binary + cores + info + shaders
 make stage-emulator EMULATOR=drastic DEVICE=mlp1
 make stage-emulator EMULATOR=mupen64plus DEVICE=mlp1
 make stage-emulator EMULATOR=flycast DEVICE=mlp1
