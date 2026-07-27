@@ -40,7 +40,13 @@ MLP1_VULKAN_RUNTIME="${MLP1_VULKAN_RUNTIME:-$MLP1_GRAPHICS_RUNTIME/vulkan/rk3566
 MLP1_DRASTIC_PACKAGE="${MLP1_DRASTIC_PACKAGE:-$LEAF_ROOT/build/drastic/mlp1/drastic}"
 MLP1_MUPEN64PLUS_PACKAGE="${MLP1_MUPEN64PLUS_PACKAGE:-$N64_STANDALONE_DIR/output/mlp1/mupen64plus}"
 MLP1_FLYCAST_PACKAGE="${MLP1_FLYCAST_PACKAGE:-$FLYCAST_STANDALONE_DIR/output/mlp1/flycast}"
-MLP1_RETROARCH_PATCH_SET="${MLP1_RETROARCH_PATCH_SET:-portrait-rotation,command-menu,jawaka-load-content}"
+# Read the canonical patch set rather than carrying a second copy of it. Two
+# hand-maintained defaults drifted apart twice; the file is the single source.
+MLP1_RETROARCH_PATCH_SET_FILE="${MLP1_RETROARCH_PATCH_SET_FILE:-$LEAF_ROOT/config/mlp1-retroarch-patch-set.txt}"
+if [ -z "${MLP1_RETROARCH_PATCH_SET:-}" ]; then
+    MLP1_RETROARCH_PATCH_SET="$(grep -v '^#' "$MLP1_RETROARCH_PATCH_SET_FILE" | grep -v '^$' | head -1)"
+fi
+MLP1_RETROARCH_VALIDATOR="${MLP1_RETROARCH_VALIDATOR:-$LEAF_ROOT/scripts/validate-mlp1-retroarch-build.py}"
 
 usage() {
     cat >&2 <<'EOF'
@@ -573,10 +579,19 @@ audit_mlp1_build_tuning() {
     python3 "$audit_script" "$release_root" || die "MLP1 build tuning audit failed"
 }
 
+# Shared with stage/mlp1.mk so staging and release make the same reuse decision.
+mlp1_retroarch_reusable() {
+    python3 "$MLP1_RETROARCH_VALIDATOR" \
+        --binary "$MLP1_RETROARCH_BIN" \
+        --manifest "$MLP1_RETROARCH_MANIFEST" \
+        --expected-patch-set "$MLP1_RETROARCH_PATCH_SET"
+}
+
 build_missing_platform_bits() {
-    if [ ! -f "$MLP1_RETROARCH_BIN" ]; then
-        echo "MLP1 RetroArch missing; building in $RETROARCH_BUILDS_DIR"
+    if ! mlp1_retroarch_reusable; then
+        echo "building MLP1 RetroArch in $RETROARCH_BUILDS_DIR"
         (cd "$RETROARCH_BUILDS_DIR" && MLP1_PATCH_SET="$MLP1_RETROARCH_PATCH_SET" ./build-mlp1.sh)
+        mlp1_retroarch_reusable || die "MLP1 RetroArch still does not match $MLP1_RETROARCH_PATCH_SET after rebuild"
     fi
 
     make -C "$RETROARCH_BUILDS_DIR" shaders-mlp1 \
