@@ -6,4 +6,9 @@
 # and the build manifest records the string verbatim.
 #
 # Comments and blank lines are ignored; the first remaining line is the set.
-portrait-rotation,command-menu,jawaka-load-content,controller-bindings,sysfs-rumble
+#
+# No sysfs-rumble: jawakad's virtual gamepad advertises FF_RUMBLE, so RetroArch
+# rumbles through its own SDL2 joypad driver and the fallback that wrote
+# duty_cycle directly never engages. See retroarch-builds #2 (closed) for the
+# patch if a device ever needs it.
+portrait-rotation,command-menu,jawaka-load-content,controller-bindings
