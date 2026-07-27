@@ -184,6 +184,11 @@ stage-retroarch:
 	if [ -z "$$remote_system" ]; then remote_system="$$remote_sd/.system/leaf"; fi; \
 	remote_platform="$(REMOTE_PLATFORM_PATH)"; \
 	if [ -z "$$remote_platform" ]; then remote_platform="$$remote_system/platforms/mlp1"; fi; \
+	ADB_SERIAL="$$serial" PLATFORM_ID="mlp1" \
+		REMOTE_SDCARD_PATH="$$remote_sd" \
+		REMOTE_SYSTEM_PATH="$$remote_system" \
+		REMOTE_PLATFORM_PATH="$$remote_platform" \
+		"$(LEAF_ROOT)/scripts/adb-sync-shader-namespaces.sh" --migrate-only; \
 	"$${ADB[@]}" shell "mkdir -p '$$remote_platform' && rm -rf '$$remote_platform/bin' '$$remote_platform/cores' '$$remote_platform/info' '$$remote_platform/shaders' && mkdir -p '$$remote_platform/bin' '$$remote_platform/cores' '$$remote_platform/info' '$$remote_platform/shaders'"; \
 	"$${ADB[@]}" push "$(MLP1_RETROARCH_BIN)" "$$remote_platform/bin/retroarch" >/dev/null; \
 	if [ -f "$(MLP1_RETROARCH_MANIFEST)" ]; then \
@@ -197,6 +202,11 @@ stage-retroarch:
 		"$${ADB[@]}" push "$(MLP1_INFO_DIR)/." "$$remote_platform/info/" >/dev/null; \
 	fi; \
 	"$${ADB[@]}" push "$(MLP1_SHADERS_DIR)/." "$$remote_platform/shaders/" >/dev/null; \
+	ADB_SERIAL="$$serial" PLATFORM_ID="mlp1" \
+		REMOTE_SDCARD_PATH="$$remote_sd" \
+		REMOTE_SYSTEM_PATH="$$remote_system" \
+		REMOTE_PLATFORM_PATH="$$remote_platform" \
+		"$(LEAF_ROOT)/scripts/adb-sync-shader-namespaces.sh" --sync-only; \
 	"$${ADB[@]}" shell "chmod 755 '$$remote_platform/bin/retroarch' '$$remote_platform/cores/'*_libretro.so 2>/dev/null || true"; \
 	"$${ADB[@]}" shell sync; \
 	echo "RetroArch platform payload staged."

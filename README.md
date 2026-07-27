@@ -238,8 +238,11 @@ $SDCARD_PATH/.system/leaf/platforms/mlp1/launcher/env.sh
 $SDCARD_PATH/.system/leaf/platforms/mlp1/launcher/bin/...
 $SDCARD_PATH/.system/leaf/platforms/mlp1/bin/
 $SDCARD_PATH/.system/leaf/platforms/mlp1/cores/
+$SDCARD_PATH/.system/leaf/platforms/mlp1/shaders/ # validated release source
 $SDCARD_PATH/.system/leaf/platforms/mlp1/emulators/
 $SDCARD_PATH/.umrk/mlp1/                       # launcher control state (library.db, wifi.conf, ...)
+$SDCARD_PATH/.umrk/mlp1/retroarch/.config/retroarch/shaders/
+                                                # durable Leaf/updater/custom shader browser root
 $SDCARD_PATH/.umrk/mlp1/adb-enabled
 $SDCARD_PATH/.userdata/mlp1/logs/              # durable user/app data + logs
 $SDCARD_PATH/.userdata/shared/

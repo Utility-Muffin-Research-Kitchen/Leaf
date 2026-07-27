@@ -24,3 +24,9 @@ full game-content gates and back five of those recommendations. CRT Lottes Fast
 loads safely but remains advanced-only because it measured 34.017 FPS at 60 Hz.
 CRT Lite must be used with BFI off. Qualification details and constraints are
 recorded in the bundle manifest and its pinned recommendation metadata.
+
+The installed release keeps this manifest-validated source bundle under the
+platform tree, but RetroArch browses a synchronized durable shader root. Leaf
+updates replace only `leaf-bundled/` and `leaf-recommended/` there.
+RetroArch's online updater owns `shaders_glsl/`, and users own `custom/`; those
+namespaces are preserved across Leaf install and staging updates.

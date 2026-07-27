@@ -60,6 +60,13 @@ def main() -> int:
         raise SystemExit("missing Leaf shader notice")
 
     manifest = json.loads((BUNDLE / "manifest.json").read_text(encoding="utf-8"))
+    preset_paths = {row["path"] for row in manifest["presets"]}
+    if any(path.startswith("shaders_glsl/") for path in preset_paths):
+        raise SystemExit("release bundle collides with RetroArch updater namespace")
+    if not any(path.startswith("leaf-bundled/") for path in preset_paths):
+        raise SystemExit("release bundle lacks isolated leaf-bundled presets")
+    if not any(path.startswith("leaf-recommended/") for path in preset_paths):
+        raise SystemExit("release bundle lacks leaf-recommended presets")
     shader_path = next(
         row["path"]
         for row in manifest["files"]
