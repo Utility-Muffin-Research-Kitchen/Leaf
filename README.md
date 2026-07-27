@@ -75,7 +75,7 @@ make stage DEVICE=mlp1                      # full: launcher payload + all apps
 make stage-refresh DEVICE=mlp1              # full stage, then restart Jawaka GUI
 make refresh-jawaka DEVICE=mlp1             # restart Jawaka/Loong GUI stack only
 make stage-jawaka DEVICE=mlp1               # launcher payload only
-make stage-retroarch DEVICE=mlp1            # RetroArch binary + cores + info
+make stage-retroarch DEVICE=mlp1            # RetroArch binary + cores + info + shaders
 make stage-emulator EMULATOR=drastic DEVICE=mlp1
 make stage-emulator EMULATOR=mupen64plus DEVICE=mlp1
 make stage-emulator EMULATOR=flycast DEVICE=mlp1
@@ -238,8 +238,11 @@ $SDCARD_PATH/.system/leaf/platforms/mlp1/launcher/env.sh
 $SDCARD_PATH/.system/leaf/platforms/mlp1/launcher/bin/...
 $SDCARD_PATH/.system/leaf/platforms/mlp1/bin/
 $SDCARD_PATH/.system/leaf/platforms/mlp1/cores/
+$SDCARD_PATH/.system/leaf/platforms/mlp1/shaders/ # validated release source
 $SDCARD_PATH/.system/leaf/platforms/mlp1/emulators/
 $SDCARD_PATH/.umrk/mlp1/                       # launcher control state (library.db, wifi.conf, ...)
+$SDCARD_PATH/.umrk/mlp1/retroarch/.config/retroarch/shaders/
+                                                # durable Leaf/updater/custom shader browser root
 $SDCARD_PATH/.umrk/mlp1/adb-enabled
 $SDCARD_PATH/.userdata/mlp1/logs/              # durable user/app data + logs
 $SDCARD_PATH/.userdata/shared/

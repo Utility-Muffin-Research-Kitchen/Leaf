@@ -30,6 +30,8 @@ MLP1_CORE_PROBE_RUNNER="${MLP1_CORE_PROBE_RUNNER:-$CORES_SPRUCE_DIR/probe-mlp1-c
 TOOLCHAIN_IMAGE="${TOOLCHAIN_IMAGE:-ghcr.io/utility-muffin-research-kitchen/mlp1-toolchain:local}"
 MLP1_RETROARCH_BIN="${MLP1_RETROARCH_BIN:-$RETROARCH_BUILDS_DIR/output/mlp1/bin/retroarch}"
 MLP1_RETROARCH_MANIFEST="${MLP1_RETROARCH_MANIFEST:-$RETROARCH_BUILDS_DIR/output/mlp1/build-manifest.json}"
+MLP1_SHADERS_DIR="${MLP1_SHADERS_DIR:-$RETROARCH_BUILDS_DIR/output/mlp1/shaders}"
+MLP1_SHADER_TOOL="${MLP1_SHADER_TOOL:-$RETROARCH_BUILDS_DIR/scripts/mlp1_shader_bundle.py}"
 MLP1_CORES_DIR="${MLP1_CORES_DIR:-$CORES_SPRUCE_DIR/output/mlp1/cores}"
 MLP1_CORES_REPORT="${MLP1_CORES_REPORT:-$CORES_SPRUCE_DIR/output/mlp1/build-report.json}"
 MLP1_PPSSPP_PACKAGE="${MLP1_PPSSPP_PACKAGE:-$PPSSPP_SPRUCE_DIR/output/mlp1/ppsspp}"
@@ -460,6 +462,15 @@ validate_retroarch_contract() {
         || die "RetroArch runtime metadata contract validation failed"
 }
 
+validate_shader_bundle() {
+    local platform_dir="$1"
+    local license_root="$2"
+    python3 "$MLP1_SHADER_TOOL" validate --output "$platform_dir/shaders" ||
+        die "MLP1 shader bundle release validation failed"
+    [ -f "$license_root/SHADERS.md" ] ||
+        die "missing shader license notice: $license_root/SHADERS.md"
+}
+
 validate_portmaster_integration() {
     local release_root="$1"
     python3 - "$release_root" <<'EOF' || die "PortMaster integration validation failed"
@@ -567,6 +578,11 @@ build_missing_platform_bits() {
         echo "MLP1 RetroArch missing; building in $RETROARCH_BUILDS_DIR"
         (cd "$RETROARCH_BUILDS_DIR" && MLP1_PATCH_SET="$MLP1_RETROARCH_PATCH_SET" ./build-mlp1.sh)
     fi
+
+    make -C "$RETROARCH_BUILDS_DIR" shaders-mlp1 \
+        MLP1_SHADER_OUTPUT="$MLP1_SHADERS_DIR"
+    python3 "$MLP1_SHADER_TOOL" validate --output "$MLP1_SHADERS_DIR" ||
+        die "MLP1 shader bundle validation failed"
 
     if ! ( [ -d "$MLP1_CORES_DIR" ] && find "$MLP1_CORES_DIR" -maxdepth 1 -type f -name '*_libretro.so' | grep -q . ); then
         echo "MLP1 cores missing; building in $CORES_SPRUCE_DIR"
@@ -825,6 +841,7 @@ build_install_zip() {
         DEVICE=mlp1 \
         MLP1_RETROARCH_BIN="$MLP1_RETROARCH_BIN" \
         MLP1_RETROARCH_MANIFEST="$MLP1_RETROARCH_MANIFEST" \
+        MLP1_SHADERS_DIR="$MLP1_SHADERS_DIR" \
         MLP1_CORES_DIR="$MLP1_CORES_DIR" \
         MLP1_CORES_REPORT="$MLP1_CORES_REPORT" \
         assemble-jawaka
@@ -857,6 +874,7 @@ build_install_zip() {
     cp -R "$LEAF_ROOT/stage/licenses" "$RELEASE_ROOT/licenses"
     validate_packaged_cores "$RELEASE_ROOT"
     validate_retroarch_contract "$RELEASE_ROOT/platforms/mlp1"
+    validate_shader_bundle "$RELEASE_ROOT/platforms/mlp1" "$RELEASE_ROOT/licenses"
 
     for app in $STAGE_APPS; do
         package_app "$app"

@@ -22,7 +22,7 @@ LARGE_LIBRARY_FIXTURE_ENV = \
 	REMOTE_SDCARD_PATH="$(REMOTE_SDCARD_PATH)"
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap doctor status status-internal pakrat-local-feed-test leaf-release-policy-test flycast-release-policy-smoke adb-enable-marker adb-disable-marker adb-tail-logs adb-large-library-create adb-large-library-clean adb-large-library-status adb-install-wrapper adb-uninstall-wrapper benchmark-ppsspp
+.PHONY: help bootstrap doctor status status-internal pakrat-local-feed-test leaf-release-policy-test shader-bundle-release-policy-test flycast-release-policy-smoke adb-enable-marker adb-disable-marker adb-tail-logs adb-large-library-create adb-large-library-clean adb-large-library-status adb-install-wrapper adb-uninstall-wrapper benchmark-ppsspp
 
 help:
 	@echo "Leaf workspace commands (DEVICE=$(DEVICE), WORKSPACE_DIR=$(WORKSPACE_DIR)):"
@@ -34,7 +34,7 @@ help:
 	@echo "  make stage-refresh DEVICE=mlp1            full stage, then run refresh helper"
 	@echo "  make refresh-jawaka DEVICE=mlp1           refresh helper (reboot advised with init hook)"
 	@echo "  make stage-jawaka DEVICE=mlp1             launcher payload only"
-	@echo "  make stage-retroarch DEVICE=mlp1          RetroArch binary + cores + info"
+	@echo "  make stage-retroarch DEVICE=mlp1          RetroArch binary + cores + info + shaders"
 	@echo "  make stage-emulator EMULATOR=ppsspp DEVICE=mlp1 stage a standalone emulator"
 	@echo "  make stage-emulator EMULATOR=drastic DEVICE=mlp1 stage DraStic"
 	@echo "  make stage-emulator EMULATOR=mupen64plus DEVICE=mlp1 stage standalone N64"
@@ -50,6 +50,7 @@ help:
 	@echo "  make release-recovery-zip DEVICE=mlp1     build end-user recovery ZIP"
 	@echo "  make pakrat-local-feed-test               test multi-app and exact-artifact local feeds"
 	@echo "  make leaf-release-policy-test             test stable identity, provenance, and candidate gates"
+	@echo "  make shader-bundle-release-policy-test    test shader bundle integrity release gates"
 	@echo "  make flycast-release-policy-smoke         test standalone Flycast release gates"
 	@echo "  make adb-enable-marker                    enable Leaf launcher marker"
 	@echo "  make adb-disable-marker                   disable Leaf launcher marker"
@@ -101,6 +102,9 @@ pakrat-local-feed-test:
 
 leaf-release-policy-test:
 	python3 scripts/validate-leaf-release-test.py
+
+shader-bundle-release-policy-test:
+	python3 scripts/validate-shader-bundle-release-test.py
 
 adb-enable-marker:
 	scripts/adb-set-marker.sh on
