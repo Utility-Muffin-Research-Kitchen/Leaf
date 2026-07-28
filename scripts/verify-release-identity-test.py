@@ -246,6 +246,8 @@ class BetaMakeTargetTests(unittest.TestCase):
             "0.8.0-beta.1",
             "v0.8-beta.1",
             "v0.8.0-beta.",
+            "v0.8.0-beta.0",
+            "v0.8.0-beta.01",
             "v0.8.0-beta.1junk",
             "v0.8.0-foo-beta.1",
             "v0.8.0-beta.1+build",

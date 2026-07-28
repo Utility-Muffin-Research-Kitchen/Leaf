@@ -18,7 +18,7 @@ VERSION_RE = re.compile(
     r"(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
     r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
 )
-BETA_TAG_RE = re.compile(r"v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+")
+BETA_TAG_RE = re.compile(r"v[0-9]+\.[0-9]+\.[0-9]+-beta\.[1-9][0-9]*")
 COMPONENT_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]*")
 REQUIRED_PATH_LISTS = {
     "SDCARD_PATHS": ("/mnt/sdcard", "/media/sdcard1"),
