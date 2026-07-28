@@ -152,34 +152,53 @@ build/release/leaf-mlp1-sd-<release_id>.zip
 build/release/leaf-mlp1-recovery-<release_id>.zip
 ```
 
-`<release_id>` defaults to the current date plus the Leaf git short SHA. To
-choose it explicitly:
+`<release_id>` defaults to the current date plus the Leaf git short SHA for
+untagged local/development builds. To choose it explicitly:
 
 ```sh
 make release-zips DEVICE=mlp1 RELEASE_ID=2026-06-05-test1
 ```
 
-Stable release builds deliberately keep the filesystem/build identity separate
-from the compatibility version. They require an explicit semantic version and
-matching Git tag:
+Published builds use the Git tag as their exact release ID. Stable builds
+require an explicit semantic version and matching tag:
 
 ```sh
 make release-zips DEVICE=mlp1 \
-  RELEASE_ID=2026-07-20-gabc1234 \
+  RELEASE_ID=v0.7.0 \
   LEAF_RELEASE_CHANNEL=stable \
   LEAF_RELEASE_VERSION=0.7.0 \
   LEAF_RELEASE_TAG=v0.7.0
 ```
 
-The build fails before packaging if those values disagree, or if Leaf, the
-launcher, the launcher switcher, Catastrophe, or a bundled app has uncommitted
-changes. Exact component commits are recorded inside the release at
-`provenance/components.json`. Unqualified local builds use the `dev` channel;
-their version may fall back to `RELEASE_ID`. Stable output is only selected
-when `LEAF_RELEASE_CHANNEL=stable` is passed with the version and tag above.
-Beta-channel manifests link to the tester release in `Leaf-beta`; other
-channels default to the main Leaf repository. `LEAF_RELEASE_REPOSITORY` can
-override the target for an intentional alternate release host.
+For a beta, use the guarded one-input target:
+
+```sh
+make beta-zips TAG=v0.8.0-beta.3 DEVICE=mlp1
+```
+
+It accepts only `vX.Y.Z-beta.N`, derives the complete beta identity, builds both
+ZIPs, and verifies the embedded provenance plus `leaf-update.json`. Beta assets
+belong in `Utility-Muffin-Research-Kitchen/Leaf-beta`. Release-candidate tags
+are a separate main-repository/local-manifest rehearsal lane and are
+intentionally not accepted by `beta-zips`.
+
+A tagged build carries four related values:
+
+| Value | Role |
+| --- | --- |
+| `RELEASE_ID` | Exact artifact name, on-card release directory, and OTA equality identity. |
+| `LEAF_RELEASE_VERSION` | Installed Device Info label and semantic Pak Rat compatibility identity. Prerelease suffixes remain visible; compatibility compares the `MAJOR.MINOR.PATCH` core. |
+| `LEAF_RELEASE_CHANNEL` | Build/publication policy and default release-notes repository. The device's own update-channel setting chooses which feed it checks. |
+| `LEAF_RELEASE_TAG` | GitHub publication reference recorded in provenance. |
+
+All tagged install builds fail before packaging if Leaf, the launcher, the
+launcher switcher, Catastrophe, or a bundled app has uncommitted changes.
+Tagged builds also require `RELEASE_ID` to match `LEAF_RELEASE_TAG`. Exact
+component commits are recorded inside the release at
+`provenance/components.json`. Unqualified local builds use the `dev` channel
+and may fall back to `RELEASE_ID` for version. `LEAF_RELEASE_REPOSITORY` can
+override the default host when calling `release-zips` directly; `beta-zips`
+pins it to `Leaf-beta`.
 
 The install ZIP is extracted directly to the SD-card root. It must not be
 placed inside another folder. The SD card should be FAT32 or ext4; do not use

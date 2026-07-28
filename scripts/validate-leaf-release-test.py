@@ -41,20 +41,22 @@ def init_repo(path: Path) -> None:
 
 class IdentityTests(unittest.TestCase):
     def test_stable_identity_requires_explicit_matching_version_and_tag(self):
-        MODULE.validate_identity("stable", "0.7.0", "v0.7.0", "build-123")
+        MODULE.validate_identity("stable", "0.7.0", "v0.7.0", "v0.7.0")
         with self.assertRaisesRegex(MODULE.PolicyError, "LEAF_RELEASE_VERSION"):
-            MODULE.validate_identity("stable", "", "v0.7.0", "build-123")
+            MODULE.validate_identity("stable", "", "v0.7.0", "v0.7.0")
         with self.assertRaisesRegex(MODULE.PolicyError, "does not match"):
-            MODULE.validate_identity("stable", "0.7.0", "v0.7.1", "build-123")
+            MODULE.validate_identity("stable", "0.7.0", "v0.7.1", "v0.7.1")
         with self.assertRaisesRegex(MODULE.PolicyError, "explicit LEAF_RELEASE_TAG"):
-            MODULE.validate_identity("stable", "0.7.0", "", "build-123")
+            MODULE.validate_identity("stable", "0.7.0", "", "v0.7.0")
+        with self.assertRaisesRegex(MODULE.PolicyError, "RELEASE_ID"):
+            MODULE.validate_identity("stable", "0.7.0", "v0.7.0", "build-123")
 
     def test_stable_identity_accepts_supported_ota_suffix(self):
         MODULE.validate_identity(
             "stable",
             "0.7.0-save-isolation-ota1",
             "v0.7.0-save-isolation-ota1",
-            "build-123",
+            "v0.7.0-save-isolation-ota1",
         )
 
     def test_nonstable_identity_may_use_build_identity_as_version(self):
@@ -64,6 +66,27 @@ class IdentityTests(unittest.TestCase):
             "",
             "2026-07-20-gabc1234",
         )
+
+    def test_beta_tag_requires_exact_numeric_beta_shape(self):
+        for tag in ("v0.8.0-beta.1", "v12.34.56-beta.9"):
+            with self.subTest(tag=tag):
+                self.assertEqual(MODULE.validate_beta_tag(tag), tag[1:])
+
+        for tag in (
+            "",
+            "0.8.0-beta.1",
+            "v0.8-beta.1",
+            "v0.8.0-beta.",
+            "v0.8.0-beta.0",
+            "v0.8.0-beta.01",
+            "v0.8.0-beta.1junk",
+            "v0.8.0-foo-beta.1",
+            "v0.8.0-beta.1+build",
+            "v0.8.0-rc.1",
+        ):
+            with self.subTest(tag=tag):
+                with self.assertRaisesRegex(MODULE.PolicyError, "must match"):
+                    MODULE.validate_beta_tag(tag)
 
 
 class ProvenanceTests(unittest.TestCase):
@@ -82,7 +105,7 @@ class ProvenanceTests(unittest.TestCase):
                 channel="stable",
                 version="0.7.0",
                 tag="v0.7.0",
-                release_id="build-123",
+                release_id="v0.7.0",
                 component=components,
                 require_clean=True,
             )
@@ -97,7 +120,7 @@ class ProvenanceTests(unittest.TestCase):
             self.assertTrue(all(len(row["commit"]) == 40 for row in rows))
             self.assertTrue(all(row["dirty"] is False for row in rows))
 
-    def test_stable_provenance_rejects_dirty_component(self):
+    def test_tagged_provenance_rejects_dirty_component(self):
         with tempfile.TemporaryDirectory() as raw:
             base = Path(raw)
             components = []
@@ -110,12 +133,63 @@ class ProvenanceTests(unittest.TestCase):
                 channel="stable",
                 version="0.7.0",
                 tag="v0.7.0",
-                release_id="build-123",
+                release_id="v0.7.0",
                 component=components,
                 require_clean=True,
             )
-            with self.assertRaisesRegex(MODULE.PolicyError, "stable component is dirty"):
+            with self.assertRaisesRegex(
+                MODULE.PolicyError, "tagged release component is dirty"
+            ):
                 MODULE.build_provenance(args)
+
+    def test_tagged_beta_provenance_is_clean_even_without_explicit_flag(self):
+        with tempfile.TemporaryDirectory() as raw:
+            base = Path(raw)
+            components = []
+            for name in ("leaf", "launcher", "launcher-switcher"):
+                repo = base / name
+                init_repo(repo)
+                components.append(f"{name}={repo}")
+            (base / "launcher" / "tracked.txt").write_text(
+                "dirty\n", encoding="utf-8"
+            )
+            args = SimpleNamespace(
+                channel="beta",
+                version="0.8.0-beta.1",
+                tag="v0.8.0-beta.1",
+                release_id="v0.8.0-beta.1",
+                component=components,
+                require_clean=False,
+            )
+            with self.assertRaisesRegex(
+                MODULE.PolicyError, "tagged release component is dirty"
+            ):
+                MODULE.build_provenance(args)
+
+    def test_untagged_dev_provenance_records_dirty_component(self):
+        with tempfile.TemporaryDirectory() as raw:
+            base = Path(raw)
+            components = []
+            for name in ("leaf", "launcher", "launcher-switcher"):
+                repo = base / name
+                init_repo(repo)
+                components.append(f"{name}={repo}")
+            (base / "launcher" / "tracked.txt").write_text(
+                "dirty\n", encoding="utf-8"
+            )
+            args = SimpleNamespace(
+                channel="dev",
+                version="build-123",
+                tag="",
+                release_id="build-123",
+                component=components,
+                require_clean=False,
+            )
+            result = MODULE.build_provenance(args)
+            launcher = next(
+                row for row in result["components"] if row["name"] == "launcher"
+            )
+            self.assertTrue(launcher["dirty"])
 
 
 class CandidateTests(unittest.TestCase):
@@ -157,7 +231,7 @@ class CandidateTests(unittest.TestCase):
                 "channel": "stable",
                 "version": "0.7.0",
                 "tag": "v0.7.0",
-                "release_id": "build-123",
+                "release_id": "v0.7.0",
             },
             "components": [
                 {"name": name, "commit": "a" * 40, "dirty": False, "remote": None}
@@ -176,7 +250,7 @@ class CandidateTests(unittest.TestCase):
         write_executable(
             install / "umrk-launcher-install.sh",
             (
-                '#!/bin/sh\nRELEASE_ID="build-123"\nRELEASE_VERSION="0.7.0"\n'
+                '#!/bin/sh\nRELEASE_ID="v0.7.0"\nRELEASE_VERSION="0.7.0"\n'
                 'cat <<EOF\n"version": "$RELEASE_VERSION"\n'
                 '"release_id": "$RELEASE_ID"\nEOF\n'
             ).encode(),
@@ -185,7 +259,7 @@ class CandidateTests(unittest.TestCase):
             release_root=root,
             install_stage=install,
             version="0.7.0",
-            release_id="build-123",
+            release_id="v0.7.0",
             required_component=[
                 "leaf",
                 "launcher",
@@ -260,6 +334,54 @@ class CandidateTests(unittest.TestCase):
             )
             config.write_text('input_player1_l3_btn = "nul"\n', encoding="utf-8")
             with self.assertRaisesRegex(MODULE.PolicyError, "input_player1_l3_btn"):
+                MODULE.validate_candidate(args)
+
+    def test_candidate_rejects_dirty_tagged_beta_provenance(self):
+        with tempfile.TemporaryDirectory() as raw:
+            args = self.make_candidate(Path(raw))
+            provenance_path = args.release_root / "provenance" / "components.json"
+            provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+            provenance["release"]["channel"] = "beta"
+            provenance["release"]["version"] = "0.7.0-beta.1"
+            provenance["release"]["tag"] = "v0.7.0-beta.1"
+            provenance["release"]["release_id"] = "v0.7.0-beta.1"
+            provenance["components"][0]["dirty"] = True
+            provenance_path.write_text(json.dumps(provenance), encoding="utf-8")
+            args.version = "0.7.0-beta.1"
+            args.release_id = "v0.7.0-beta.1"
+            installer = args.install_stage / "umrk-launcher-install.sh"
+            installer.write_text(
+                installer.read_text(encoding="utf-8")
+                .replace('RELEASE_ID="v0.7.0"', 'RELEASE_ID="v0.7.0-beta.1"')
+                .replace(
+                    'RELEASE_VERSION="0.7.0"',
+                    'RELEASE_VERSION="0.7.0-beta.1"',
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                MODULE.PolicyError,
+                "tagged release component provenance is dirty",
+            ):
+                MODULE.validate_candidate(args)
+
+    def test_candidate_rejects_tag_and_release_id_mismatch(self):
+        with tempfile.TemporaryDirectory() as raw:
+            args = self.make_candidate(Path(raw))
+            provenance_path = args.release_root / "provenance" / "components.json"
+            provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+            provenance["release"]["release_id"] = "build-123"
+            provenance_path.write_text(json.dumps(provenance), encoding="utf-8")
+            args.release_id = "build-123"
+            installer = args.install_stage / "umrk-launcher-install.sh"
+            installer.write_text(
+                installer.read_text(encoding="utf-8").replace(
+                    'RELEASE_ID="v0.7.0"',
+                    'RELEASE_ID="build-123"',
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(MODULE.PolicyError, "RELEASE_ID"):
                 MODULE.validate_candidate(args)
 
 
