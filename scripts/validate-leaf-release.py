@@ -18,6 +18,7 @@ VERSION_RE = re.compile(
     r"(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
     r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
 )
+BETA_TAG_RE = re.compile(r"v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+")
 COMPONENT_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]*")
 REQUIRED_PATH_LISTS = {
     "SDCARD_PATHS": ("/mnt/sdcard", "/media/sdcard1"),
@@ -56,11 +57,22 @@ def normalized_tag(tag: str) -> str:
     return validate_version(tag[1:], "release tag")
 
 
+def validate_beta_tag(tag: str) -> str:
+    if not BETA_TAG_RE.fullmatch(tag or ""):
+        raise PolicyError("beta tag must match vX.Y.Z-beta.N exactly")
+    return validate_version(tag[1:], "beta tag")
+
+
 def validate_identity(channel: str, version: str, tag: str, release_id: str) -> None:
     if not channel:
         raise PolicyError("release channel must not be empty")
     if not release_id:
         raise PolicyError("release id must not be empty")
+    if tag and release_id != tag:
+        raise PolicyError(
+            "tagged releases require RELEASE_ID to match LEAF_RELEASE_TAG: "
+            f"{release_id!r} != {tag!r}"
+        )
     if channel == "stable":
         validate_version(version, "LEAF_RELEASE_VERSION")
         tag_version = normalized_tag(tag)
@@ -131,7 +143,7 @@ def inspect_component(name: str, repo: Path, require_clean: bool) -> dict[str, o
     dirty = bool(status)
     if require_clean and dirty:
         preview = ", ".join(line[3:] for line in status.splitlines()[:5])
-        raise PolicyError(f"stable component is dirty: {name} ({preview})")
+        raise PolicyError(f"tagged release component is dirty: {name} ({preview})")
     remote = run_git(
         repo,
         "config",
@@ -150,6 +162,7 @@ def inspect_component(name: str, repo: Path, require_clean: bool) -> dict[str, o
 
 def build_provenance(args: argparse.Namespace) -> dict[str, object]:
     validate_identity(args.channel, args.version, args.tag, args.release_id)
+    require_clean = args.require_clean or bool(args.tag)
     seen: set[str] = set()
     components: list[dict[str, object]] = []
     for raw in args.component:
@@ -157,7 +170,7 @@ def build_provenance(args: argparse.Namespace) -> dict[str, object]:
         if name in seen:
             raise PolicyError(f"duplicate component name: {name}")
         seen.add(name)
-        components.append(inspect_component(name, repo, args.require_clean))
+        components.append(inspect_component(name, repo, require_clean))
     for required in ("leaf", "launcher", "launcher-switcher"):
         if required not in seen:
             raise PolicyError(f"missing required provenance component: {required}")
@@ -299,16 +312,25 @@ def validate_candidate(args: argparse.Namespace) -> None:
     release = provenance.get("release")
     if not isinstance(release, dict):
         raise PolicyError("component provenance is missing release identity")
+    channel = release.get("channel")
+    version = release.get("version")
+    tag = release.get("tag")
+    release_id = release.get("release_id")
     if (
-        release.get("version") != args.version
-        or release.get("release_id") != args.release_id
+        not isinstance(channel, str)
+        or not isinstance(version, str)
+        or (tag is not None and not isinstance(tag, str))
+        or not isinstance(release_id, str)
     ):
+        raise PolicyError("component provenance contains an invalid release identity")
+    validate_identity(channel, version, tag or "", release_id)
+    if version != args.version or release_id != args.release_id:
         raise PolicyError("component provenance release identity does not match candidate")
     components = provenance.get("components")
     if not isinstance(components, list):
         raise PolicyError("component provenance is missing components")
     names: set[str] = set()
-    stable = release.get("channel") == "stable"
+    tagged = bool(tag)
     for item in components:
         if not isinstance(item, dict):
             raise PolicyError("component provenance contains a non-object entry")
@@ -320,8 +342,8 @@ def validate_candidate(args: argparse.Namespace) -> None:
             raise PolicyError(f"component provenance contains duplicate name: {name}")
         if not isinstance(commit, str) or not re.fullmatch(r"[0-9a-f]{40,64}", commit):
             raise PolicyError(f"component provenance contains invalid commit: {name}")
-        if stable and item.get("dirty") is not False:
-            raise PolicyError(f"stable component provenance is dirty: {name}")
+        if tagged and item.get("dirty") is not False:
+            raise PolicyError(f"tagged release component provenance is dirty: {name}")
         names.add(name)
     for required in args.required_component:
         if required not in names:
@@ -354,6 +376,9 @@ def make_parser() -> argparse.ArgumentParser:
     identity.add_argument("--tag", default="")
     identity.add_argument("--release-id", required=True)
 
+    beta_tag = subparsers.add_parser("beta-tag")
+    beta_tag.add_argument("--tag", required=True)
+
     provenance = subparsers.add_parser("provenance")
     provenance.add_argument("--channel", required=True)
     provenance.add_argument("--version", default="")
@@ -382,6 +407,9 @@ def main() -> None:
                 f"version={args.version or '(unset)'} "
                 f"tag={args.tag or '(unset)'} release_id={args.release_id}"
             )
+        elif args.command == "beta-tag":
+            version = validate_beta_tag(args.tag)
+            print(f"beta release identity: tag={args.tag} version={version}")
         elif args.command == "provenance":
             value = build_provenance(args)
             write_json(args.output, value)

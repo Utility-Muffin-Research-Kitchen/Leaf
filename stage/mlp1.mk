@@ -37,10 +37,19 @@ REMOTE_APPS_PATH ?=
 
 # --- Leaf staging output (gitignored under /build) -------------------------
 STAGE_BUILD          ?= $(LEAF_ROOT)/build/stage/mlp1
+RELEASE_BUILD        ?= $(LEAF_ROOT)/build/release
 PAYLOAD_ROOT         := $(STAGE_BUILD)/package
 LEAF_SYSTEM_PAYLOAD_DIR := $(PAYLOAD_ROOT)/.system/leaf
 PLATFORM_PAYLOAD_DIR := $(LEAF_SYSTEM_PAYLOAD_DIR)/platforms/mlp1
 PAYLOAD_DIR          := $(PLATFORM_PAYLOAD_DIR)/launcher
+export RELEASE_BUILD
+
+# Command-line variables are automatically exported after recursive expansion.
+# Capture TAG without rescanning it so an untrusted ref cannot invoke a Make
+# function before the recipe's strict beta-tag validator sees it.
+override LEAF_BETA_TAG_INPUT := $(value TAG)
+unexport TAG
+export LEAF_BETA_TAG_INPUT
 
 .PHONY: stage stage-app stage-emulator stage-emulators stage-public-root stage-retroarch stage-refresh refresh-jawaka jawaka-build shader-bundle-mlp1 assemble-jawaka stage-jawaka release-zips release-sd-zip release-recovery-zip beta-zips verify-beta-zips
 
@@ -393,7 +402,12 @@ stage-app:
 release-zips:
 	DEVICE="$(DEVICE)" \
 	LEAF_WORKSPACE_DIR="$(WORKSPACE_DIR)" \
+	RELEASE_BUILD="$(RELEASE_BUILD)" \
 	RELEASE_ID="$(RELEASE_ID)" \
+	LEAF_RELEASE_CHANNEL="$(LEAF_RELEASE_CHANNEL)" \
+	LEAF_RELEASE_VERSION="$(LEAF_RELEASE_VERSION)" \
+	LEAF_RELEASE_TAG="$(LEAF_RELEASE_TAG)" \
+	LEAF_RELEASE_REPOSITORY="$(LEAF_RELEASE_REPOSITORY)" \
 	STAGE_APPS="$(STAGE_APPS)" \
 	STAGE_EMULATORS="$(STAGE_EMULATORS)" \
 	PUBLIC_ROOT_DIRS="$(PUBLIC_ROOT_DIRS)" \
@@ -424,7 +438,12 @@ release-zips:
 release-sd-zip:
 	DEVICE="$(DEVICE)" \
 	LEAF_WORKSPACE_DIR="$(WORKSPACE_DIR)" \
+	RELEASE_BUILD="$(RELEASE_BUILD)" \
 	RELEASE_ID="$(RELEASE_ID)" \
+	LEAF_RELEASE_CHANNEL="$(LEAF_RELEASE_CHANNEL)" \
+	LEAF_RELEASE_VERSION="$(LEAF_RELEASE_VERSION)" \
+	LEAF_RELEASE_TAG="$(LEAF_RELEASE_TAG)" \
+	LEAF_RELEASE_REPOSITORY="$(LEAF_RELEASE_REPOSITORY)" \
 	STAGE_APPS="$(STAGE_APPS)" \
 	STAGE_EMULATORS="$(STAGE_EMULATORS)" \
 	PUBLIC_ROOT_DIRS="$(PUBLIC_ROOT_DIRS)" \
@@ -455,40 +474,73 @@ release-sd-zip:
 release-recovery-zip:
 	DEVICE="$(DEVICE)" \
 	LEAF_WORKSPACE_DIR="$(WORKSPACE_DIR)" \
+	RELEASE_BUILD="$(RELEASE_BUILD)" \
 	RELEASE_ID="$(RELEASE_ID)" \
 	LAUNCHER_SWITCHER_DIR="$(LAUNCHER_SWITCHER_DIR)" \
 	"$(LEAF_ROOT)/scripts/make-sd-release-zip.sh" recovery
 
-# Build the beta ZIPs from one input. Release identity is FOUR values, not one:
-# RELEASE_ID, LEAF_RELEASE_CHANNEL, LEAF_RELEASE_VERSION and LEAF_RELEASE_TAG.
-# Only RELEASE_ID has visible consequences when it is wrong, so on five
-# hand-typed betas the other three drifted unnoticed -- one shipped
-# channel "stable", two shipped a version that could not tell beta.1 from
-# beta.2. Deriving them here is the fix; note that version drops the leading
-# "v" while the other three keep it.
+# Build publishable beta ZIPs from one input. RELEASE_ID is the exact artifact
+# identity; LEAF_RELEASE_VERSION is the display and compatibility identity;
+# LEAF_RELEASE_CHANNEL records beta build/publication policy; LEAF_RELEASE_TAG
+# records the GitHub publication reference. Version drops the leading "v".
 #
 #   make beta-zips TAG=v0.8.0-beta.3 DEVICE=mlp1
 #
-# The env vars go BEFORE the recursive make on purpose: release-zips only
-# forwards RELEASE_ID explicitly, so the rest have to arrive as environment.
+# TAG is consumed from the recipe environment instead of interpolated into
+# shell source. Explicit child-make assignments make the derived identity win
+# over conflicting command-line variables inherited through MAKEOVERRIDES.
 beta-zips:
-	@case "$(TAG)" in \
-	  v[0-9]*-beta.[0-9]*|v[0-9]*-rc.[0-9]*) : ;; \
-	  "") echo "usage: make beta-zips TAG=v0.8.0-beta.3 [DEVICE=mlp1]" >&2; exit 2 ;; \
-	  *) echo "refusing: TAG '$(TAG)' is not a vX.Y.Z-beta.N / -rc.N tag" >&2; exit 2 ;; \
-	esac
-	@echo "==> beta identity: release_id=$(TAG) tag=$(TAG) version=$(patsubst v%,%,$(TAG)) channel=beta"
-	@RELEASE_ID="$(TAG)" \
-	LEAF_RELEASE_TAG="$(TAG)" \
-	LEAF_RELEASE_VERSION="$(patsubst v%,%,$(TAG))" \
-	LEAF_RELEASE_CHANNEL=beta \
-	$(MAKE) --no-print-directory release-zips DEVICE="$(DEVICE)" RELEASE_ID="$(TAG)"
-	@$(MAKE) --no-print-directory verify-beta-zips TAG="$(TAG)" DEVICE="$(DEVICE)"
+	@set -euo pipefail; \
+	tag="$${LEAF_BETA_TAG_INPUT:-}"; \
+	if [ "$${GITHUB_REF_TYPE:-}" = "tag" ]; then \
+		ref_tag="$${GITHUB_REF_NAME:-}"; \
+		if [ -z "$$ref_tag" ]; then \
+			echo "refusing: GITHUB_REF_TYPE is tag but GITHUB_REF_NAME is empty" >&2; \
+			exit 2; \
+		fi; \
+		if [ -n "$$tag" ] && [ "$$tag" != "$$ref_tag" ]; then \
+			echo "refusing: TAG '$$tag' does not match GITHUB_REF_NAME '$$ref_tag'" >&2; \
+			exit 2; \
+		fi; \
+		tag="$$ref_tag"; \
+	fi; \
+	if [ -z "$$tag" ]; then \
+		echo "usage: make beta-zips TAG=v0.8.0-beta.3 [DEVICE=mlp1]" >&2; \
+		exit 2; \
+	fi; \
+	python3 "$(LEAF_ROOT)/scripts/validate-leaf-release.py" beta-tag --tag "$$tag"; \
+	version="$${tag#v}"; \
+	release_build="$${RELEASE_BUILD:-$(LEAF_ROOT)/build/release}"; \
+	echo "==> beta identity: release_id=$$tag tag=$$tag version=$$version channel=beta"; \
+	$(MAKE) --no-print-directory release-zips \
+		DEVICE=mlp1 \
+		TAG="$$tag" \
+		RELEASE_BUILD="$$release_build" \
+		RELEASE_ID="$$tag" \
+		LEAF_RELEASE_CHANNEL=beta \
+		LEAF_RELEASE_VERSION="$$version" \
+		LEAF_RELEASE_TAG="$$tag" \
+		LEAF_RELEASE_REPOSITORY=Utility-Muffin-Research-Kitchen/Leaf-beta; \
+	$(MAKE) --no-print-directory verify-beta-zips \
+		DEVICE=mlp1 \
+		RELEASE_BUILD="$$release_build" \
+		TAG="$$tag"
 
 # Read the identity back out of the artifact. Every other check in this repo
 # runs on the inputs, which cannot catch a variable that was never set -- an
 # unset channel does not fail, it defaults to "dev" and ships.
 verify-beta-zips:
-	@python3 "$(LEAF_ROOT)/scripts/verify-release-identity.py" \
-	  "$(LEAF_ROOT)/build/release/leaf-mlp1-sd-$(TAG).zip" \
-	  --tag "$(TAG)" --channel beta
+	@set -euo pipefail; \
+	tag="$${LEAF_BETA_TAG_INPUT:-}"; \
+	if [ -z "$$tag" ]; then \
+		echo "usage: make verify-beta-zips TAG=v0.8.0-beta.3 [RELEASE_BUILD=...]" >&2; \
+		exit 2; \
+	fi; \
+	release_build="$${RELEASE_BUILD:-$(LEAF_ROOT)/build/release}"; \
+	python3 "$(LEAF_ROOT)/scripts/validate-leaf-release.py" beta-tag --tag "$$tag"; \
+	python3 "$(LEAF_ROOT)/scripts/verify-release-identity.py" \
+		"$$release_build/leaf-mlp1-sd-$$tag.zip" \
+		--manifest "$$release_build/leaf-update.json" \
+		--repository Utility-Muffin-Research-Kitchen/Leaf-beta \
+		--tag "$$tag" \
+		--channel beta

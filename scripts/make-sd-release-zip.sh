@@ -160,7 +160,7 @@ configure_release_components() {
 write_component_provenance() {
     local output="$1"
     local clean_args=()
-    if [ "$LEAF_RELEASE_CHANNEL" = "stable" ]; then
+    if [ -n "$LEAF_RELEASE_TAG" ]; then
         clean_args+=(--require-clean)
     fi
     python3 "$RELEASE_POLICY_TOOL" provenance \

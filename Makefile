@@ -46,11 +46,11 @@ help:
 	@echo "  make stage-app APP=Nimbus DEVICE=mlp1       explicitly stage the optional Nimbus app"
 	@echo "  make stage-app APP=PortMaster-mlp1 DEVICE=mlp1 explicitly stage the optional PortMaster app"
 	@echo "  make release-zips DEVICE=mlp1             build end-user install + recovery ZIPs"
-	@echo "  make beta-zips TAG=v0.8.0-beta.3 DEVICE=mlp1  build beta ZIPs (derives all 4 identity values, then verifies)"
+	@echo "  make beta-zips TAG=v0.8.0-beta.3 DEVICE=mlp1  build clean beta ZIPs from one tag, then verify"
 	@echo "  make release-sd-zip DEVICE=mlp1           build end-user install ZIP"
 	@echo "  make release-recovery-zip DEVICE=mlp1     build end-user recovery ZIP"
 	@echo "  make pakrat-local-feed-test               test multi-app and exact-artifact local feeds"
-	@echo "  make leaf-release-policy-test             test stable identity, provenance, and candidate gates"
+	@echo "  make leaf-release-policy-test             test release identity, artifacts, provenance, and gates"
 	@echo "  make shader-bundle-release-policy-test    test shader bundle integrity release gates"
 	@echo "  make flycast-release-policy-smoke         test standalone Flycast release gates"
 	@echo "  make adb-enable-marker                    enable Leaf launcher marker"
@@ -103,6 +103,7 @@ pakrat-local-feed-test:
 
 leaf-release-policy-test:
 	python3 scripts/validate-leaf-release-test.py
+	python3 scripts/verify-release-identity-test.py
 
 shader-bundle-release-policy-test:
 	python3 scripts/validate-shader-bundle-release-test.py
