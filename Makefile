@@ -46,6 +46,7 @@ help:
 	@echo "  make stage-app APP=Nimbus DEVICE=mlp1       explicitly stage the optional Nimbus app"
 	@echo "  make stage-app APP=PortMaster-mlp1 DEVICE=mlp1 explicitly stage the optional PortMaster app"
 	@echo "  make release-zips DEVICE=mlp1             build end-user install + recovery ZIPs"
+	@echo "  make beta-zips TAG=v0.8.0-beta.3 DEVICE=mlp1  build beta ZIPs (derives all 4 identity values, then verifies)"
 	@echo "  make release-sd-zip DEVICE=mlp1           build end-user install ZIP"
 	@echo "  make release-recovery-zip DEVICE=mlp1     build end-user recovery ZIP"
 	@echo "  make pakrat-local-feed-test               test multi-app and exact-artifact local feeds"

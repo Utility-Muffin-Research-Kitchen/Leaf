@@ -42,7 +42,7 @@ LEAF_SYSTEM_PAYLOAD_DIR := $(PAYLOAD_ROOT)/.system/leaf
 PLATFORM_PAYLOAD_DIR := $(LEAF_SYSTEM_PAYLOAD_DIR)/platforms/mlp1
 PAYLOAD_DIR          := $(PLATFORM_PAYLOAD_DIR)/launcher
 
-.PHONY: stage stage-app stage-emulator stage-emulators stage-public-root stage-retroarch stage-refresh refresh-jawaka jawaka-build shader-bundle-mlp1 assemble-jawaka stage-jawaka release-zips release-sd-zip release-recovery-zip
+.PHONY: stage stage-app stage-emulator stage-emulators stage-public-root stage-retroarch stage-refresh refresh-jawaka jawaka-build shader-bundle-mlp1 assemble-jawaka stage-jawaka release-zips release-sd-zip release-recovery-zip beta-zips verify-beta-zips
 
 # Build the Jawaka MLP1 binaries (cross-compile via its own Docker target).
 jawaka-build:
@@ -458,3 +458,37 @@ release-recovery-zip:
 	RELEASE_ID="$(RELEASE_ID)" \
 	LAUNCHER_SWITCHER_DIR="$(LAUNCHER_SWITCHER_DIR)" \
 	"$(LEAF_ROOT)/scripts/make-sd-release-zip.sh" recovery
+
+# Build the beta ZIPs from one input. Release identity is FOUR values, not one:
+# RELEASE_ID, LEAF_RELEASE_CHANNEL, LEAF_RELEASE_VERSION and LEAF_RELEASE_TAG.
+# Only RELEASE_ID has visible consequences when it is wrong, so on five
+# hand-typed betas the other three drifted unnoticed -- one shipped
+# channel "stable", two shipped a version that could not tell beta.1 from
+# beta.2. Deriving them here is the fix; note that version drops the leading
+# "v" while the other three keep it.
+#
+#   make beta-zips TAG=v0.8.0-beta.3 DEVICE=mlp1
+#
+# The env vars go BEFORE the recursive make on purpose: release-zips only
+# forwards RELEASE_ID explicitly, so the rest have to arrive as environment.
+beta-zips:
+	@case "$(TAG)" in \
+	  v[0-9]*-beta.[0-9]*|v[0-9]*-rc.[0-9]*) : ;; \
+	  "") echo "usage: make beta-zips TAG=v0.8.0-beta.3 [DEVICE=mlp1]" >&2; exit 2 ;; \
+	  *) echo "refusing: TAG '$(TAG)' is not a vX.Y.Z-beta.N / -rc.N tag" >&2; exit 2 ;; \
+	esac
+	@echo "==> beta identity: release_id=$(TAG) tag=$(TAG) version=$(patsubst v%,%,$(TAG)) channel=beta"
+	@RELEASE_ID="$(TAG)" \
+	LEAF_RELEASE_TAG="$(TAG)" \
+	LEAF_RELEASE_VERSION="$(patsubst v%,%,$(TAG))" \
+	LEAF_RELEASE_CHANNEL=beta \
+	$(MAKE) --no-print-directory release-zips DEVICE="$(DEVICE)" RELEASE_ID="$(TAG)"
+	@$(MAKE) --no-print-directory verify-beta-zips TAG="$(TAG)" DEVICE="$(DEVICE)"
+
+# Read the identity back out of the artifact. Every other check in this repo
+# runs on the inputs, which cannot catch a variable that was never set -- an
+# unset channel does not fail, it defaults to "dev" and ships.
+verify-beta-zips:
+	@python3 "$(LEAF_ROOT)/scripts/verify-release-identity.py" \
+	  "$(LEAF_ROOT)/build/release/leaf-mlp1-sd-$(TAG).zip" \
+	  --tag "$(TAG)" --channel beta
