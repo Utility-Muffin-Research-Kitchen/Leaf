@@ -22,6 +22,14 @@ BETA_TAG_RE = re.compile(r"v[0-9]+\.[0-9]+\.[0-9]+-beta\.[1-9][0-9]*")
 COMPONENT_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]*")
 REQUIRED_PATH_LISTS = {
     "SDCARD_PATHS": ("/mnt/sdcard", "/media/sdcard1"),
+    "USERDATA_PATHS": (
+        "/mnt/sdcard/.userdata/mlp1",
+        "/media/sdcard1/.userdata/mlp1",
+    ),
+    "SHARED_USERDATA_PATHS": (
+        "/mnt/sdcard/.userdata/shared",
+        "/media/sdcard1/.userdata/shared",
+    ),
     "ROMS_PATHS": ("/mnt/sdcard/Roms", "/media/sdcard1/Roms"),
     "IMAGES_PATHS": ("/mnt/sdcard/Images", "/media/sdcard1/Images"),
     "MUSIC_PATHS": ("/mnt/sdcard/Music", "/media/sdcard1/Music"),
@@ -30,6 +38,19 @@ REQUIRED_PATH_LISTS = {
     "SAVES_PATHS": ("/mnt/sdcard/Saves", "/media/sdcard1/Saves"),
     "STATES_PATHS": ("/mnt/sdcard/States", "/media/sdcard1/States"),
     "CHEATS_PATHS": ("/mnt/sdcard/Cheats", "/media/sdcard1/Cheats"),
+}
+PATH_LIST_SINGULARS = {
+    "SDCARD_PATHS": "SDCARD_PATH",
+    "USERDATA_PATHS": "USERDATA_PATH",
+    "SHARED_USERDATA_PATHS": "SHARED_USERDATA_PATH",
+    "ROMS_PATHS": "ROMS_PATH",
+    "IMAGES_PATHS": "IMAGES_PATH",
+    "MUSIC_PATHS": "MUSIC_PATH",
+    "APPS_PATHS": "APPS_PATH",
+    "BIOS_PATHS": "BIOS_PATH",
+    "SAVES_PATHS": "SAVES_PATH",
+    "STATES_PATHS": "STATES_PATH",
+    "CHEATS_PATHS": "CHEATS_PATH",
 }
 
 
@@ -293,8 +314,12 @@ def validate_candidate(args: argparse.Namespace) -> None:
     validate_mlp1_retroarch_input_profile(platform)
     if b"relocate-games-v1" not in daemon.read_bytes():
         raise PolicyError("launcher daemon does not advertise relocate-games-v1")
+    if b"source-paths-v2" not in daemon.read_bytes():
+        raise PolicyError("launcher daemon does not advertise source-paths-v2")
 
     environment = read_staged_environment(env_path)
+    if environment.get("UMRK_ENV_VERSION") != "2":
+        raise PolicyError("runtime environment does not publish complete source-paths-v2")
     if environment.get("UMRK_SECONDARY_SDCARD_PATH") != "/media/sdcard1":
         raise PolicyError("runtime environment does not configure the Secondary card")
     for name, expected in REQUIRED_PATH_LISTS.items():
@@ -303,6 +328,11 @@ def validate_candidate(args: argparse.Namespace) -> None:
             raise PolicyError(
                 f"runtime environment {name} mismatch: "
                 f"{actual!r} != {expected!r}"
+            )
+        singular = PATH_LIST_SINGULARS[name]
+        if environment.get(singular) != expected[0]:
+            raise PolicyError(
+                f"runtime environment {singular} does not match {name} Primary"
             )
 
     provenance_path = root / "provenance" / "components.json"
