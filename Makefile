@@ -42,6 +42,7 @@ help:
 	@echo "  make stage-emulators DEVICE=mlp1          stage standalone emulators"
 	@echo "  make stage-app APP=CentralScrutinizer DEVICE=mlp1 stage a single app repo"
 	@echo "  make stage-app APP=Leaf-Itchio-Pak DEVICE=mlp1 explicitly stage the optional Itch.io app"
+	@echo "  make stage-app APP=Leaf-Syncthing-Pak DEVICE=mlp1 explicitly stage the optional Syncthing app"
 	@echo "  make stage-app APP=DiscoBoy DEVICE=mlp1 explicitly stage the optional Disco Boy app"
 	@echo "  make stage-app APP=Nimbus DEVICE=mlp1       explicitly stage the optional Nimbus app"
 	@echo "  make stage-app APP=PortMaster-mlp1 DEVICE=mlp1 explicitly stage the optional PortMaster app"
