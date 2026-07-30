@@ -199,7 +199,7 @@ class CandidateTests(unittest.TestCase):
         launcher = root / "platforms" / "mlp1" / "launcher"
         write_executable(
             launcher / "bin" / "loong_pangu",
-            b"\x7fELF fixture relocate-games-v1 fixture\n",
+            b"\x7fELF fixture relocate-games-v1 source-paths-v2 fixture\n",
         )
         write_executable(
             launcher / "bin" / "jawaka-inhibitctl",
@@ -207,10 +207,14 @@ class CandidateTests(unittest.TestCase):
         )
         env_lines = [
             "#!/bin/sh",
+            "export UMRK_ENV_VERSION=2",
             "export UMRK_SECONDARY_SDCARD_PATH=/media/sdcard1",
         ]
         for name, values in MODULE.REQUIRED_PATH_LISTS.items():
             env_lines.append(f"export {name}={':'.join(values)}")
+            env_lines.append(
+                f"export {MODULE.PATH_LIST_SINGULARS[name]}={values[0]}"
+            )
         env_path = launcher / "env.sh"
         env_path.parent.mkdir(parents=True, exist_ok=True)
         env_path.write_text("\n".join(env_lines) + "\n", encoding="utf-8")
@@ -287,6 +291,21 @@ class CandidateTests(unittest.TestCase):
             with self.assertRaisesRegex(MODULE.PolicyError, "relocate-games-v1"):
                 MODULE.validate_candidate(args)
 
+    def test_candidate_rejects_missing_source_paths_capability(self):
+        with tempfile.TemporaryDirectory() as raw:
+            args = self.make_candidate(Path(raw))
+            daemon = (
+                args.release_root
+                / "platforms"
+                / "mlp1"
+                / "launcher"
+                / "bin"
+                / "loong_pangu"
+            )
+            daemon.write_bytes(b"\x7fELF relocate-games-v1 only\n")
+            with self.assertRaisesRegex(MODULE.PolicyError, "source-paths-v2"):
+                MODULE.validate_candidate(args)
+
     def test_candidate_rejects_incomplete_configured_sources(self):
         with tempfile.TemporaryDirectory() as raw:
             args = self.make_candidate(Path(raw))
@@ -306,6 +325,45 @@ class CandidateTests(unittest.TestCase):
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(MODULE.PolicyError, "ROMS_PATHS mismatch"):
+                MODULE.validate_candidate(args)
+
+    def test_candidate_rejects_incomplete_source_paths_v2(self):
+        with tempfile.TemporaryDirectory() as raw:
+            args = self.make_candidate(Path(raw))
+            env_path = (
+                args.release_root
+                / "platforms"
+                / "mlp1"
+                / "launcher"
+                / "env.sh"
+            )
+            text = env_path.read_text(encoding="utf-8")
+            env_path.write_text(
+                text.replace("export UMRK_ENV_VERSION=2", "export UMRK_ENV_VERSION=1"),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(MODULE.PolicyError, "source-paths-v2"):
+                MODULE.validate_candidate(args)
+
+    def test_candidate_rejects_primary_singular_mismatch(self):
+        with tempfile.TemporaryDirectory() as raw:
+            args = self.make_candidate(Path(raw))
+            env_path = (
+                args.release_root
+                / "platforms"
+                / "mlp1"
+                / "launcher"
+                / "env.sh"
+            )
+            text = env_path.read_text(encoding="utf-8")
+            env_path.write_text(
+                text.replace(
+                    "export USERDATA_PATH=/mnt/sdcard/.userdata/mlp1",
+                    "export USERDATA_PATH=/wrong/.userdata/mlp1",
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(MODULE.PolicyError, "USERDATA_PATH"):
                 MODULE.validate_candidate(args)
 
     def test_candidate_rejects_incomplete_l3_autoconfig(self):
