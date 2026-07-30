@@ -88,6 +88,29 @@ class IdentityTests(unittest.TestCase):
                 with self.assertRaisesRegex(MODULE.PolicyError, "must match"):
                     MODULE.validate_beta_tag(tag)
 
+    def test_stable_tag_requires_bare_semver(self):
+        for tag in ("v0.9.0", "v1.0.0", "v12.34.56"):
+            with self.subTest(tag=tag):
+                self.assertEqual(MODULE.validate_stable_tag(tag), tag[1:])
+
+        # A stable tag must reject everything a prerelease or a sloppy tag would
+        # carry. normalized_tag accepts prereleases, so this is the strict form.
+        for tag in (
+            "",
+            "0.9.0",
+            "v0.9",
+            "v0.9.0.1",
+            "v0.09.0",
+            "vv0.9.0",
+            "v0.9.0-beta.1",
+            "v0.9.0-rc.1",
+            "v0.9.0+build",
+            "v0.9.0junk",
+        ):
+            with self.subTest(tag=tag):
+                with self.assertRaisesRegex(MODULE.PolicyError, "must match"):
+                    MODULE.validate_stable_tag(tag)
+
 
 class ProvenanceTests(unittest.TestCase):
     def test_provenance_records_exact_clean_commits(self):
@@ -215,6 +238,8 @@ class CandidateTests(unittest.TestCase):
             env_lines.append(
                 f"export {MODULE.PATH_LIST_SINGULARS[name]}={values[0]}"
             )
+        for name, value in MODULE.REQUIRED_PRIMARY_PATHS.items():
+            env_lines.append(f"export {name}={value}")
         env_path = launcher / "env.sh"
         env_path.parent.mkdir(parents=True, exist_ok=True)
         env_path.write_text("\n".join(env_lines) + "\n", encoding="utf-8")
@@ -364,6 +389,48 @@ class CandidateTests(unittest.TestCase):
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(MODULE.PolicyError, "USERDATA_PATH"):
+                MODULE.validate_candidate(args)
+
+    def test_candidate_rejects_incomplete_video_sources(self):
+        with tempfile.TemporaryDirectory() as raw:
+            args = self.make_candidate(Path(raw))
+            env_path = (
+                args.release_root
+                / "platforms"
+                / "mlp1"
+                / "launcher"
+                / "env.sh"
+            )
+            text = env_path.read_text(encoding="utf-8")
+            env_path.write_text(
+                text.replace(
+                    "export VIDEO_PATHS=/mnt/sdcard/Videos:/media/sdcard1/Videos",
+                    "export VIDEO_PATHS=/mnt/sdcard/Videos",
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(MODULE.PolicyError, "VIDEO_PATHS mismatch"):
+                MODULE.validate_candidate(args)
+
+    def test_candidate_rejects_wrong_primary_recordings_path(self):
+        with tempfile.TemporaryDirectory() as raw:
+            args = self.make_candidate(Path(raw))
+            env_path = (
+                args.release_root
+                / "platforms"
+                / "mlp1"
+                / "launcher"
+                / "env.sh"
+            )
+            text = env_path.read_text(encoding="utf-8")
+            env_path.write_text(
+                text.replace(
+                    "export RECORDINGS_PATH=/mnt/sdcard/Recordings",
+                    "export RECORDINGS_PATH=/media/sdcard1/Recordings",
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(MODULE.PolicyError, "RECORDINGS_PATH mismatch"):
                 MODULE.validate_candidate(args)
 
     def test_candidate_rejects_incomplete_l3_autoconfig(self):

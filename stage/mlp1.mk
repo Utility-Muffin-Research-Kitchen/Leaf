@@ -4,7 +4,7 @@
 # Apps staged by `make stage`.
 STAGE_APPS ?= ssh-server Thing-File CentralScrutinizer Fugazi joes-calibrage retroarch-builds
 STAGE_EMULATORS ?= ppsspp drastic mupen64plus flycast
-PUBLIC_ROOT_DIRS ?= Roms Images Apps BIOS Saves States Cheats
+PUBLIC_ROOT_DIRS ?= Roms Images Videos Apps BIOS Saves States Cheats
 
 # --- Launcher payload assembly inputs --------------------------------------
 JAWAKA_BUILD_DIR ?= $(JAWAKA_DIR)/build/mlp1
@@ -27,6 +27,10 @@ MLP1_VULKAN_RUNTIME ?= $(MLP1_GRAPHICS_RUNTIME)/vulkan/rk3566-g52-g29p1
 MLP1_DRASTIC_PACKAGE ?= $(LEAF_ROOT)/build/drastic/mlp1/drastic
 MLP1_MUPEN64PLUS_PACKAGE ?= $(N64_STANDALONE_DIR)/output/mlp1/mupen64plus
 MLP1_FLYCAST_PACKAGE ?= $(FLYCAST_STANDALONE_DIR)/output/mlp1/flycast
+MLP1_FFMPEG_BIN    ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/ffmpeg/bin/ffmpeg
+MLP1_FFMPEG_LIBS   ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/ffmpeg/flat
+MLP1_RECORD_CONVERT ?= $(RETROARCH_BUILDS_DIR)/config/mlp1/leaf-record-convert.sh
+MLP1_RECORD_PRESET ?= $(RETROARCH_BUILDS_DIR)/config/mlp1/retroarch-record-rkmpp.cfg
 MLP1_RETROARCH_PATCH_SET_FILE ?= $(LEAF_ROOT)/config/mlp1-retroarch-patch-set.txt
 MLP1_RETROARCH_PATCH_SET ?= $(shell grep -v '^\#' "$(MLP1_RETROARCH_PATCH_SET_FILE)" | grep -v '^$$' | head -1)
 MLP1_RETROARCH_VALIDATOR ?= $(LEAF_ROOT)/scripts/validate-mlp1-retroarch-build.py
@@ -52,7 +56,7 @@ override LEAF_BETA_TAG_INPUT := $(value TAG)
 unexport TAG
 export LEAF_BETA_TAG_INPUT
 
-.PHONY: stage stage-app stage-emulator stage-emulators stage-public-root stage-retroarch stage-refresh refresh-jawaka jawaka-build shader-bundle-mlp1 assemble-jawaka stage-jawaka release-zips release-sd-zip release-recovery-zip beta-zips verify-beta-zips
+.PHONY: stage stage-app stage-emulator stage-emulators stage-public-root stage-retroarch stage-refresh refresh-jawaka jawaka-build shader-bundle-mlp1 assemble-jawaka stage-jawaka release-zips release-sd-zip release-recovery-zip beta-zips verify-beta-zips stable-zips verify-stable-zips
 
 # Build the Jawaka MLP1 binaries (cross-compile via its own Docker target).
 jawaka-build:
@@ -123,6 +127,26 @@ assemble-jawaka: jawaka-build shader-bundle-mlp1
 		chmod 755 "$(PLATFORM_PAYLOAD_DIR)/bin/retroarch"; \
 	else \
 		echo "warning: MLP1 RetroArch not found at $(MLP1_RETROARCH_BIN); launches will fail until built (make stage-retroarch)."; \
+	fi
+	@# Recording payload. RetroArch reaches these libraries through a RUNPATH of
+	@# $$ORIGIN/../lib/ffmpeg, so bin/ and lib/ffmpeg/ must stay siblings -- moving
+	@# either breaks recording with a loader error and nothing more informative.
+	@# The libraries are already flattened to one real file per SONAME because the
+	@# SD card is FAT32 and cannot carry ffmpeg's usual symlink chain.
+	@if [ -f "$(MLP1_FFMPEG_BIN)" ] && [ -d "$(MLP1_FFMPEG_LIBS)" ]; then \
+		mkdir -p "$(PLATFORM_PAYLOAD_DIR)/bin" "$(PLATFORM_PAYLOAD_DIR)/lib/ffmpeg"; \
+		cp -f "$(MLP1_FFMPEG_BIN)" "$(PLATFORM_PAYLOAD_DIR)/bin/ffmpeg"; \
+		chmod 755 "$(PLATFORM_PAYLOAD_DIR)/bin/ffmpeg"; \
+		find "$(MLP1_FFMPEG_LIBS)" -maxdepth 1 -type f -name '*.so.*' -exec cp -f {} "$(PLATFORM_PAYLOAD_DIR)/lib/ffmpeg/" \;; \
+		chmod 755 "$(PLATFORM_PAYLOAD_DIR)/lib/ffmpeg/"*.so.* 2>/dev/null || true; \
+		test -f "$(MLP1_RECORD_CONVERT)" || { echo "missing record convert script: $(MLP1_RECORD_CONVERT)" >&2; exit 1; }; \
+		cp -f "$(MLP1_RECORD_CONVERT)" "$(PLATFORM_PAYLOAD_DIR)/bin/leaf-record-convert.sh"; \
+		chmod 755 "$(PLATFORM_PAYLOAD_DIR)/bin/leaf-record-convert.sh"; \
+		test -f "$(MLP1_RECORD_PRESET)" || { echo "missing record preset: $(MLP1_RECORD_PRESET)" >&2; exit 1; }; \
+		mkdir -p "$(PLATFORM_PAYLOAD_DIR)/defaults"; \
+		cp -f "$(MLP1_RECORD_PRESET)" "$(PLATFORM_PAYLOAD_DIR)/defaults/retroarch-record.cfg"; \
+	else \
+		echo "warning: MLP1 FFmpeg not found at $(MLP1_FFMPEG_BIN); game recording will be unavailable (run retroarch-builds/build-mlp1-ffmpeg.sh)."; \
 	fi
 	@if [ -d "$(MLP1_CORES_DIR)" ]; then \
 		mkdir -p "$(PLATFORM_PAYLOAD_DIR)/cores"; \
@@ -551,3 +575,68 @@ verify-beta-zips:
 		--repository Utility-Muffin-Research-Kitchen/Leaf-beta \
 		--tag "$$tag" \
 		--channel beta
+
+# The stable twin of beta-zips. Stable was still four hand-typed env vars after
+# betas got a guarded target, which is the wrong way round: a stable mistake
+# reaches everyone, not just testers. v0.8.0 was cut by hand for exactly this
+# reason. Same contract as beta-zips -- one input, derived identity, verified
+# afterwards -- except the tag must be a bare vX.Y.Z and the channel is stable,
+# which also arms the clean-worktree provenance gate.
+#
+#   make stable-zips TAG=v0.9.0 DEVICE=mlp1
+#
+# TAG is read from the recipe environment rather than interpolated into shell
+# source (see the LEAF_BETA_TAG_INPUT capture above), and the derived identity is
+# passed explicitly so it beats anything inherited through MAKEOVERRIDES.
+stable-zips:
+	@set -euo pipefail; \
+	tag="$${LEAF_BETA_TAG_INPUT:-}"; \
+	if [ "$${GITHUB_REF_TYPE:-}" = "tag" ]; then \
+		ref_tag="$${GITHUB_REF_NAME:-}"; \
+		if [ -z "$$ref_tag" ]; then \
+			echo "refusing: GITHUB_REF_TYPE is tag but GITHUB_REF_NAME is empty" >&2; \
+			exit 2; \
+		fi; \
+		if [ -n "$$tag" ] && [ "$$tag" != "$$ref_tag" ]; then \
+			echo "refusing: TAG '$$tag' does not match GITHUB_REF_NAME '$$ref_tag'" >&2; \
+			exit 2; \
+		fi; \
+		tag="$$ref_tag"; \
+	fi; \
+	if [ -z "$$tag" ]; then \
+		echo "usage: make stable-zips TAG=v0.9.0 [DEVICE=mlp1]" >&2; \
+		exit 2; \
+	fi; \
+	python3 "$(LEAF_ROOT)/scripts/validate-leaf-release.py" stable-tag --tag "$$tag"; \
+	version="$${tag#v}"; \
+	release_build="$${RELEASE_BUILD:-$(LEAF_ROOT)/build/release}"; \
+	echo "==> stable identity: release_id=$$tag tag=$$tag version=$$version channel=stable"; \
+	$(MAKE) --no-print-directory release-zips \
+		DEVICE=mlp1 \
+		TAG="$$tag" \
+		RELEASE_BUILD="$$release_build" \
+		RELEASE_ID="$$tag" \
+		LEAF_RELEASE_CHANNEL=stable \
+		LEAF_RELEASE_VERSION="$$version" \
+		LEAF_RELEASE_TAG="$$tag" \
+		LEAF_RELEASE_REPOSITORY=Utility-Muffin-Research-Kitchen/Leaf; \
+	$(MAKE) --no-print-directory verify-stable-zips \
+		DEVICE=mlp1 \
+		RELEASE_BUILD="$$release_build" \
+		TAG="$$tag"
+
+verify-stable-zips:
+	@set -euo pipefail; \
+	tag="$${LEAF_BETA_TAG_INPUT:-}"; \
+	if [ -z "$$tag" ]; then \
+		echo "usage: make verify-stable-zips TAG=v0.9.0 [RELEASE_BUILD=...]" >&2; \
+		exit 2; \
+	fi; \
+	release_build="$${RELEASE_BUILD:-$(LEAF_ROOT)/build/release}"; \
+	python3 "$(LEAF_ROOT)/scripts/validate-leaf-release.py" stable-tag --tag "$$tag"; \
+	python3 "$(LEAF_ROOT)/scripts/verify-release-identity.py" \
+		"$$release_build/leaf-mlp1-sd-$$tag.zip" \
+		--manifest "$$release_build/leaf-update.json" \
+		--repository Utility-Muffin-Research-Kitchen/Leaf \
+		--tag "$$tag" \
+		--channel stable
