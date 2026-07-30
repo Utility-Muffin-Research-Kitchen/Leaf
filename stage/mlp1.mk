@@ -8,6 +8,7 @@ PUBLIC_ROOT_DIRS ?= Roms Images Apps BIOS Saves States Cheats
 
 # --- Launcher payload assembly inputs --------------------------------------
 JAWAKA_BUILD_DIR ?= $(JAWAKA_DIR)/build/mlp1
+JAWAKA_REQUIRE_SCREENSCRAPER ?= 1
 DEVICE_OVERLAY   ?= $(LAUNCHER_SWITCHER_DIR)/device/mlp1
 CATASTROPHE_ASSETS_DIR ?= $(CATASTROPHE_DIR)/res/assets
 MLP1_RETROARCH_BIN ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/bin/retroarch
@@ -55,7 +56,11 @@ export LEAF_BETA_TAG_INPUT
 
 # Build the Jawaka MLP1 binaries (cross-compile via its own Docker target).
 jawaka-build:
-	$(MAKE) -C "$(JAWAKA_DIR)" mlp1
+	$(MAKE) -C "$(JAWAKA_DIR)" mlp1 \
+		SCREENSCRAPER_REQUIRED="$(JAWAKA_REQUIRE_SCREENSCRAPER)" \
+		WORKSPACE_ROOT="$(WORKSPACE_DIR)" \
+		CATASTROPHE_DIR="$(CATASTROPHE_DIR)" \
+		MLP1_TOOLCHAIN_IMAGE="$(TOOLCHAIN_IMAGE)"
 
 shader-bundle-mlp1:
 	$(MAKE) -C "$(RETROARCH_BUILDS_DIR)" shaders-mlp1 MLP1_SHADER_OUTPUT="$(MLP1_SHADERS_DIR)"
@@ -67,6 +72,8 @@ shader-bundle-mlp1:
 # launcher-switcher (device/mlp1 defaults).
 assemble-jawaka: jawaka-build shader-bundle-mlp1
 	$(MAKE) -C "$(CATASTROPHE_DIR)" assets
+	@test -f "$(JAWAKA_BUILD_DIR)/build-manifest.json" || { echo "missing Jawaka MLP1 build manifest" >&2; exit 1; }
+	@python3 -c 'import json,sys; data=json.load(open(sys.argv[1], encoding="utf-8")); sys.exit(0 if data.get("features", {}).get("screenscraper") is True else 1)' "$(JAWAKA_BUILD_DIR)/build-manifest.json" || { echo "refusing to assemble Jawaka without ScreenScraper support" >&2; exit 1; }
 	@for scale in 1 2 3 4; do \
 		asset="$(CATASTROPHE_ASSETS_DIR)/assets@$${scale}x.png"; \
 		test -f "$$asset" || { echo "missing generated Catastrophe asset: $$asset" >&2; exit 1; }; \
