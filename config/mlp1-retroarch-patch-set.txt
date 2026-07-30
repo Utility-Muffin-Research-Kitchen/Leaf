@@ -7,8 +7,12 @@
 #
 # Comments and blank lines are ignored; the first remaining line is the set.
 #
+# record-extension: RetroArch names recordings from the quality preset, not the
+# container, so a custom MP4 preset produced a .mkv holding MP4 -- which nothing
+# previews inline. The patch reads the container out of the record config.
+#
 # No sysfs-rumble: jawakad's virtual gamepad advertises FF_RUMBLE, so RetroArch
 # rumbles through its own SDL2 joypad driver and the fallback that wrote
 # duty_cycle directly never engages. See retroarch-builds #2 (closed) for the
 # patch if a device ever needs it.
-portrait-rotation,command-menu,jawaka-load-content,controller-bindings
+portrait-rotation,command-menu,jawaka-load-content,controller-bindings,record-extension
