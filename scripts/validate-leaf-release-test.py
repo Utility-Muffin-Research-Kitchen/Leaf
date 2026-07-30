@@ -88,6 +88,29 @@ class IdentityTests(unittest.TestCase):
                 with self.assertRaisesRegex(MODULE.PolicyError, "must match"):
                     MODULE.validate_beta_tag(tag)
 
+    def test_stable_tag_requires_bare_semver(self):
+        for tag in ("v0.9.0", "v1.0.0", "v12.34.56"):
+            with self.subTest(tag=tag):
+                self.assertEqual(MODULE.validate_stable_tag(tag), tag[1:])
+
+        # A stable tag must reject everything a prerelease or a sloppy tag would
+        # carry. normalized_tag accepts prereleases, so this is the strict form.
+        for tag in (
+            "",
+            "0.9.0",
+            "v0.9",
+            "v0.9.0.1",
+            "v0.09.0",
+            "vv0.9.0",
+            "v0.9.0-beta.1",
+            "v0.9.0-rc.1",
+            "v0.9.0+build",
+            "v0.9.0junk",
+        ):
+            with self.subTest(tag=tag):
+                with self.assertRaisesRegex(MODULE.PolicyError, "must match"):
+                    MODULE.validate_stable_tag(tag)
+
 
 class ProvenanceTests(unittest.TestCase):
     def test_provenance_records_exact_clean_commits(self):

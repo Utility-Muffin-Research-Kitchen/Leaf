@@ -51,7 +51,7 @@ override LEAF_BETA_TAG_INPUT := $(value TAG)
 unexport TAG
 export LEAF_BETA_TAG_INPUT
 
-.PHONY: stage stage-app stage-emulator stage-emulators stage-public-root stage-retroarch stage-refresh refresh-jawaka jawaka-build shader-bundle-mlp1 assemble-jawaka stage-jawaka release-zips release-sd-zip release-recovery-zip beta-zips verify-beta-zips
+.PHONY: stage stage-app stage-emulator stage-emulators stage-public-root stage-retroarch stage-refresh refresh-jawaka jawaka-build shader-bundle-mlp1 assemble-jawaka stage-jawaka release-zips release-sd-zip release-recovery-zip beta-zips verify-beta-zips stable-zips verify-stable-zips
 
 # Build the Jawaka MLP1 binaries (cross-compile via its own Docker target).
 jawaka-build:
@@ -544,3 +544,68 @@ verify-beta-zips:
 		--repository Utility-Muffin-Research-Kitchen/Leaf-beta \
 		--tag "$$tag" \
 		--channel beta
+
+# The stable twin of beta-zips. Stable was still four hand-typed env vars after
+# betas got a guarded target, which is the wrong way round: a stable mistake
+# reaches everyone, not just testers. v0.8.0 was cut by hand for exactly this
+# reason. Same contract as beta-zips -- one input, derived identity, verified
+# afterwards -- except the tag must be a bare vX.Y.Z and the channel is stable,
+# which also arms the clean-worktree provenance gate.
+#
+#   make stable-zips TAG=v0.9.0 DEVICE=mlp1
+#
+# TAG is read from the recipe environment rather than interpolated into shell
+# source (see the LEAF_BETA_TAG_INPUT capture above), and the derived identity is
+# passed explicitly so it beats anything inherited through MAKEOVERRIDES.
+stable-zips:
+	@set -euo pipefail; \
+	tag="$${LEAF_BETA_TAG_INPUT:-}"; \
+	if [ "$${GITHUB_REF_TYPE:-}" = "tag" ]; then \
+		ref_tag="$${GITHUB_REF_NAME:-}"; \
+		if [ -z "$$ref_tag" ]; then \
+			echo "refusing: GITHUB_REF_TYPE is tag but GITHUB_REF_NAME is empty" >&2; \
+			exit 2; \
+		fi; \
+		if [ -n "$$tag" ] && [ "$$tag" != "$$ref_tag" ]; then \
+			echo "refusing: TAG '$$tag' does not match GITHUB_REF_NAME '$$ref_tag'" >&2; \
+			exit 2; \
+		fi; \
+		tag="$$ref_tag"; \
+	fi; \
+	if [ -z "$$tag" ]; then \
+		echo "usage: make stable-zips TAG=v0.9.0 [DEVICE=mlp1]" >&2; \
+		exit 2; \
+	fi; \
+	python3 "$(LEAF_ROOT)/scripts/validate-leaf-release.py" stable-tag --tag "$$tag"; \
+	version="$${tag#v}"; \
+	release_build="$${RELEASE_BUILD:-$(LEAF_ROOT)/build/release}"; \
+	echo "==> stable identity: release_id=$$tag tag=$$tag version=$$version channel=stable"; \
+	$(MAKE) --no-print-directory release-zips \
+		DEVICE=mlp1 \
+		TAG="$$tag" \
+		RELEASE_BUILD="$$release_build" \
+		RELEASE_ID="$$tag" \
+		LEAF_RELEASE_CHANNEL=stable \
+		LEAF_RELEASE_VERSION="$$version" \
+		LEAF_RELEASE_TAG="$$tag" \
+		LEAF_RELEASE_REPOSITORY=Utility-Muffin-Research-Kitchen/Leaf; \
+	$(MAKE) --no-print-directory verify-stable-zips \
+		DEVICE=mlp1 \
+		RELEASE_BUILD="$$release_build" \
+		TAG="$$tag"
+
+verify-stable-zips:
+	@set -euo pipefail; \
+	tag="$${LEAF_BETA_TAG_INPUT:-}"; \
+	if [ -z "$$tag" ]; then \
+		echo "usage: make verify-stable-zips TAG=v0.9.0 [RELEASE_BUILD=...]" >&2; \
+		exit 2; \
+	fi; \
+	release_build="$${RELEASE_BUILD:-$(LEAF_ROOT)/build/release}"; \
+	python3 "$(LEAF_ROOT)/scripts/validate-leaf-release.py" stable-tag --tag "$$tag"; \
+	python3 "$(LEAF_ROOT)/scripts/verify-release-identity.py" \
+		"$$release_build/leaf-mlp1-sd-$$tag.zip" \
+		--manifest "$$release_build/leaf-update.json" \
+		--repository Utility-Muffin-Research-Kitchen/Leaf \
+		--tag "$$tag" \
+		--channel stable

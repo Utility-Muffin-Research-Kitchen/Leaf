@@ -170,15 +170,21 @@ make release-zips DEVICE=mlp1 \
   LEAF_RELEASE_TAG=v0.7.0
 ```
 
-For a beta, use the guarded one-input target:
+Both channels have a guarded one-input target. Prefer these over setting the four
+values by hand:
 
 ```sh
-make beta-zips TAG=v0.8.0-beta.3 DEVICE=mlp1
+make stable-zips TAG=v0.9.0 DEVICE=mlp1
+make beta-zips   TAG=v0.9.0-beta.1 DEVICE=mlp1
 ```
 
-It accepts only `vX.Y.Z-beta.N`, derives the complete beta identity, builds both
-ZIPs, and verifies the embedded provenance plus `leaf-update.json`. Beta assets
-belong in `Utility-Muffin-Research-Kitchen/Leaf-beta`. Release-candidate tags
+`stable-zips` accepts only a bare `vX.Y.Z` and publishes to the main Leaf
+repository; `beta-zips` accepts only `vX.Y.Z-beta.N` and publishes to `Leaf-beta`.
+Each derives the complete identity from the tag and verifies the built artifact
+afterwards.
+
+Both build the install and recovery ZIPs and verify the embedded provenance plus
+`leaf-update.json`. Release-candidate tags
 are a separate main-repository/local-manifest rehearsal lane and are
 intentionally not accepted by `beta-zips`.
 

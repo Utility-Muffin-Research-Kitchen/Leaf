@@ -19,6 +19,10 @@ VERSION_RE = re.compile(
     r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
 )
 BETA_TAG_RE = re.compile(r"v[0-9]+\.[0-9]+\.[0-9]+-beta\.[1-9][0-9]*")
+# A stable tag carries no prerelease or build suffix at all. normalized_tag
+# below is deliberately looser -- it accepts any valid semver tag, including
+# prereleases -- so the guarded stable target needs its own strict form.
+STABLE_TAG_RE = re.compile(r"v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)")
 COMPONENT_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]*")
 REQUIRED_PATH_LISTS = {
     "SDCARD_PATHS": ("/mnt/sdcard", "/media/sdcard1"),
@@ -61,6 +65,15 @@ def validate_beta_tag(tag: str) -> str:
     if not BETA_TAG_RE.fullmatch(tag or ""):
         raise PolicyError("beta tag must match vX.Y.Z-beta.N exactly")
     return validate_version(tag[1:], "beta tag")
+
+
+def validate_stable_tag(tag: str) -> str:
+    if not STABLE_TAG_RE.fullmatch(tag or ""):
+        raise PolicyError(
+            "stable tag must match vX.Y.Z exactly, with no prerelease or build "
+            "suffix and no zero-padded components"
+        )
+    return validate_version(tag[1:], "stable tag")
 
 
 def validate_identity(channel: str, version: str, tag: str, release_id: str) -> None:
@@ -379,6 +392,9 @@ def make_parser() -> argparse.ArgumentParser:
     beta_tag = subparsers.add_parser("beta-tag")
     beta_tag.add_argument("--tag", required=True)
 
+    stable_tag = subparsers.add_parser("stable-tag")
+    stable_tag.add_argument("--tag", required=True)
+
     provenance = subparsers.add_parser("provenance")
     provenance.add_argument("--channel", required=True)
     provenance.add_argument("--version", default="")
@@ -410,6 +426,9 @@ def main() -> None:
         elif args.command == "beta-tag":
             version = validate_beta_tag(args.tag)
             print(f"beta release identity: tag={args.tag} version={version}")
+        elif args.command == "stable-tag":
+            version = validate_stable_tag(args.tag)
+            print(f"stable release identity: tag={args.tag} version={version}")
         elif args.command == "provenance":
             value = build_provenance(args)
             write_json(args.output, value)
