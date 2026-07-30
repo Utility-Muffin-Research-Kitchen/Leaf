@@ -9,7 +9,7 @@ local_dir="$1"
 remote_dir="$2"
 [ -d "$local_dir" ] || { echo "missing package dir: $local_dir" >&2; exit 1; }
 case "$remote_dir" in
-    ''|*$'\n'*|*"'"*)
+    ''|*$'\n'*|*$'\r'*)
         echo "unsupported remote package path: $remote_dir" >&2
         exit 2
         ;;
@@ -42,6 +42,12 @@ ADB=(adb -s "$serial")
 operation_id="stage-app-$$"
 quiesced=0
 
+# adb joins the remote command into one shell string. Quote the validated path
+# as one remote-shell argument, then let the inner sh script use it only as $1.
+# This supports legitimate package names such as Joe's Calibrage.pak without
+# interpolating them into shell source.
+printf -v remote_dir_arg '%q' "$remote_dir"
+
 release_quiesce() {
     ADB_SERIAL="$serial" \
     PLATFORM_ID="${PLATFORM_ID:-${DEVICE:-mlp1}}" \
@@ -73,10 +79,13 @@ if ! ADB_SERIAL="$serial" \
 fi
 quiesced=1
 
-"${ADB[@]}" shell "rm -rf '$remote_dir' && mkdir -p '$remote_dir'"
+"${ADB[@]}" shell \
+    "sh -c 'rm -rf -- \"\$1\" && mkdir -p -- \"\$1\"' sh $remote_dir_arg"
 "${ADB[@]}" push "$local_dir/." "$remote_dir/" >/dev/null
-"${ADB[@]}" shell "chmod 755 '$remote_dir/launch.sh' '$remote_dir/bin/'* 2>/dev/null || true"
-"${ADB[@]}" shell "find '$remote_dir' -maxdepth 3 -type f | sort"
+"${ADB[@]}" shell \
+    "sh -c 'chmod 755 \"\$1/launch.sh\" \"\$1/bin/\"* 2>/dev/null || true' sh $remote_dir_arg"
+"${ADB[@]}" shell \
+    "sh -c 'find \"\$1\" -maxdepth 3 -type f | sort' sh $remote_dir_arg"
 
 release_quiesce
 quiesced=0
