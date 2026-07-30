@@ -394,10 +394,10 @@ stage-app:
 	if [ -z "$$remote_apps" ]; then remote_apps="$$remote_sd/Apps"; fi; \
 	remote_dir="$$remote_apps/$$destination_platform/$$package_name"; \
 	echo "Deploying $$package_name to $$remote_dir"; \
-	"$${ADB[@]}" shell "rm -rf \"$$remote_dir\" && mkdir -p \"$$remote_dir\""; \
-	"$${ADB[@]}" push "$$package_dir/." "$$remote_dir/" >/dev/null; \
-	"$${ADB[@]}" shell "chmod 755 \"$$remote_dir/launch.sh\" \"$$remote_dir/bin/\"* 2>/dev/null || true"; \
-	"$${ADB[@]}" shell "find \"$$remote_dir\" -maxdepth 3 -type f | sort"
+	ADB_SERIAL="$$serial" PLATFORM_ID="mlp1" \
+	REMOTE_SDCARD_PATH="$$remote_sd" \
+		"$(LEAF_ROOT)/scripts/adb-stage-app-package.sh" \
+		"$$package_dir" "$$remote_dir"
 
 release-zips:
 	DEVICE="$(DEVICE)" \

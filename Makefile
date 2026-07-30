@@ -22,7 +22,7 @@ LARGE_LIBRARY_FIXTURE_ENV = \
 	REMOTE_SDCARD_PATH="$(REMOTE_SDCARD_PATH)"
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap doctor status status-internal pakrat-local-feed-test leaf-release-policy-test shader-bundle-release-policy-test flycast-release-policy-smoke adb-enable-marker adb-disable-marker adb-tail-logs adb-large-library-create adb-large-library-clean adb-large-library-status adb-install-wrapper adb-uninstall-wrapper benchmark-ppsspp
+.PHONY: help bootstrap doctor status status-internal pakrat-local-feed-test leaf-release-policy-test shader-bundle-release-policy-test flycast-release-policy-smoke package-quiesce-smoke adb-enable-marker adb-disable-marker adb-tail-logs adb-large-library-create adb-large-library-clean adb-large-library-status adb-install-wrapper adb-uninstall-wrapper benchmark-ppsspp
 
 help:
 	@echo "Leaf workspace commands (DEVICE=$(DEVICE), WORKSPACE_DIR=$(WORKSPACE_DIR)):"
@@ -54,6 +54,7 @@ help:
 	@echo "  make leaf-release-policy-test             test release identity, artifacts, provenance, and gates"
 	@echo "  make shader-bundle-release-policy-test    test shader bundle integrity release gates"
 	@echo "  make flycast-release-policy-smoke         test standalone Flycast release gates"
+	@echo "  make package-quiesce-smoke                test fail-closed stage-app service barrier"
 	@echo "  make adb-enable-marker                    enable Leaf launcher marker"
 	@echo "  make adb-disable-marker                   disable Leaf launcher marker"
 	@echo "  make adb-tail-logs                        tail launcher logs"
@@ -108,6 +109,9 @@ leaf-release-policy-test:
 
 shader-bundle-release-policy-test:
 	python3 scripts/validate-shader-bundle-release-test.py
+
+package-quiesce-smoke:
+	@bash scripts/adb-stage-app-package-smoke.sh
 
 adb-enable-marker:
 	scripts/adb-set-marker.sh on

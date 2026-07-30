@@ -94,6 +94,14 @@ make release-sd-zip DEVICE=mlp1             # build end-user install ZIP only
 make release-recovery-zip DEVICE=mlp1       # build end-user recovery ZIP only
 ```
 
+On MLP1, `stage-app` uses Jawaka's `package-quiesce-v1` barrier before it
+removes or pushes any package bytes. Close foreground apps first. A missing
+daemon, stale/unverified service generation, or rejected barrier fails the
+stage without modifying the destination. After a successful push (and also on
+a failed push), the helper asks Jawaka to rescan manifests and restore only
+persistent Start-with-Leaf intent. `make package-quiesce-smoke` covers the
+ordering and failure cleanup with a fake ADB endpoint.
+
 The four first-party optional apps above are registered only for an explicit
 developer stage. They remain Pak Rat-owned and are excluded from default full
 staging, release ZIPs, `managed_apps`, and bootstrap requirements. Store
