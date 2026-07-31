@@ -43,6 +43,7 @@ from the named upstream release asset.
 | mupen64plus_standalone (standalone) | GPL-2.0 / MIT / bundled third-party notices | https://github.com/josegonzalez/minui-n64-pak |
 | mupen64plus_next | GPL-2.0 | https://github.com/libretro/mupen64plus-libretro-nx |
 | pcsx_rearmed | GPL-2.0 | https://github.com/libretro/pcsx_rearmed |
+| picodrive | PicoDrive (non-commercial) | https://github.com/libretro/picodrive |
 | ppsspp (standalone) | GPL-2.0+ | https://github.com/hrydgard/ppsspp |
 | prosystem | GPL-2.0 | https://github.com/libretro/prosystem-libretro |
 | snes9x | Snes9x (non-commercial) | https://github.com/libretro/snes9x |
