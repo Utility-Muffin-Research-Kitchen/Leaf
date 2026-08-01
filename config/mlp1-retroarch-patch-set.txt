@@ -7,8 +7,26 @@
 #
 # Comments and blank lines are ignored; the first remaining line is the set.
 #
+# DROPPED, record-extension: RetroArch names recordings from the quality preset
+# rather than the container, so a custom MP4 preset produced a .mkv holding MP4.
+# Real, but it never fires here: capture is Matroska on purpose (it survives a
+# recording cut short, and it holds the FLAC that keeps real-time AAC away from
+# the audio path), and for Matroska the patch produces the same "mkv" upstream
+# hardcodes. It also cut the wrong way if it ever did fire -- leaf-record-convert
+# looks for .mkv, so an .mp4 capture would be skipped in silence and never
+# converted. Carrying a rebase-forever patch to protect a container we do not
+# ship was the worse trade. It is in this repo's git history if that changes;
+# the preset warns against changing "format" instead.
+#
+# record-scale-clamp: the record preset's scale_factor is a plain multiplier, and
+# a value tuned for 240p pixel art is wrong for a core already at 480p. PSX Tekken
+# 3 renders 368x480, so 3x produced 1104x1440 -- 3.1x an NES capture's pixels, and
+# it pinned the encoder at 100% of its bitrate. The patch clamps the factor from
+# the core's real geometry, which only the recorder knows and which can change
+# mid-game.
+#
 # No sysfs-rumble: jawakad's virtual gamepad advertises FF_RUMBLE, so RetroArch
 # rumbles through its own SDL2 joypad driver and the fallback that wrote
 # duty_cycle directly never engages. See retroarch-builds #2 (closed) for the
 # patch if a device ever needs it.
-portrait-rotation,command-menu,jawaka-load-content,controller-bindings
+portrait-rotation,command-menu,jawaka-load-content,controller-bindings,record-scale-clamp

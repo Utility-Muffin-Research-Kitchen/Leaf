@@ -26,6 +26,10 @@ MLP1_VULKAN_RUNTIME ?= $(MLP1_GRAPHICS_RUNTIME)/vulkan/rk3566-g52-g29p1
 MLP1_DRASTIC_PACKAGE ?= $(LEAF_ROOT)/build/drastic/mlp1/drastic
 MLP1_MUPEN64PLUS_PACKAGE ?= $(N64_STANDALONE_DIR)/output/mlp1/mupen64plus
 MLP1_FLYCAST_PACKAGE ?= $(FLYCAST_STANDALONE_DIR)/output/mlp1/flycast
+MLP1_FFMPEG_BIN    ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/ffmpeg/bin/ffmpeg
+MLP1_FFMPEG_LIBS   ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/ffmpeg/flat
+MLP1_RECORD_CONVERT ?= $(RETROARCH_BUILDS_DIR)/config/mlp1/leaf-record-convert.sh
+MLP1_RECORD_PRESET ?= $(RETROARCH_BUILDS_DIR)/config/mlp1/retroarch-record-rkmpp.cfg
 MLP1_RETROARCH_PATCH_SET_FILE ?= $(LEAF_ROOT)/config/mlp1-retroarch-patch-set.txt
 MLP1_RETROARCH_PATCH_SET ?= $(shell grep -v '^\#' "$(MLP1_RETROARCH_PATCH_SET_FILE)" | grep -v '^$$' | head -1)
 MLP1_RETROARCH_VALIDATOR ?= $(LEAF_ROOT)/scripts/validate-mlp1-retroarch-build.py
@@ -116,6 +120,26 @@ assemble-jawaka: jawaka-build shader-bundle-mlp1
 		chmod 755 "$(PLATFORM_PAYLOAD_DIR)/bin/retroarch"; \
 	else \
 		echo "warning: MLP1 RetroArch not found at $(MLP1_RETROARCH_BIN); launches will fail until built (make stage-retroarch)."; \
+	fi
+	@# Recording payload. RetroArch reaches these libraries through a RUNPATH of
+	@# $$ORIGIN/../lib/ffmpeg, so bin/ and lib/ffmpeg/ must stay siblings -- moving
+	@# either breaks recording with a loader error and nothing more informative.
+	@# The libraries are already flattened to one real file per SONAME because the
+	@# SD card is FAT32 and cannot carry ffmpeg's usual symlink chain.
+	@if [ -f "$(MLP1_FFMPEG_BIN)" ] && [ -d "$(MLP1_FFMPEG_LIBS)" ]; then \
+		mkdir -p "$(PLATFORM_PAYLOAD_DIR)/bin" "$(PLATFORM_PAYLOAD_DIR)/lib/ffmpeg"; \
+		cp -f "$(MLP1_FFMPEG_BIN)" "$(PLATFORM_PAYLOAD_DIR)/bin/ffmpeg"; \
+		chmod 755 "$(PLATFORM_PAYLOAD_DIR)/bin/ffmpeg"; \
+		find "$(MLP1_FFMPEG_LIBS)" -maxdepth 1 -type f -name '*.so.*' -exec cp -f {} "$(PLATFORM_PAYLOAD_DIR)/lib/ffmpeg/" \;; \
+		chmod 755 "$(PLATFORM_PAYLOAD_DIR)/lib/ffmpeg/"*.so.* 2>/dev/null || true; \
+		test -f "$(MLP1_RECORD_CONVERT)" || { echo "missing record convert script: $(MLP1_RECORD_CONVERT)" >&2; exit 1; }; \
+		cp -f "$(MLP1_RECORD_CONVERT)" "$(PLATFORM_PAYLOAD_DIR)/bin/leaf-record-convert.sh"; \
+		chmod 755 "$(PLATFORM_PAYLOAD_DIR)/bin/leaf-record-convert.sh"; \
+		test -f "$(MLP1_RECORD_PRESET)" || { echo "missing record preset: $(MLP1_RECORD_PRESET)" >&2; exit 1; }; \
+		mkdir -p "$(PLATFORM_PAYLOAD_DIR)/defaults"; \
+		cp -f "$(MLP1_RECORD_PRESET)" "$(PLATFORM_PAYLOAD_DIR)/defaults/retroarch-record.cfg"; \
+	else \
+		echo "warning: MLP1 FFmpeg not found at $(MLP1_FFMPEG_BIN); game recording will be unavailable (run retroarch-builds/build-mlp1-ffmpeg.sh)."; \
 	fi
 	@if [ -d "$(MLP1_CORES_DIR)" ]; then \
 		mkdir -p "$(PLATFORM_PAYLOAD_DIR)/cores"; \
