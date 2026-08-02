@@ -29,6 +29,7 @@ REQUIRED_PATH_LISTS = {
     "ROMS_PATHS": ("/mnt/sdcard/Roms", "/media/sdcard1/Roms"),
     "IMAGES_PATHS": ("/mnt/sdcard/Images", "/media/sdcard1/Images"),
     "MUSIC_PATHS": ("/mnt/sdcard/Music", "/media/sdcard1/Music"),
+    "VIDEO_PATHS": ("/mnt/sdcard/Videos", "/media/sdcard1/Videos"),
     "APPS_PATHS": ("/mnt/sdcard/Apps", "/media/sdcard1/Apps"),
     "BIOS_PATHS": ("/mnt/sdcard/BIOS", "/media/sdcard1/BIOS"),
     "SAVES_PATHS": ("/mnt/sdcard/Saves", "/media/sdcard1/Saves"),

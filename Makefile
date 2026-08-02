@@ -43,6 +43,7 @@ help:
 	@echo "  make stage-app APP=CentralScrutinizer DEVICE=mlp1 stage a single app repo"
 	@echo "  make stage-app APP=Leaf-Itchio-Pak DEVICE=mlp1 explicitly stage the optional Itch.io app"
 	@echo "  make stage-app APP=DiscoBoy DEVICE=mlp1 explicitly stage the optional Disco Boy app"
+	@echo "  make stage-app APP=VideoFromHell DEVICE=mlp1 explicitly stage the optional Video From Hell app"
 	@echo "  make stage-app APP=Nimbus DEVICE=mlp1       explicitly stage the optional Nimbus app"
 	@echo "  make stage-app APP=PortMaster-mlp1 DEVICE=mlp1 explicitly stage the optional PortMaster app"
 	@echo "  make release-zips DEVICE=mlp1             build end-user install + recovery ZIPs"

@@ -4,7 +4,7 @@
 # Apps staged by `make stage`.
 STAGE_APPS ?= ssh-server Thing-File CentralScrutinizer Fugazi joes-calibrage retroarch-builds
 STAGE_EMULATORS ?= ppsspp drastic mupen64plus flycast
-PUBLIC_ROOT_DIRS ?= Roms Images Apps BIOS Saves States Cheats
+PUBLIC_ROOT_DIRS ?= Roms Images Videos Apps BIOS Saves States Cheats
 
 # --- Launcher payload assembly inputs --------------------------------------
 JAWAKA_BUILD_DIR ?= $(JAWAKA_DIR)/build/mlp1
