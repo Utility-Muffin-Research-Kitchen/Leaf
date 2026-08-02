@@ -29,4 +29,12 @@
 # rumbles through its own SDL2 joypad driver and the fallback that wrote
 # duty_cycle directly never engages. See retroarch-builds #2 (closed) for the
 # patch if a device ever needs it.
-portrait-rotation,command-menu,jawaka-load-content,controller-bindings,record-scale-clamp
+# record-indicator: RetroArch shows NOTHING on screen while recording -- the toggle
+# calls RECORD_INIT/DEINIT, neither pushes a message, and record_driver.c has no
+# runloop_msg_queue_push at all. This draws a pulsing dot inside gfx_widgets_frame.
+# Inside RA's own render pass on purpose: a second permanently-mapped Wayland
+# surface from our OSD could cost the compositor direct scanout and slow the game
+# for the whole recording. It does not appear in the clip (capture taps the core
+# framebuffer before this pass, same reason shaders are not captured).
+#
+portrait-rotation,command-menu,jawaka-load-content,controller-bindings,record-scale-clamp,record-indicator
