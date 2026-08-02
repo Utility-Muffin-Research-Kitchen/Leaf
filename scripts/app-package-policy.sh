@@ -22,6 +22,7 @@ leaf_pakrat_owned_package_names() {
     printf '%s\n' \
         "Itch-io.pak" \
         "DiscoBoy.pak" \
+        "VideoFromHell.pak" \
         "Nimbus.pak" \
         "PortMaster.pak"
 }
@@ -54,6 +55,15 @@ leaf_app_policy() {
             package_platform="mlp1"
             package_dir="$workspace_dir/DiscoBoy/build/mlp1/package/DiscoBoy.pak"
             package_name="DiscoBoy.pak"
+            destination_platform="mlp1"
+            supported_devices="mlp1"
+            distribution="pakrat"
+            ;;
+        VideoFromHell)
+            package_target="package-platform"
+            package_platform="mlp1"
+            package_dir="$workspace_dir/VideoFromHell/build/mlp1/package/VideoFromHell.pak"
+            package_name="VideoFromHell.pak"
             destination_platform="mlp1"
             supported_devices="mlp1"
             distribution="pakrat"

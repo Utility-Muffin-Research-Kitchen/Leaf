@@ -331,6 +331,27 @@ class CandidateTests(unittest.TestCase):
             with self.assertRaisesRegex(MODULE.PolicyError, "ROMS_PATHS mismatch"):
                 MODULE.validate_candidate(args)
 
+    def test_candidate_rejects_incomplete_video_sources(self):
+        with tempfile.TemporaryDirectory() as raw:
+            args = self.make_candidate(Path(raw))
+            env_path = (
+                args.release_root
+                / "platforms"
+                / "mlp1"
+                / "launcher"
+                / "env.sh"
+            )
+            text = env_path.read_text(encoding="utf-8")
+            env_path.write_text(
+                text.replace(
+                    "export VIDEO_PATHS=/mnt/sdcard/Videos:/media/sdcard1/Videos",
+                    "export VIDEO_PATHS=/mnt/sdcard/Videos",
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(MODULE.PolicyError, "VIDEO_PATHS mismatch"):
+                MODULE.validate_candidate(args)
+
     def test_candidate_rejects_incomplete_l3_autoconfig(self):
         with tempfile.TemporaryDirectory() as raw:
             args = self.make_candidate(Path(raw))

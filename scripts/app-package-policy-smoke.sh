@@ -26,6 +26,7 @@ assert_policy() {
 
 assert_policy Leaf-Itchio-Pak Itch-io.pak pakrat
 assert_policy DiscoBoy DiscoBoy.pak pakrat
+assert_policy VideoFromHell VideoFromHell.pak pakrat
 assert_policy Nimbus Nimbus.pak pakrat
 assert_policy PortMaster-mlp1 PortMaster.pak pakrat
 assert_policy ssh-server SSHServer.pak release
@@ -56,7 +57,7 @@ audit_stage_apps_definitions() {
             return 1
         fi
         if printf '%s\n' "$definitions" | \
-            "$grep_bin" -qiE 'Leaf-Itchio|DiscoBoy|Nimbus|PortMaster'; then
+            "$grep_bin" -qiE 'Leaf-Itchio|DiscoBoy|VideoFromHell|Nimbus|PortMaster'; then
             echo "Pak Rat-owned optional app leaked into STAGE_APPS in $file" >&2
             return 1
         else
@@ -77,7 +78,7 @@ mkdir -p "$stage_fixture"
 printf 'STAGE_APPS ?= ssh-server Thing-File\n' >"$stage_fixture/clean.mk"
 printf 'STAGE_APPS="${STAGE_APPS-ssh-server Thing-File}"\n' >"$stage_fixture/clean.sh"
 printf '# no default app list here\n' >"$stage_fixture/missing-definition.mk"
-printf 'STAGE_APPS ?= ssh-server DiscoBoy\n' >"$stage_fixture/forbidden.mk"
+printf 'STAGE_APPS ?= ssh-server VideoFromHell\n' >"$stage_fixture/forbidden.mk"
 printf 'STAGE_APPS ?= ssh-server\n' >"$stage_fixture/unreadable.mk"
 printf '#!/bin/sh\nexit 2\n' >"$stage_fixture/grep-read-error"
 chmod 700 "$stage_fixture/grep-read-error"
