@@ -234,6 +234,8 @@ class CandidateTests(unittest.TestCase):
         ]
         for name, values in MODULE.REQUIRED_PATH_LISTS.items():
             env_lines.append(f"export {name}={':'.join(values)}")
+        for name, value in MODULE.REQUIRED_PRIMARY_PATHS.items():
+            env_lines.append(f"export {name}={value}")
         env_path = launcher / "env.sh"
         env_path.parent.mkdir(parents=True, exist_ok=True)
         env_path.write_text("\n".join(env_lines) + "\n", encoding="utf-8")
@@ -350,6 +352,27 @@ class CandidateTests(unittest.TestCase):
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(MODULE.PolicyError, "VIDEO_PATHS mismatch"):
+                MODULE.validate_candidate(args)
+
+    def test_candidate_rejects_wrong_primary_recordings_path(self):
+        with tempfile.TemporaryDirectory() as raw:
+            args = self.make_candidate(Path(raw))
+            env_path = (
+                args.release_root
+                / "platforms"
+                / "mlp1"
+                / "launcher"
+                / "env.sh"
+            )
+            text = env_path.read_text(encoding="utf-8")
+            env_path.write_text(
+                text.replace(
+                    "export RECORDINGS_PATH=/mnt/sdcard/Recordings",
+                    "export RECORDINGS_PATH=/media/sdcard1/Recordings",
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(MODULE.PolicyError, "RECORDINGS_PATH mismatch"):
                 MODULE.validate_candidate(args)
 
     def test_candidate_rejects_incomplete_l3_autoconfig(self):
