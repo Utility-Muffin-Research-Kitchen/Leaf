@@ -36,6 +36,11 @@ REQUIRED_PATH_LISTS = {
     "STATES_PATHS": ("/mnt/sdcard/States", "/media/sdcard1/States"),
     "CHEATS_PATHS": ("/mnt/sdcard/Cheats", "/media/sdcard1/Cheats"),
 }
+REQUIRED_PRIMARY_PATHS = {
+    # Gameplay conversion is intentionally primary-only; this is not another
+    # SDCARD_PATHS-aligned source list.
+    "RECORDINGS_PATH": "/mnt/sdcard/Recordings",
+}
 
 
 class PolicyError(Exception):
@@ -317,6 +322,12 @@ def validate_candidate(args: argparse.Namespace) -> None:
             raise PolicyError(
                 f"runtime environment {name} mismatch: "
                 f"{actual!r} != {expected!r}"
+            )
+    for name, expected in REQUIRED_PRIMARY_PATHS.items():
+        actual = environment.get(name)
+        if actual != expected:
+            raise PolicyError(
+                f"runtime environment {name} mismatch: {actual!r} != {expected!r}"
             )
 
     provenance_path = root / "provenance" / "components.json"
