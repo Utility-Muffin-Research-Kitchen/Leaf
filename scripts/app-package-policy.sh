@@ -24,7 +24,8 @@ leaf_pakrat_owned_package_names() {
         "DiscoBoy.pak" \
         "VideoFromHell.pak" \
         "Nimbus.pak" \
-        "PortMaster.pak"
+        "PortMaster.pak" \
+        "Syncthing.pak"
 }
 
 leaf_app_policy() {
@@ -41,6 +42,15 @@ leaf_app_policy() {
     distribution=
 
     case "$app" in
+        Leaf-Syncthing-Pak)
+            package_target="package-platform"
+            package_platform="mlp1"
+            package_dir="$workspace_dir/Leaf-Syncthing-Pak/build/mlp1/package/Syncthing.pak"
+            package_name="Syncthing.pak"
+            destination_platform="mlp1"
+            supported_devices="mlp1"
+            distribution="pakrat"
+            ;;
         Leaf-Itchio-Pak)
             package_target="package-platform"
             package_platform="mlp1"

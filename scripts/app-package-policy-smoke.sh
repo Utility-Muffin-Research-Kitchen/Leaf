@@ -25,6 +25,7 @@ assert_policy() {
 }
 
 assert_policy Leaf-Itchio-Pak Itch-io.pak pakrat
+assert_policy Leaf-Syncthing-Pak Syncthing.pak pakrat
 assert_policy DiscoBoy DiscoBoy.pak pakrat
 assert_policy VideoFromHell VideoFromHell.pak pakrat
 assert_policy Nimbus Nimbus.pak pakrat
@@ -57,7 +58,7 @@ audit_stage_apps_definitions() {
             return 1
         fi
         if printf '%s\n' "$definitions" | \
-            "$grep_bin" -qiE 'Leaf-Itchio|DiscoBoy|VideoFromHell|Nimbus|PortMaster'; then
+            "$grep_bin" -qiE 'Leaf-Itchio|Leaf-Syncthing|DiscoBoy|VideoFromHell|Nimbus|PortMaster'; then
             echo "Pak Rat-owned optional app leaked into STAGE_APPS in $file" >&2
             return 1
         else
@@ -125,20 +126,25 @@ fi
 audit_stage_apps_definitions grep \
     "$LEAF_ROOT/stage/mlp1.mk" "$SCRIPT_DIR/make-sd-release-zip.sh"
 
+if grep -q 'Leaf-Syncthing-Pak' "$LEAF_ROOT/stage/common.mk"; then
+    echo "Leaf-Syncthing-Pak leaked into required bootstrap repos" >&2
+    exit 1
+fi
+
 mkdir -p "$fixture/platforms/mlp1" "$fixture/Apps/mlp1"
 printf '{"managed_apps": []}\n' >"$fixture/platforms/mlp1/manifest.json"
 : >"$fixture/managed-apps.txt"
 
-pakrat_packages=()
+release_forbidden_packages=()
 while IFS= read -r package; do
-    [ -n "$package" ] && pakrat_packages+=("$package")
+    [ -n "$package" ] && release_forbidden_packages+=("$package")
 done < <(leaf_pakrat_owned_package_names)
-python3 "$SCRIPT_DIR/audit-pakrat-owned-apps.py" "$fixture" "${pakrat_packages[@]}" >/dev/null
+python3 "$SCRIPT_DIR/audit-pakrat-owned-apps.py" "$fixture" "${release_forbidden_packages[@]}" >/dev/null
 
-for package in "${pakrat_packages[@]}"; do
+for package in "${release_forbidden_packages[@]}"; do
     printf 'mlp1/%s\n' "$package" >"$fixture/managed-apps.txt"
     if python3 "$SCRIPT_DIR/audit-pakrat-owned-apps.py" \
-        "$fixture" "${pakrat_packages[@]}" >/dev/null 2>&1; then
+        "$fixture" "${release_forbidden_packages[@]}" >/dev/null 2>&1; then
         echo "ownership audit accepted managed $package" >&2
         exit 1
     fi
@@ -147,7 +153,7 @@ for package in "${pakrat_packages[@]}"; do
     printf '{"managed_apps": ["mlp1/%s"]}\n' "$package" \
         >"$fixture/platforms/mlp1/manifest.json"
     if python3 "$SCRIPT_DIR/audit-pakrat-owned-apps.py" \
-        "$fixture" "${pakrat_packages[@]}" >/dev/null 2>&1; then
+        "$fixture" "${release_forbidden_packages[@]}" >/dev/null 2>&1; then
         echo "ownership audit accepted manifest-owned $package" >&2
         exit 1
     fi
@@ -155,7 +161,7 @@ for package in "${pakrat_packages[@]}"; do
 
     mkdir -p "$fixture/Apps/mlp1/$package"
     if python3 "$SCRIPT_DIR/audit-pakrat-owned-apps.py" \
-        "$fixture" "${pakrat_packages[@]}" >/dev/null 2>&1; then
+        "$fixture" "${release_forbidden_packages[@]}" >/dev/null 2>&1; then
         echo "ownership audit accepted staged $package" >&2
         exit 1
     fi
