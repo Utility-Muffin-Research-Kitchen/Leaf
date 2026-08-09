@@ -192,16 +192,12 @@ stage-retroarch:
 			--manifest "$(MLP1_RETROARCH_MANIFEST)" \
 			--expected-patch-set "$(MLP1_RETROARCH_PATCH_SET)"; \
 	fi
-	@if ! ( [ -d "$(MLP1_CORES_DIR)" ] && find "$(MLP1_CORES_DIR)" -maxdepth 1 -type f -name '*_libretro.so' | grep -q . ); then \
-		echo "MLP1 cores missing; building in $(CORES_SPRUCE_DIR)"; \
-		cd "$(CORES_SPRUCE_DIR)" && ./build-mlp1.sh --stock-parity; \
-	fi
-	@if ! python3 "$(MLP1_CORE_REPORT_TOOL)" manifest \
-			--report "$(MLP1_CORES_REPORT)" \
-			--cores-dir "$(MLP1_CORES_DIR)" >/dev/null 2>&1; then \
-		echo "MLP1 core identity report is missing, stale, or checksum-invalid; rebuilding stock-parity cores"; \
-		cd "$(CORES_SPRUCE_DIR)" && ./build-mlp1.sh --stock-parity; \
-	fi
+	@REBUILD_CORES="$(REBUILD_CORES)" \
+		CORES_SPRUCE_DIR="$(CORES_SPRUCE_DIR)" \
+		MLP1_CORES_DIR="$(MLP1_CORES_DIR)" \
+		MLP1_CORES_REPORT="$(MLP1_CORES_REPORT)" \
+		MLP1_CORE_REPORT_TOOL="$(MLP1_CORE_REPORT_TOOL)" \
+		"$(LEAF_ROOT)/scripts/ensure-mlp1-cores.sh"
 	@test -f "$(MLP1_RETROARCH_BIN)" || { echo "missing RetroArch binary: $(MLP1_RETROARCH_BIN)" >&2; exit 1; }
 	@test -d "$(MLP1_CORES_DIR)" || { echo "missing cores dir: $(MLP1_CORES_DIR)" >&2; exit 1; }
 	@$(MAKE) -C "$(RETROARCH_BUILDS_DIR)" shaders-mlp1 MLP1_SHADER_OUTPUT="$(MLP1_SHADERS_DIR)"
@@ -457,6 +453,7 @@ release-zips:
 	MLP1_SHADERS_DIR="$(MLP1_SHADERS_DIR)" \
 	MLP1_CORES_DIR="$(MLP1_CORES_DIR)" \
 	MLP1_CORES_REPORT="$(MLP1_CORES_REPORT)" \
+	REBUILD_CORES="$(REBUILD_CORES)" \
 	MLP1_PPSSPP_PACKAGE="$(MLP1_PPSSPP_PACKAGE)" \
 	MLP1_GRAPHICS_RUNTIME="$(MLP1_GRAPHICS_RUNTIME)" \
 	MLP1_VULKAN_RUNTIME="$(MLP1_VULKAN_RUNTIME)" \
@@ -493,6 +490,7 @@ release-sd-zip:
 	MLP1_SHADERS_DIR="$(MLP1_SHADERS_DIR)" \
 	MLP1_CORES_DIR="$(MLP1_CORES_DIR)" \
 	MLP1_CORES_REPORT="$(MLP1_CORES_REPORT)" \
+	REBUILD_CORES="$(REBUILD_CORES)" \
 	MLP1_PPSSPP_PACKAGE="$(MLP1_PPSSPP_PACKAGE)" \
 	MLP1_GRAPHICS_RUNTIME="$(MLP1_GRAPHICS_RUNTIME)" \
 	MLP1_VULKAN_RUNTIME="$(MLP1_VULKAN_RUNTIME)" \

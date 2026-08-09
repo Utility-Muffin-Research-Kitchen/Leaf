@@ -22,7 +22,7 @@ LARGE_LIBRARY_FIXTURE_ENV = \
 	REMOTE_SDCARD_PATH="$(REMOTE_SDCARD_PATH)"
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap doctor status status-internal pakrat-local-feed-test leaf-release-policy-test shader-bundle-release-policy-test flycast-release-policy-smoke package-quiesce-smoke adb-enable-marker adb-disable-marker adb-tail-logs adb-large-library-create adb-large-library-clean adb-large-library-status adb-install-wrapper adb-uninstall-wrapper benchmark-ppsspp
+.PHONY: help bootstrap doctor status status-internal pakrat-local-feed-test leaf-release-policy-test shader-bundle-release-policy-test flycast-release-policy-smoke core-rebuild-gate-test package-quiesce-smoke adb-enable-marker adb-disable-marker adb-tail-logs adb-large-library-create adb-large-library-clean adb-large-library-status adb-install-wrapper adb-uninstall-wrapper benchmark-ppsspp
 
 help:
 	@echo "Leaf workspace commands (DEVICE=$(DEVICE), WORKSPACE_DIR=$(WORKSPACE_DIR)):"
@@ -48,6 +48,7 @@ help:
 	@echo "  make stage-app APP=Nimbus DEVICE=mlp1       explicitly stage the optional Nimbus app"
 	@echo "  make stage-app APP=PortMaster-mlp1 DEVICE=mlp1 explicitly stage the optional PortMaster app"
 	@echo "  make release-zips DEVICE=mlp1             build end-user install + recovery ZIPs"
+	@echo "    REBUILD_CORES=1                         explicitly permit a missing/stale full core rebuild"
 	@echo "  make beta-zips TAG=v0.8.0-beta.3 DEVICE=mlp1  build clean beta ZIPs from one tag, then verify"
 	@echo "  make release-sd-zip DEVICE=mlp1           build end-user install ZIP"
 	@echo "  make release-recovery-zip DEVICE=mlp1     build end-user recovery ZIP"
@@ -55,6 +56,7 @@ help:
 	@echo "  make leaf-release-policy-test             test release identity, artifacts, provenance, and gates"
 	@echo "  make shader-bundle-release-policy-test    test shader bundle integrity release gates"
 	@echo "  make flycast-release-policy-smoke         test standalone Flycast release gates"
+	@echo "  make core-rebuild-gate-test               test explicit long core-rebuild authorization"
 	@echo "  make package-quiesce-smoke                test fail-closed stage-app service barrier"
 	@echo "  make adb-enable-marker                    enable Leaf launcher marker"
 	@echo "  make adb-disable-marker                   disable Leaf launcher marker"
@@ -110,6 +112,9 @@ leaf-release-policy-test:
 
 shader-bundle-release-policy-test:
 	python3 scripts/validate-shader-bundle-release-test.py
+
+core-rebuild-gate-test:
+	bash scripts/ensure-mlp1-cores-test.sh
 
 package-quiesce-smoke:
 	@bash scripts/adb-stage-app-package-smoke.sh
