@@ -57,6 +57,8 @@ Environment:
   RELEASE_ID=<filesystem-safe id>
   LEAF_WORKSPACE_DIR=<workspace root>
   TOOLCHAIN_IMAGE=<MLP1 cross-compile Docker image>
+  REBUILD_CORES=1  explicitly allow a full stock-parity core rebuild when the
+                   existing checksum-bound core report is missing or invalid
   STAGE_APPS="ssh-server Thing-File CentralScrutinizer Fugazi joes-calibrage retroarch-builds"
   STAGE_EMULATORS="ppsspp drastic mupen64plus flycast"
 EOF
@@ -599,17 +601,12 @@ build_missing_platform_bits() {
     python3 "$MLP1_SHADER_TOOL" validate --output "$MLP1_SHADERS_DIR" ||
         die "MLP1 shader bundle validation failed"
 
-    if ! ( [ -d "$MLP1_CORES_DIR" ] && find "$MLP1_CORES_DIR" -maxdepth 1 -type f -name '*_libretro.so' | grep -q . ); then
-        echo "MLP1 cores missing; building in $CORES_SPRUCE_DIR"
-        (cd "$CORES_SPRUCE_DIR" && ./build-mlp1.sh --stock-parity)
-    fi
-
-    if ! python3 "$MLP1_CORE_REPORT_TOOL" manifest \
-            --report "$MLP1_CORES_REPORT" \
-            --cores-dir "$MLP1_CORES_DIR" >/dev/null 2>&1; then
-        echo "MLP1 core identity report is missing, stale, or checksum-invalid; rebuilding stock-parity cores"
-        (cd "$CORES_SPRUCE_DIR" && ./build-mlp1.sh --stock-parity)
-    fi
+    REBUILD_CORES="${REBUILD_CORES:-0}" \
+    CORES_SPRUCE_DIR="$CORES_SPRUCE_DIR" \
+    MLP1_CORES_DIR="$MLP1_CORES_DIR" \
+    MLP1_CORES_REPORT="$MLP1_CORES_REPORT" \
+    MLP1_CORE_REPORT_TOOL="$MLP1_CORE_REPORT_TOOL" \
+        "$LEAF_ROOT/scripts/ensure-mlp1-cores.sh"
 
     if ! python3 "$MLP1_CORE_REPORT_TOOL" verify \
             --report "$MLP1_CORES_REPORT" \
