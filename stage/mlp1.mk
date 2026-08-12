@@ -15,6 +15,8 @@ MLP1_RETROARCH_BIN ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/bin/retroarch
 MLP1_RETROARCH_MANIFEST ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/build-manifest.json
 MLP1_SHADERS_DIR    ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/shaders
 MLP1_SHADER_TOOL    ?= $(RETROARCH_BUILDS_DIR)/scripts/mlp1_shader_bundle.py
+MLP1_ASSETS_DIR     ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/assets
+MLP1_ASSET_TOOL     ?= $(RETROARCH_BUILDS_DIR)/scripts/mlp1_asset_bundle.py
 MLP1_CORES_DIR     ?= $(CORES_SPRUCE_DIR)/output/mlp1/cores
 MLP1_CORES_REPORT  ?= $(CORES_SPRUCE_DIR)/output/mlp1/build-report.json
 MLP1_INFO_DIR      ?= $(CORES_SPRUCE_DIR)/output/mlp1/info
@@ -164,6 +166,13 @@ assemble-jawaka: jawaka-build shader-bundle-mlp1
 	@mkdir -p "$(PLATFORM_PAYLOAD_DIR)/shaders"
 	@cp -Rf "$(MLP1_SHADERS_DIR)/." "$(PLATFORM_PAYLOAD_DIR)/shaders/"
 	@python3 "$(MLP1_SHADER_TOOL)" validate --output "$(PLATFORM_PAYLOAD_DIR)/shaders"
+	@# RetroArch menu assets. Ozone reads every icon and font it draws from
+	@# assets_directory, which jawaka-retroarch-runner points here; without this
+	@# tree Ozone has no icons and falls back to a bitmap font that cannot draw CJK.
+	@test -d "$(MLP1_ASSETS_DIR)" || { echo "missing MLP1 asset bundle: $(MLP1_ASSETS_DIR)" >&2; exit 1; }
+	@mkdir -p "$(PLATFORM_PAYLOAD_DIR)/assets"
+	@cp -Rf "$(MLP1_ASSETS_DIR)/." "$(PLATFORM_PAYLOAD_DIR)/assets/"
+	@python3 "$(MLP1_ASSET_TOOL)" validate --output "$(PLATFORM_PAYLOAD_DIR)/assets"
 	@test -f "$(PLATFORM_PAYLOAD_DIR)/cores/build-report.json" || { echo "missing MLP1 core build report: $(PLATFORM_PAYLOAD_DIR)/cores/build-report.json" >&2; exit 1; }
 	@python3 "$(UMRK_WORKSPACE_DIR)/scripts/retroarch_validate_package.py" \
 		--metadata-dir "$(MLP1_METADATA_DIR)" \
@@ -202,6 +211,8 @@ stage-retroarch:
 	@test -d "$(MLP1_CORES_DIR)" || { echo "missing cores dir: $(MLP1_CORES_DIR)" >&2; exit 1; }
 	@$(MAKE) -C "$(RETROARCH_BUILDS_DIR)" shaders-mlp1 MLP1_SHADER_OUTPUT="$(MLP1_SHADERS_DIR)"
 	@python3 "$(MLP1_SHADER_TOOL)" validate --output "$(MLP1_SHADERS_DIR)"
+	@$(MAKE) -C "$(RETROARCH_BUILDS_DIR)" assets-mlp1 MLP1_ASSET_OUTPUT="$(MLP1_ASSETS_DIR)"
+	@python3 "$(MLP1_ASSET_TOOL)" validate --output "$(MLP1_ASSETS_DIR)"
 	@if ! python3 "$(MLP1_CORE_REPORT_TOOL)" verify \
 			--report "$(MLP1_CORES_REPORT)" \
 			--cores-dir "$(MLP1_CORES_DIR)"; then \
@@ -239,7 +250,7 @@ stage-retroarch:
 		REMOTE_SYSTEM_PATH="$$remote_system" \
 		REMOTE_PLATFORM_PATH="$$remote_platform" \
 		"$(LEAF_ROOT)/scripts/adb-sync-shader-namespaces.sh" --migrate-only; \
-	"$${ADB[@]}" shell "mkdir -p '$$remote_platform' && rm -rf '$$remote_platform/bin' '$$remote_platform/cores' '$$remote_platform/info' '$$remote_platform/shaders' && mkdir -p '$$remote_platform/bin' '$$remote_platform/cores' '$$remote_platform/info' '$$remote_platform/shaders'"; \
+	"$${ADB[@]}" shell "mkdir -p '$$remote_platform' && rm -rf '$$remote_platform/bin' '$$remote_platform/cores' '$$remote_platform/info' '$$remote_platform/shaders' '$$remote_platform/assets' && mkdir -p '$$remote_platform/bin' '$$remote_platform/cores' '$$remote_platform/info' '$$remote_platform/shaders' '$$remote_platform/assets'"; \
 	"$${ADB[@]}" push "$(MLP1_RETROARCH_BIN)" "$$remote_platform/bin/retroarch" >/dev/null; \
 	if [ -f "$(MLP1_RETROARCH_MANIFEST)" ]; then \
 		"$${ADB[@]}" push "$(MLP1_RETROARCH_MANIFEST)" "$$remote_platform/bin/retroarch.build-manifest.json" >/dev/null; \
@@ -252,11 +263,17 @@ stage-retroarch:
 		"$${ADB[@]}" push "$(MLP1_INFO_DIR)/." "$$remote_platform/info/" >/dev/null; \
 	fi; \
 	"$${ADB[@]}" push "$(MLP1_SHADERS_DIR)/." "$$remote_platform/shaders/" >/dev/null; \
+	"$${ADB[@]}" push "$(MLP1_ASSETS_DIR)/." "$$remote_platform/assets/" >/dev/null; \
 	ADB_SERIAL="$$serial" PLATFORM_ID="mlp1" \
 		REMOTE_SDCARD_PATH="$$remote_sd" \
 		REMOTE_SYSTEM_PATH="$$remote_system" \
 		REMOTE_PLATFORM_PATH="$$remote_platform" \
 		"$(LEAF_ROOT)/scripts/adb-sync-shader-namespaces.sh" --sync-only; \
+	ADB_SERIAL="$$serial" PLATFORM_ID="mlp1" \
+		REMOTE_SDCARD_PATH="$$remote_sd" \
+		REMOTE_SYSTEM_PATH="$$remote_system" \
+		REMOTE_PLATFORM_PATH="$$remote_platform" \
+		"$(LEAF_ROOT)/scripts/adb-sync-asset-namespaces.sh"; \
 	"$${ADB[@]}" shell "chmod 755 '$$remote_platform/bin/retroarch' '$$remote_platform/cores/'*_libretro.so 2>/dev/null || true"; \
 	"$${ADB[@]}" shell sync; \
 	echo "RetroArch platform payload staged."

@@ -32,6 +32,8 @@ MLP1_RETROARCH_BIN="${MLP1_RETROARCH_BIN:-$RETROARCH_BUILDS_DIR/output/mlp1/bin/
 MLP1_RETROARCH_MANIFEST="${MLP1_RETROARCH_MANIFEST:-$RETROARCH_BUILDS_DIR/output/mlp1/build-manifest.json}"
 MLP1_SHADERS_DIR="${MLP1_SHADERS_DIR:-$RETROARCH_BUILDS_DIR/output/mlp1/shaders}"
 MLP1_SHADER_TOOL="${MLP1_SHADER_TOOL:-$RETROARCH_BUILDS_DIR/scripts/mlp1_shader_bundle.py}"
+MLP1_ASSETS_DIR="${MLP1_ASSETS_DIR:-$RETROARCH_BUILDS_DIR/output/mlp1/assets}"
+MLP1_ASSET_TOOL="${MLP1_ASSET_TOOL:-$RETROARCH_BUILDS_DIR/scripts/mlp1_asset_bundle.py}"
 MLP1_CORES_DIR="${MLP1_CORES_DIR:-$CORES_SPRUCE_DIR/output/mlp1/cores}"
 MLP1_CORES_REPORT="${MLP1_CORES_REPORT:-$CORES_SPRUCE_DIR/output/mlp1/build-report.json}"
 MLP1_PPSSPP_PACKAGE="${MLP1_PPSSPP_PACKAGE:-$PPSSPP_SPRUCE_DIR/output/mlp1/ppsspp}"
@@ -470,6 +472,15 @@ validate_retroarch_contract() {
         || die "RetroArch runtime metadata contract validation failed"
 }
 
+validate_asset_bundle() {
+    local platform_dir="$1"
+    local license_root="$2"
+    python3 "$MLP1_ASSET_TOOL" validate --output "$platform_dir/assets" ||
+        die "MLP1 menu asset bundle release validation failed"
+    [ -f "$license_root/ASSETS.md" ] ||
+        die "missing asset license notice: $license_root/ASSETS.md"
+}
+
 validate_shader_bundle() {
     local platform_dir="$1"
     local license_root="$2"
@@ -600,6 +611,11 @@ build_missing_platform_bits() {
         MLP1_SHADER_OUTPUT="$MLP1_SHADERS_DIR"
     python3 "$MLP1_SHADER_TOOL" validate --output "$MLP1_SHADERS_DIR" ||
         die "MLP1 shader bundle validation failed"
+
+    make -C "$RETROARCH_BUILDS_DIR" assets-mlp1 \
+        MLP1_ASSET_OUTPUT="$MLP1_ASSETS_DIR"
+    python3 "$MLP1_ASSET_TOOL" validate --output "$MLP1_ASSETS_DIR" ||
+        die "MLP1 menu asset bundle validation failed"
 
     REBUILD_CORES="${REBUILD_CORES:-0}" \
     CORES_SPRUCE_DIR="$CORES_SPRUCE_DIR" \
@@ -854,6 +870,7 @@ build_install_zip() {
         MLP1_RETROARCH_BIN="$MLP1_RETROARCH_BIN" \
         MLP1_RETROARCH_MANIFEST="$MLP1_RETROARCH_MANIFEST" \
         MLP1_SHADERS_DIR="$MLP1_SHADERS_DIR" \
+        MLP1_ASSETS_DIR="$MLP1_ASSETS_DIR" \
         MLP1_CORES_DIR="$MLP1_CORES_DIR" \
         MLP1_CORES_REPORT="$MLP1_CORES_REPORT" \
         assemble-jawaka
@@ -887,6 +904,7 @@ build_install_zip() {
     validate_packaged_cores "$RELEASE_ROOT"
     validate_retroarch_contract "$RELEASE_ROOT/platforms/mlp1"
     validate_shader_bundle "$RELEASE_ROOT/platforms/mlp1" "$RELEASE_ROOT/licenses"
+    validate_asset_bundle "$RELEASE_ROOT/platforms/mlp1" "$RELEASE_ROOT/licenses"
 
     for app in $STAGE_APPS; do
         package_app "$app"
