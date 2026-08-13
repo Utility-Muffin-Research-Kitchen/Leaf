@@ -99,11 +99,11 @@ def validate(platform: Path) -> None:
         key, separator, value = line.partition("=")
         if separator:
             controls[key.strip()] = value.strip()
-    if controls.get("Square") != "1-29,10-188":
+    if controls.get("Square") != "1-29,10-188,11-188,12-188,13-188":
         raise SystemExit("error: PPSSPP Square mapping is not the MLP1 mapping")
-    if controls.get("Triangle") != "1-47,10-191":
+    if controls.get("Triangle") != "1-47,10-191,11-191,12-191,13-191":
         raise SystemExit("error: PPSSPP Triangle mapping is not the MLP1 mapping")
-    if controls.get("An.Up") != "1-37,10-4003":
+    if controls.get("An.Up") != "1-37,10-4003,11-4003,12-4003,13-4003":
         raise SystemExit("error: PPSSPP analog up is not SDL Y-axis negative")
 
     cores = load_json(platform / "defaults/cores.json").get("cores")
