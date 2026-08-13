@@ -66,6 +66,7 @@ REMOTE_PLATFORM_PATH="${REMOTE_PLATFORM_PATH:-$REMOTE_PLATFORM_ROOT/$PLATFORM_ID
 REMOTE_LAUNCHER_PATH="${REMOTE_LAUNCHER_PATH:-${REMOTE_BUNDLE:-$REMOTE_PLATFORM_PATH/launcher}}"
 MARKER="${UMRK_MARKER_PATH:-$REMOTE_PLATFORM_PATH/enabled}"
 SHADER_PAYLOAD="$PLATFORM_DIR/shaders"
+ASSET_PAYLOAD="$PLATFORM_DIR/assets"
 
 if [ "$PLATFORM_ID" = "mlp1" ] &&
    [ -d "$SHADER_PAYLOAD/leaf-bundled" ] &&
@@ -87,7 +88,7 @@ if [ -d "$PLATFORM_DIR" ]; then
     echo "Deploying platform payload to $REMOTE_PLATFORM_PATH ($PLATFORM_MODE)"
     "${ADB[@]}" shell "mkdir -p '$REMOTE_PLATFORM_PATH'"
     if [ "$PLATFORM_MODE" = "replace" ]; then
-        for name in bin cores info defaults platform.d autoconfig boot-animation shaders manifest.json; do
+        for name in bin cores info defaults platform.d autoconfig boot-animation shaders assets manifest.json; do
             "${ADB[@]}" shell "rm -rf '$REMOTE_PLATFORM_PATH/$name'"
         done
     fi
@@ -118,6 +119,15 @@ if [ "$PLATFORM_ID" = "mlp1" ] &&
     REMOTE_SYSTEM_PATH="$REMOTE_SYSTEM_PATH" \
     REMOTE_PLATFORM_PATH="$REMOTE_PLATFORM_PATH" \
         "$ROOT_DIR/scripts/adb-sync-shader-namespaces.sh" --sync-only
+fi
+
+if [ "$PLATFORM_ID" = "mlp1" ] && [ -d "$ASSET_PAYLOAD/ozone" ]; then
+    ADB_SERIAL="$serial" \
+    PLATFORM_ID="$PLATFORM_ID" \
+    REMOTE_SDCARD_PATH="$REMOTE_SDCARD_PATH" \
+    REMOTE_SYSTEM_PATH="$REMOTE_SYSTEM_PATH" \
+    REMOTE_PLATFORM_PATH="$REMOTE_PLATFORM_PATH" \
+        "$ROOT_DIR/scripts/adb-sync-asset-namespaces.sh"
 fi
 
 case "$MARKER_MODE" in

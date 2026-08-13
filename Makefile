@@ -22,7 +22,7 @@ LARGE_LIBRARY_FIXTURE_ENV = \
 	REMOTE_SDCARD_PATH="$(REMOTE_SDCARD_PATH)"
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap doctor status status-internal pakrat-local-feed-test leaf-release-policy-test shader-bundle-release-policy-test flycast-release-policy-smoke core-rebuild-gate-test package-quiesce-smoke adb-enable-marker adb-disable-marker adb-tail-logs adb-large-library-create adb-large-library-clean adb-large-library-status adb-install-wrapper adb-uninstall-wrapper benchmark-ppsspp
+.PHONY: help bootstrap doctor status status-internal pakrat-local-feed-test leaf-release-policy-test shader-bundle-release-policy-test input-roster-policy-test flycast-release-policy-smoke core-rebuild-gate-test package-quiesce-smoke adb-enable-marker adb-disable-marker adb-tail-logs adb-large-library-create adb-large-library-clean adb-large-library-status adb-install-wrapper adb-uninstall-wrapper benchmark-ppsspp
 
 help:
 	@echo "Leaf workspace commands (DEVICE=$(DEVICE), WORKSPACE_DIR=$(WORKSPACE_DIR)):"
@@ -55,6 +55,7 @@ help:
 	@echo "  make pakrat-local-feed-test               test multi-app and exact-artifact local feeds"
 	@echo "  make leaf-release-policy-test             test release identity, artifacts, provenance, and gates"
 	@echo "  make shader-bundle-release-policy-test    test shader bundle integrity release gates"
+	@echo "  make input-roster-policy-test             test the MLP1 paired-controller input gates"
 	@echo "  make flycast-release-policy-smoke         test standalone Flycast release gates"
 	@echo "  make core-rebuild-gate-test               test explicit long core-rebuild authorization"
 	@echo "  make package-quiesce-smoke                test fail-closed stage-app service barrier"
@@ -112,6 +113,9 @@ leaf-release-policy-test:
 
 shader-bundle-release-policy-test:
 	python3 scripts/validate-shader-bundle-release-test.py
+
+input-roster-policy-test:
+	python3 scripts/validate-input-roster-policy-test.py
 
 core-rebuild-gate-test:
 	bash scripts/ensure-mlp1-cores-test.sh
