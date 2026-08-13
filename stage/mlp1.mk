@@ -110,6 +110,22 @@ assemble-jawaka: jawaka-build shader-bundle-mlp1
 	@cp -Rf "$(DEVICE_OVERLAY)/." "$(PLATFORM_PAYLOAD_DIR)/"
 	@test -f "$(PLATFORM_PAYLOAD_DIR)/defaults/systems.json" || { echo "missing platform defaults: $(PLATFORM_PAYLOAD_DIR)/defaults/systems.json" >&2; exit 1; }
 	@test -f "$(PLATFORM_PAYLOAD_DIR)/defaults/cores.json" || { echo "missing platform defaults: $(PLATFORM_PAYLOAD_DIR)/defaults/cores.json" >&2; exit 1; }
+	@# Compiled UI translations. The launcher reads $$UMRK_PLATFORM_PATH/i18n;
+	@# the compiler drops fuzzy entries (unreviewed strings never ship), and a
+	@# table that would ship zero entries is skipped entirely -- shipping it
+	@# would make the Settings language picker offer a language that translates
+	@# nothing. The hand-editable .tsv override in .umrk still outranks this at
+	@# runtime, so a translator can keep iterating on top of a release.
+	@mkdir -p "$(PLATFORM_PAYLOAD_DIR)/i18n"
+	@for po in "$(JAWAKA_DIR)"/i18n/*.po; do \
+		[ -f "$$po" ] || continue; \
+		code=$$(basename "$$po" .po); \
+		out="$(PLATFORM_PAYLOAD_DIR)/i18n/$$code.jwi"; \
+		python3 "$(JAWAKA_DIR)/tools/i18n-compile.py" "$$po" -o "$$out" || exit 1; \
+		if [ "$$(wc -c < "$$out")" -le 25 ]; then \
+			echo "skipping $$code: no reviewed entries to ship"; rm -f "$$out"; \
+		fi; \
+	done
 	@mkdir -p "$(PLATFORM_PAYLOAD_DIR)/platform.d"
 	@if [ -d "$(JAWAKA_DIR)/platform/mlp1/platform.d" ]; then \
 		cp -Rf "$(JAWAKA_DIR)/platform/mlp1/platform.d/." "$(PLATFORM_PAYLOAD_DIR)/platform.d/"; \
