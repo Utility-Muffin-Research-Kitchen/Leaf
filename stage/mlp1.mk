@@ -178,6 +178,12 @@ assemble-jawaka: jawaka-build shader-bundle-mlp1
 		--metadata-dir "$(MLP1_METADATA_DIR)" \
 		--build-report "$(PLATFORM_PAYLOAD_DIR)/cores/build-report.json" \
 		--package-root "$(PLATFORM_PAYLOAD_DIR)"
+	@# Jawaka owns which controllers an emulator may see. A wrapper that
+	@# overwrites the published roster, or code that opens an event node
+	@# directly, fails silently at runtime -- the player just gets the wrong
+	@# pad -- so it is gated here instead.
+	@python3 "$(LEAF_ROOT)/scripts/validate-input-roster-policy.py" \
+		"$(PLATFORM_PAYLOAD_DIR)"
 	@printf 'Jawaka MLP1 launcher bundle\n' > "$(PAYLOAD_DIR)/README.txt"
 	@echo "Assembled payload at $(PAYLOAD_ROOT)"
 	@find "$(PAYLOAD_ROOT)" -type f | sort
@@ -367,6 +373,7 @@ stage-emulator:
 		"$${ADB[@]}" shell "rm -rf \"$$remote_vulkan\" && mkdir -p \"$$remote_vulkan\""; \
 		"$${ADB[@]}" push "$$vulkan_runtime/." "$$remote_vulkan/" >/dev/null; \
 	fi; \
+	python3 "$(LEAF_ROOT)/scripts/validate-input-roster-policy.py" "$$package_dir"; \
 	remote_dir="$$remote_platform/emulators/$$remote_name"; \
 	echo "Deploying $(EMULATOR) emulator to $$remote_dir"; \
 	"$${ADB[@]}" shell "rm -rf \"$$remote_dir\" && mkdir -p \"$$remote_dir\""; \
