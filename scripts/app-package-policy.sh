@@ -25,7 +25,8 @@ leaf_pakrat_owned_package_names() {
         "VideoFromHell.pak" \
         "Nimbus.pak" \
         "PortMaster.pak" \
-        "Syncthing.pak"
+        "Syncthing.pak" \
+        "RAOfflineProxy.pak"
 }
 
 leaf_app_policy() {
@@ -47,6 +48,15 @@ leaf_app_policy() {
             package_platform="mlp1"
             package_dir="$workspace_dir/Leaf-Syncthing-Pak/build/mlp1/package/Syncthing.pak"
             package_name="Syncthing.pak"
+            destination_platform="mlp1"
+            supported_devices="mlp1"
+            distribution="pakrat"
+            ;;
+        Leaf-RAOfflineProxy-Pak)
+            package_target="package-platform"
+            package_platform="mlp1"
+            package_dir="$workspace_dir/Leaf-RAOfflineProxy-Pak/build/mlp1/package/RAOfflineProxy.pak"
+            package_name="RAOfflineProxy.pak"
             destination_platform="mlp1"
             supported_devices="mlp1"
             distribution="pakrat"

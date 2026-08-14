@@ -26,6 +26,7 @@ assert_policy() {
 
 assert_policy Leaf-Itchio-Pak Itch-io.pak pakrat
 assert_policy Leaf-Syncthing-Pak Syncthing.pak pakrat
+assert_policy Leaf-RAOfflineProxy-Pak RAOfflineProxy.pak pakrat
 assert_policy DiscoBoy DiscoBoy.pak pakrat
 assert_policy VideoFromHell VideoFromHell.pak pakrat
 assert_policy Nimbus Nimbus.pak pakrat
@@ -58,7 +59,7 @@ audit_stage_apps_definitions() {
             return 1
         fi
         if printf '%s\n' "$definitions" | \
-            "$grep_bin" -qiE 'Leaf-Itchio|Leaf-Syncthing|DiscoBoy|VideoFromHell|Nimbus|PortMaster'; then
+            "$grep_bin" -qiE 'Leaf-Itchio|Leaf-Syncthing|Leaf-RAOfflineProxy|DiscoBoy|VideoFromHell|Nimbus|PortMaster'; then
             echo "Pak Rat-owned optional app leaked into STAGE_APPS in $file" >&2
             return 1
         else
