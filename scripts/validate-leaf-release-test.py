@@ -253,6 +253,26 @@ class CandidateTests(unittest.TestCase):
         defaults.parent.mkdir(parents=True, exist_ok=True)
         defaults.write_text('input_player1_l3_btn = "7"\n', encoding="utf-8")
 
+        platform = root / "platforms" / "mlp1"
+        write_executable(platform / "bin" / "retroarch", b"\x7fELF RetroArch\n")
+        write_executable(platform / "bin" / "ffmpeg", b"\x7fELF FFmpeg\n")
+        write_executable(
+            platform / "bin" / "leaf-record-convert.sh",
+            b"#!/bin/sh\n",
+        )
+        (platform / "defaults" / "retroarch-record.cfg").write_text(
+            "vcodec = h264_rkmpp\n",
+            encoding="utf-8",
+        )
+        (platform / "bin" / "retroarch.build-manifest.json").write_text(
+            json.dumps({"configure_flags": ["--enable-ffmpeg"]}),
+            encoding="utf-8",
+        )
+        recording_libs = platform / "lib" / "ffmpeg"
+        recording_libs.mkdir(parents=True)
+        for name in MODULE.REQUIRED_RECORDING_LIBRARIES:
+            (recording_libs / name).write_bytes(b"\x7fELF library\n")
+
         provenance = {
             "schema": 1,
             "product": "leaf",
@@ -314,6 +334,30 @@ class CandidateTests(unittest.TestCase):
             )
             daemon.write_bytes(b"\x7fELF no feature\n")
             with self.assertRaisesRegex(MODULE.PolicyError, "relocate-games-v1"):
+                MODULE.validate_candidate(args)
+
+    def test_candidate_rejects_missing_recording_payload(self):
+        with tempfile.TemporaryDirectory() as raw:
+            args = self.make_candidate(Path(raw))
+            (args.release_root / "platforms" / "mlp1" / "bin" / "ffmpeg").unlink()
+            with self.assertRaisesRegex(MODULE.PolicyError, "MLP1 FFmpeg"):
+                MODULE.validate_candidate(args)
+
+    def test_candidate_rejects_retroarch_without_recording_support(self):
+        with tempfile.TemporaryDirectory() as raw:
+            args = self.make_candidate(Path(raw))
+            manifest = (
+                args.release_root
+                / "platforms"
+                / "mlp1"
+                / "bin"
+                / "retroarch.build-manifest.json"
+            )
+            manifest.write_text(
+                json.dumps({"configure_flags": ["--disable-ffmpeg"]}),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(MODULE.PolicyError, "recording support"):
                 MODULE.validate_candidate(args)
 
     def test_candidate_rejects_missing_source_paths_capability(self):

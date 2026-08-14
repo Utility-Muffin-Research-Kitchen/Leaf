@@ -63,6 +63,17 @@ REQUIRED_PRIMARY_PATHS = {
     # SDCARD_PATHS-aligned source list.
     "RECORDINGS_PATH": "/mnt/sdcard/Recordings",
 }
+REQUIRED_RECORDING_LIBRARIES = (
+    "libavcodec.so.60",
+    "libavdevice.so.60",
+    "libavfilter.so.9",
+    "libavformat.so.60",
+    "libavutil.so.58",
+    "libpostproc.so.57",
+    "librockchip_mpp.so.1",
+    "libswresample.so.4",
+    "libswscale.so.7",
+)
 
 
 class PolicyError(Exception):
@@ -291,6 +302,38 @@ def validate_mlp1_retroarch_input_profile(platform: Path) -> None:
             )
 
 
+def validate_mlp1_recording_payload(platform: Path) -> None:
+    binary_dir = platform / "bin"
+    require_file(binary_dir / "retroarch", "MLP1 RetroArch", executable=True)
+    require_file(binary_dir / "ffmpeg", "MLP1 FFmpeg", executable=True)
+    require_file(
+        binary_dir / "leaf-record-convert.sh",
+        "MLP1 recording conversion helper",
+        executable=True,
+    )
+    require_file(
+        platform / "defaults" / "retroarch-record.cfg",
+        "MLP1 recording preset",
+    )
+    for name in REQUIRED_RECORDING_LIBRARIES:
+        require_file(
+            platform / "lib" / "ffmpeg" / name,
+            f"MLP1 recording library {name}",
+        )
+
+    manifest = read_json(
+        binary_dir / "retroarch.build-manifest.json",
+        "MLP1 RetroArch build manifest",
+    )
+    flags = manifest.get("configure_flags") if isinstance(manifest, dict) else None
+    if (
+        not isinstance(flags, list)
+        or "--enable-ffmpeg" not in flags
+        or "--disable-ffmpeg" in flags
+    ):
+        raise PolicyError("MLP1 RetroArch was not built with FFmpeg recording support")
+
+
 def read_staged_environment(env_path: Path) -> dict[str, str]:
     result = subprocess.run(
         [
@@ -332,6 +375,7 @@ def validate_candidate(args: argparse.Namespace) -> None:
     require_file(inhibit, "launcher inhibit helper", executable=True)
     require_file(env_path, "runtime environment")
     validate_mlp1_retroarch_input_profile(platform)
+    validate_mlp1_recording_payload(platform)
     if b"relocate-games-v1" not in daemon.read_bytes():
         raise PolicyError("launcher daemon does not advertise relocate-games-v1")
     if b"source-paths-v2" not in daemon.read_bytes():
