@@ -60,10 +60,18 @@ for repo in "${pakrat_repos[@]}"; do
     pakrat_repo_packages+=("$package_name")
 done
 
-# Every Pak Rat-owned package must trace back to a repo in the list, or the
-# ownership audit would cover a package no bootstrap/STAGE_APPS check does.
+# The two lists must agree in BOTH directions. Each covers audits the other
+# does not -- repo names drive STAGE_APPS and bootstrap, package names drive
+# the release-ZIP and managed-app ownership audit -- so a name in one and not
+# the other leaves an app audited by half the checks and silently exempt from
+# the rest. Checking one direction only was itself the bug here: a repo added
+# without its package name passed.
+pakrat_package_names=()
 while IFS= read -r package; do
-    [ -n "$package" ] || continue
+    [ -n "$package" ] && pakrat_package_names+=("$package")
+done < <(leaf_pakrat_owned_package_names)
+
+for package in "${pakrat_package_names[@]}"; do
     case " ${pakrat_repo_packages[*]} " in
         *" $package "*) ;;
         *)
@@ -71,12 +79,33 @@ while IFS= read -r package; do
             exit 1
             ;;
     esac
-done < <(leaf_pakrat_owned_package_names)
+done
 
-# STAGE_APPS entries are repo names -- they are fed to leaf_app_policy -- so
-# matching the exact repo name is what catches a real leak. A near-miss like a
-# bare "PortMaster" is not a repo the build could stage anyway.
-PAKRAT_REPO_RE="$(IFS='|'; printf '%s' "${pakrat_repos[*]}")"
+for package in "${pakrat_repo_packages[@]}"; do
+    case " ${pakrat_package_names[*]} " in
+        *" $package "*) ;;
+        *)
+            echo "$package is owned by a repo in leaf_pakrat_owned_repos but is" \
+                 "missing from leaf_pakrat_owned_package_names" >&2
+            exit 1
+            ;;
+    esac
+done
+
+# STAGE_APPS entries are repo names, fed to leaf_app_policy. This is a
+# SUBSTRING match, deliberately: a leak is worth catching however it is
+# written -- quoted, path-qualified, or appended to another variable -- and a
+# false positive here is a loud failure a contributor can read, while a miss
+# ships an optional app inside the release image.
+#
+# Metacharacters are escaped so the breadth stays deliberate rather than
+# accidental: today's names are alphanumeric and hyphenated, but a future repo
+# with a "." would otherwise match any character in that position.
+pakrat_repo_patterns=()
+for repo in "${pakrat_repos[@]}"; do
+    pakrat_repo_patterns+=("$(printf '%s' "$repo" | sed 's/[][^$.*+?(){}|\\]/\\&/g')")
+done
+PAKRAT_REPO_RE="$(IFS='|'; printf '%s' "${pakrat_repo_patterns[*]}")"
 
 audit_stage_apps_definitions() {
     local grep_bin="$1"

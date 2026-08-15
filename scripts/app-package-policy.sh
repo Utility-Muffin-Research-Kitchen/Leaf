@@ -20,9 +20,15 @@ leaf_known_platform() {
 
 # Repo names of the optional apps Pak Rat owns. These must never appear in a
 # bootstrap repo list or in STAGE_APPS: the release image must not carry them,
-# and bootstrap must not require them. Audits derive their patterns from this
-# list rather than hardcoding names, so adding an optional app here extends
-# every check at once instead of leaving one silently narrower than the rest.
+# and bootstrap must not require them.
+#
+# An optional app needs an entry in BOTH this list and
+# leaf_pakrat_owned_package_names below -- they feed different audits. This one
+# drives the STAGE_APPS and bootstrap checks, which match repo names; that one
+# drives the release-ZIP and managed-app ownership audit, which matches package
+# names. Neither is derivable from the other by string manipulation
+# (PortMaster-mlp1 ships PortMaster.pak), so the policy smoke asserts the two
+# lists agree in both directions rather than trusting this comment.
 leaf_pakrat_owned_repos() {
     printf '%s\n' \
         "Leaf-Itchio-Pak" \
