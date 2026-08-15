@@ -26,11 +26,86 @@ assert_policy() {
 
 assert_policy Leaf-Itchio-Pak Itch-io.pak pakrat
 assert_policy Leaf-Syncthing-Pak Syncthing.pak pakrat
+assert_policy Leaf-RAOfflineProxy-Pak RAOfflineProxy.pak pakrat
 assert_policy DiscoBoy DiscoBoy.pak pakrat
 assert_policy VideoFromHell VideoFromHell.pak pakrat
 assert_policy Nimbus Nimbus.pak pakrat
 assert_policy PortMaster-mlp1 PortMaster.pak pakrat
 assert_policy ssh-server SSHServer.pak release
+
+# The audits below derive their patterns from leaf_pakrat_owned_repos, so this
+# is the one place drift can hide: a repo missing from that list would quietly
+# narrow the STAGE_APPS and bootstrap checks rather than fail anything. Tie it
+# to the policy table, which is what the rest of the build actually consults.
+pakrat_repos=()
+while IFS= read -r repo; do
+    [ -n "$repo" ] && pakrat_repos+=("$repo")
+done < <(leaf_pakrat_owned_repos)
+
+[ "${#pakrat_repos[@]}" -gt 0 ] || {
+    echo "leaf_pakrat_owned_repos is empty" >&2
+    exit 1
+}
+
+pakrat_repo_packages=()
+for repo in "${pakrat_repos[@]}"; do
+    leaf_app_policy "$repo" "$WORKSPACE_ROOT" mlp1 || {
+        echo "leaf_pakrat_owned_repos lists an unknown repo: $repo" >&2
+        exit 1
+    }
+    [ "$distribution" = "pakrat" ] || {
+        echo "leaf_pakrat_owned_repos lists a non-Pak Rat repo: $repo" >&2
+        exit 1
+    }
+    pakrat_repo_packages+=("$package_name")
+done
+
+# The two lists must agree in BOTH directions. Each covers audits the other
+# does not -- repo names drive STAGE_APPS and bootstrap, package names drive
+# the release-ZIP and managed-app ownership audit -- so a name in one and not
+# the other leaves an app audited by half the checks and silently exempt from
+# the rest. Checking one direction only was itself the bug here: a repo added
+# without its package name passed.
+pakrat_package_names=()
+while IFS= read -r package; do
+    [ -n "$package" ] && pakrat_package_names+=("$package")
+done < <(leaf_pakrat_owned_package_names)
+
+for package in "${pakrat_package_names[@]}"; do
+    case " ${pakrat_repo_packages[*]} " in
+        *" $package "*) ;;
+        *)
+            echo "Pak Rat package $package has no repo in leaf_pakrat_owned_repos" >&2
+            exit 1
+            ;;
+    esac
+done
+
+for package in "${pakrat_repo_packages[@]}"; do
+    case " ${pakrat_package_names[*]} " in
+        *" $package "*) ;;
+        *)
+            echo "$package is owned by a repo in leaf_pakrat_owned_repos but is" \
+                 "missing from leaf_pakrat_owned_package_names" >&2
+            exit 1
+            ;;
+    esac
+done
+
+# STAGE_APPS entries are repo names, fed to leaf_app_policy. This is a
+# SUBSTRING match, deliberately: a leak is worth catching however it is
+# written -- quoted, path-qualified, or appended to another variable -- and a
+# false positive here is a loud failure a contributor can read, while a miss
+# ships an optional app inside the release image.
+#
+# Metacharacters are escaped so the breadth stays deliberate rather than
+# accidental: today's names are alphanumeric and hyphenated, but a future repo
+# with a "." would otherwise match any character in that position.
+pakrat_repo_patterns=()
+for repo in "${pakrat_repos[@]}"; do
+    pakrat_repo_patterns+=("$(printf '%s' "$repo" | sed 's/[][^$.*+?(){}|\\]/\\&/g')")
+done
+PAKRAT_REPO_RE="$(IFS='|'; printf '%s' "${pakrat_repo_patterns[*]}")"
 
 audit_stage_apps_definitions() {
     local grep_bin="$1"
@@ -58,7 +133,7 @@ audit_stage_apps_definitions() {
             return 1
         fi
         if printf '%s\n' "$definitions" | \
-            "$grep_bin" -qiE 'Leaf-Itchio|Leaf-Syncthing|DiscoBoy|VideoFromHell|Nimbus|PortMaster'; then
+            "$grep_bin" -qiE "$PAKRAT_REPO_RE"; then
             echo "Pak Rat-owned optional app leaked into STAGE_APPS in $file" >&2
             return 1
         else
@@ -126,10 +201,59 @@ fi
 audit_stage_apps_definitions grep \
     "$LEAF_ROOT/stage/mlp1.mk" "$SCRIPT_DIR/make-sd-release-zip.sh"
 
-if grep -q 'Leaf-Syncthing-Pak' "$LEAF_ROOT/stage/common.mk"; then
-    echo "Leaf-Syncthing-Pak leaked into required bootstrap repos" >&2
+# Pak Rat owns these apps end to end, so bootstrap must neither require them
+# nor probe for them: a contributor without the repo must still be able to
+# build and stage a release. Checked against every optional repo rather than
+# just Syncthing, so adding one to REQUIRED_REPOS or OPTIONAL_PRIVATE_REPOS
+# fails here instead of shipping.
+audit_bootstrap_repos() {
+    local file="$1" repo
+
+    [ -f "$file" ] && [ -r "$file" ] || {
+        echo "bootstrap repo audit input is missing or unreadable: $file" >&2
+        return 1
+    }
+    for repo in "${pakrat_repos[@]}"; do
+        if grep -q -- "$repo" "$file"; then
+            echo "$repo leaked into bootstrap repos in $file" >&2
+            return 1
+        fi
+    done
+}
+
+bootstrap_fixture="$fixture/bootstrap"
+mkdir -p "$bootstrap_fixture"
+printf 'REQUIRED_REPOS := Catastrophe Jawaka ssh-server\nOPTIONAL_PRIVATE_REPOS := umrk-workspace\n' \
+    >"$bootstrap_fixture/clean.mk"
+
+audit_bootstrap_repos "$bootstrap_fixture/clean.mk" || {
+    echo "bootstrap fixture rejected a clean repo list" >&2
+    exit 1
+}
+if audit_bootstrap_repos "$bootstrap_fixture/missing.mk" >/dev/null 2>&1; then
+    echo "bootstrap fixture accepted a missing input file" >&2
     exit 1
 fi
+
+# One case per optional repo, in both lists: the invariant has to hold for each
+# of them, not merely for whichever one happened to be written into the check.
+for repo in "${pakrat_repos[@]}"; do
+    printf 'REQUIRED_REPOS := Catastrophe Jawaka %s\nOPTIONAL_PRIVATE_REPOS := umrk-workspace\n' \
+        "$repo" >"$bootstrap_fixture/required.mk"
+    if audit_bootstrap_repos "$bootstrap_fixture/required.mk" >/dev/null 2>&1; then
+        echo "bootstrap fixture accepted required $repo" >&2
+        exit 1
+    fi
+
+    printf 'REQUIRED_REPOS := Catastrophe Jawaka\nOPTIONAL_PRIVATE_REPOS := umrk-workspace %s\n' \
+        "$repo" >"$bootstrap_fixture/optional.mk"
+    if audit_bootstrap_repos "$bootstrap_fixture/optional.mk" >/dev/null 2>&1; then
+        echo "bootstrap fixture accepted optional $repo" >&2
+        exit 1
+    fi
+done
+
+audit_bootstrap_repos "$LEAF_ROOT/stage/common.mk"
 
 mkdir -p "$fixture/platforms/mlp1" "$fixture/Apps/mlp1"
 printf '{"managed_apps": []}\n' >"$fixture/platforms/mlp1/manifest.json"

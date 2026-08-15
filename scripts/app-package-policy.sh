@@ -18,6 +18,28 @@ leaf_known_platform() {
     esac
 }
 
+# Repo names of the optional apps Pak Rat owns. These must never appear in a
+# bootstrap repo list or in STAGE_APPS: the release image must not carry them,
+# and bootstrap must not require them.
+#
+# An optional app needs an entry in BOTH this list and
+# leaf_pakrat_owned_package_names below -- they feed different audits. This one
+# drives the STAGE_APPS and bootstrap checks, which match repo names; that one
+# drives the release-ZIP and managed-app ownership audit, which matches package
+# names. Neither is derivable from the other by string manipulation
+# (PortMaster-mlp1 ships PortMaster.pak), so the policy smoke asserts the two
+# lists agree in both directions rather than trusting this comment.
+leaf_pakrat_owned_repos() {
+    printf '%s\n' \
+        "Leaf-Itchio-Pak" \
+        "DiscoBoy" \
+        "VideoFromHell" \
+        "Nimbus" \
+        "PortMaster-mlp1" \
+        "Leaf-Syncthing-Pak" \
+        "Leaf-RAOfflineProxy-Pak"
+}
+
 leaf_pakrat_owned_package_names() {
     printf '%s\n' \
         "Itch-io.pak" \
@@ -25,7 +47,8 @@ leaf_pakrat_owned_package_names() {
         "VideoFromHell.pak" \
         "Nimbus.pak" \
         "PortMaster.pak" \
-        "Syncthing.pak"
+        "Syncthing.pak" \
+        "RAOfflineProxy.pak"
 }
 
 leaf_app_policy() {
@@ -47,6 +70,15 @@ leaf_app_policy() {
             package_platform="mlp1"
             package_dir="$workspace_dir/Leaf-Syncthing-Pak/build/mlp1/package/Syncthing.pak"
             package_name="Syncthing.pak"
+            destination_platform="mlp1"
+            supported_devices="mlp1"
+            distribution="pakrat"
+            ;;
+        Leaf-RAOfflineProxy-Pak)
+            package_target="package-platform"
+            package_platform="mlp1"
+            package_dir="$workspace_dir/Leaf-RAOfflineProxy-Pak/build/mlp1/package/RAOfflineProxy.pak"
+            package_name="RAOfflineProxy.pak"
             destination_platform="mlp1"
             supported_devices="mlp1"
             distribution="pakrat"
