@@ -18,6 +18,22 @@ leaf_known_platform() {
     esac
 }
 
+# Repo names of the optional apps Pak Rat owns. These must never appear in a
+# bootstrap repo list or in STAGE_APPS: the release image must not carry them,
+# and bootstrap must not require them. Audits derive their patterns from this
+# list rather than hardcoding names, so adding an optional app here extends
+# every check at once instead of leaving one silently narrower than the rest.
+leaf_pakrat_owned_repos() {
+    printf '%s\n' \
+        "Leaf-Itchio-Pak" \
+        "DiscoBoy" \
+        "VideoFromHell" \
+        "Nimbus" \
+        "PortMaster-mlp1" \
+        "Leaf-Syncthing-Pak" \
+        "Leaf-RAOfflineProxy-Pak"
+}
+
 leaf_pakrat_owned_package_names() {
     printf '%s\n' \
         "Itch-io.pak" \
