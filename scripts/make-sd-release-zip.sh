@@ -464,11 +464,21 @@ EOF
 validate_retroarch_contract() {
     local platform_dir="$1"
     local report="$platform_dir/cores/build-report.json"
+    local builder="$CORES_SPRUCE_DIR/build-mlp1.sh"
     [ -f "$report" ] || die "missing MLP1 core build report: $report"
+    [ -f "$builder" ] || die "missing Cores-spruce builder: $builder"
+    # A release is gated harder than a dev stage. --require-full-build-report
+    # was previously only applied when staging, so a release could be cut from
+    # a partial report; --require-fresh-build-report additionally rejects a
+    # report produced by a different build-mlp1.sh, which is how a stale core
+    # artifact reaches a release while every other check still passes.
     python3 "$UMRK_WORKSPACE_DIR/scripts/retroarch_validate_package.py" \
         --metadata-dir "$UMRK_WORKSPACE_DIR/plans/retroarch/generated/mlp1" \
         --build-report "$report" \
         --package-root "$platform_dir" \
+        --builder-script "$builder" \
+        --require-full-build-report \
+        --require-fresh-build-report \
         || die "RetroArch runtime metadata contract validation failed"
 }
 

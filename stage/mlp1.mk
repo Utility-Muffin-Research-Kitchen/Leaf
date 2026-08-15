@@ -193,7 +193,8 @@ assemble-jawaka: jawaka-build shader-bundle-mlp1
 	@python3 "$(UMRK_WORKSPACE_DIR)/scripts/retroarch_validate_package.py" \
 		--metadata-dir "$(MLP1_METADATA_DIR)" \
 		--build-report "$(PLATFORM_PAYLOAD_DIR)/cores/build-report.json" \
-		--package-root "$(PLATFORM_PAYLOAD_DIR)"
+		--package-root "$(PLATFORM_PAYLOAD_DIR)" \
+		--builder-script "$(CORES_SPRUCE_DIR)/build-mlp1.sh"
 	@# Jawaka owns which controllers an emulator may see. A wrapper that
 	@# overwrites the published roster, or code that opens an event node
 	@# directly, fails silently at runtime -- the player just gets the wrong
@@ -249,7 +250,8 @@ stage-retroarch:
 	@python3 "$(UMRK_WORKSPACE_DIR)/scripts/retroarch_validate_package.py" \
 		--metadata-dir "$(MLP1_METADATA_DIR)" \
 		--build-report "$(MLP1_CORES_REPORT)" \
-		--require-full-build-report
+		--require-full-build-report \
+		--builder-script "$(CORES_SPRUCE_DIR)/build-mlp1.sh"
 	@set -euo pipefail; \
 	if [ -n "$${ADB_SERIAL:-}" ]; then \
 		serial="$$ADB_SERIAL"; \
