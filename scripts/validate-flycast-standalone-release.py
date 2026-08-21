@@ -14,6 +14,7 @@ from pathlib import Path, PurePosixPath
 CORE_ID = "flycast_standalone"
 CORE_PATH = "emulators/flycast/launch.sh"
 PACKAGE_REL = Path("emulators/flycast")
+FLYCAST_SYSTEM_IDS = ("DC", "ATOMISWAVE", "NAOMI")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 REQUIRED_LICENSES = {
@@ -103,17 +104,20 @@ def validate(platform_dir: Path) -> None:
     systems = rows(load_json(systems_path), "systems", systems_path)
     cores = rows(load_json(cores_path), "cores", cores_path)
 
-    dc_rows = [row for row in systems if row.get("id") == "DC"]
-    if len(dc_rows) != 1:
-        fail("systems.json must contain exactly one DC system")
-    dc = dc_rows[0]
-    alternates = dc.get("alternate_cores")
-    if not isinstance(alternates, list):
-        fail("DC alternate_cores must be an array")
-    if dc.get("default_core") != CORE_ID:
-        fail("DC must default to flycast_standalone")
-    if "flycast" not in alternates:
-        fail("DC must retain the RetroArch Flycast core as a fallback")
+    for system_id in FLYCAST_SYSTEM_IDS:
+        system_rows = [row for row in systems if row.get("id") == system_id]
+        if len(system_rows) != 1:
+            fail(f"systems.json must contain exactly one {system_id} system")
+        system = system_rows[0]
+        alternates = system.get("alternate_cores")
+        if not isinstance(alternates, list):
+            fail(f"{system_id} alternate_cores must be an array")
+        if system.get("default_core") != CORE_ID:
+            fail(f"{system_id} must default to flycast_standalone")
+        if "flycast" not in alternates:
+            fail(
+                f"{system_id} must retain the RetroArch Flycast core as a fallback"
+            )
 
     core_rows = [row for row in cores if row.get("id") == CORE_ID]
     if len(core_rows) != 1:

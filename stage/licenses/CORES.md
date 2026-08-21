@@ -42,6 +42,7 @@ from the named upstream release asset.
 | mgba | MPL-2.0 | https://github.com/libretro/mgba |
 | mupen64plus_standalone (standalone) | GPL-2.0 / MIT / bundled third-party notices | https://github.com/josegonzalez/minui-n64-pak |
 | mupen64plus_next | GPL-2.0 | https://github.com/libretro/mupen64plus-libretro-nx |
+| np2kai | MIT | https://github.com/libretro/NP2kai |
 | pcsx_rearmed | GPL-2.0 | https://github.com/libretro/pcsx_rearmed |
 | picodrive | PicoDrive (non-commercial) | https://github.com/libretro/picodrive |
 | ppsspp (standalone) | GPL-2.0+ | https://github.com/hrydgard/ppsspp |
