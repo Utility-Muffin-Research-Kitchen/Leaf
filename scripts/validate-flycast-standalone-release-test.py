@@ -93,10 +93,11 @@ def fixture(root: Path) -> Path:
     systems = {
         "systems": [
             {
-                "id": "DC",
+                "id": system_id,
                 "default_core": "flycast_standalone",
-                "alternate_cores": ["flycast"],
+                "alternate_cores": ["flycast", "km_flycast_xtreme"],
             }
+            for system_id in ("DC", "ATOMISWAVE", "NAOMI")
         ]
     }
     (platform / "defaults/cores.json").write_text(
@@ -195,6 +196,14 @@ def main() -> None:
         path.write_text(json.dumps(data), encoding="utf-8")
 
     run_case("retroarch-default", restore_retroarch_default, False)
+
+    def remove_naomi_fallback(platform: Path) -> None:
+        path = platform / "defaults/systems.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data["systems"][2]["alternate_cores"] = ["km_flycast_xtreme"]
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+    run_case("naomi-missing-retroarch-fallback", remove_naomi_fallback, False)
     print("Flycast standalone release policy checks passed")
 
 
