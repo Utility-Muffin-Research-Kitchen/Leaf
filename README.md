@@ -98,8 +98,15 @@ make release-recovery-zip DEVICE=mlp1       # build end-user recovery ZIP only
 
 `stage-core-test` is the fast device-iteration path after a targeted
 `Cores-spruce/build-mlp1.sh <core>` build. It stages only the named core and
-matching info file from a checksum-bound report. Full staging and release ZIPs
-still require the complete stock-parity report.
+matching info file from the separate checksum-bound
+`targeted-build-report.json`. Full staging and release ZIPs still require the
+complete canonical stock-parity report.
+
+Release preparation runs the Cores-spruce read-only cache preflight before it
+accepts that full report. Any missing or stale core aborts before compilation.
+`REBUILD_CORES=1` explicitly permits an incremental stock-parity run;
+`FORCE_REBUILD_CORES=1` additionally bypasses valid hits for an intentional
+full rebuild.
 
 On MLP1, `stage-app` uses Jawaka's `package-quiesce-v1` barrier before it
 removes or pushes any package bytes. Close foreground apps first. A missing

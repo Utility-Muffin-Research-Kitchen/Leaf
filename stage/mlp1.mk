@@ -19,6 +19,7 @@ MLP1_ASSETS_DIR     ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/assets
 MLP1_ASSET_TOOL     ?= $(RETROARCH_BUILDS_DIR)/scripts/mlp1_asset_bundle.py
 MLP1_CORES_DIR     ?= $(CORES_SPRUCE_DIR)/output/mlp1/cores
 MLP1_CORES_REPORT  ?= $(CORES_SPRUCE_DIR)/output/mlp1/build-report.json
+MLP1_CORE_TEST_REPORT ?= $(CORES_SPRUCE_DIR)/output/mlp1/targeted-build-report.json
 MLP1_INFO_DIR      ?= $(CORES_SPRUCE_DIR)/output/mlp1/info
 MLP1_METADATA_DIR  ?= $(UMRK_WORKSPACE_DIR)/plans/retroarch/generated/mlp1
 MLP1_CORE_REPORT_TOOL ?= $(CORES_SPRUCE_DIR)/scripts/mlp1-core-report.py
@@ -224,6 +225,7 @@ stage-retroarch:
 			--expected-patch-set "$(MLP1_RETROARCH_PATCH_SET)"; \
 	fi
 	@REBUILD_CORES="$(REBUILD_CORES)" \
+		FORCE_REBUILD_CORES="$(FORCE_REBUILD_CORES)" \
 		CORES_SPRUCE_DIR="$(CORES_SPRUCE_DIR)" \
 		MLP1_CORES_DIR="$(MLP1_CORES_DIR)" \
 		MLP1_CORES_REPORT="$(MLP1_CORES_REPORT)" \
@@ -308,18 +310,18 @@ stage-core-test:
 	core="$(CORE)"; \
 	case "$$core" in ''|*[!a-z0-9_]*) echo "usage: make stage-core-test CORE=<core-id> DEVICE=mlp1" >&2; exit 2;; esac; \
 	if ! python3 "$(MLP1_CORE_REPORT_TOOL)" verify \
-			--report "$(MLP1_CORES_REPORT)" \
+			--report "$(MLP1_CORE_TEST_REPORT)" \
 			--cores-dir "$(MLP1_CORES_DIR)" >/dev/null 2>&1; then \
 		echo "Probing targeted MLP1 build report on the selected device"; \
 		ADB_SERIAL="$${ADB_SERIAL:-}" "$(MLP1_CORE_PROBE_RUNNER)" \
-			--report "$(MLP1_CORES_REPORT)" \
+			--report "$(MLP1_CORE_TEST_REPORT)" \
 			--cores-dir "$(MLP1_CORES_DIR)"; \
 	fi; \
 	python3 "$(MLP1_CORE_REPORT_TOOL)" verify \
-		--report "$(MLP1_CORES_REPORT)" \
+		--report "$(MLP1_CORE_TEST_REPORT)" \
 		--cores-dir "$(MLP1_CORES_DIR)"; \
 	row="$$(python3 "$(MLP1_CORE_REPORT_TOOL)" manifest \
-		--report "$(MLP1_CORES_REPORT)" \
+		--report "$(MLP1_CORE_TEST_REPORT)" \
 		--cores-dir "$(MLP1_CORES_DIR)" | awk -F '\t' -v wanted="$$core" '$$1 == wanted { print; exit }')"; \
 	[ -n "$$row" ] || { echo "error: targeted report does not contain core: $$core" >&2; exit 2; }; \
 	IFS=$$'\t' read -r _ core_file expected_sha256 <<<"$$row"; \
