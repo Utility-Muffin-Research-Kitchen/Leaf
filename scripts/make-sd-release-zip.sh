@@ -59,8 +59,8 @@ Environment:
   RELEASE_ID=<filesystem-safe id>
   LEAF_WORKSPACE_DIR=<workspace root>
   TOOLCHAIN_IMAGE=<MLP1 cross-compile Docker image>
-  REBUILD_CORES=1  explicitly allow a full stock-parity core rebuild when the
-                   existing checksum-bound core report is missing or invalid
+  REBUILD_CORES=1  explicitly allow missing/stale stock-parity cores to compile
+  FORCE_REBUILD_CORES=1  with REBUILD_CORES=1, bypass every valid core cache hit
   STAGE_APPS="ssh-server Thing-File CentralScrutinizer Fugazi joes-calibrage retroarch-builds"
   STAGE_EMULATORS="ppsspp drastic mupen64plus flycast"
 EOF
@@ -618,6 +618,7 @@ build_missing_platform_bits() {
         die "MLP1 menu asset bundle validation failed"
 
     REBUILD_CORES="${REBUILD_CORES:-0}" \
+    FORCE_REBUILD_CORES="${FORCE_REBUILD_CORES:-0}" \
     CORES_SPRUCE_DIR="$CORES_SPRUCE_DIR" \
     MLP1_CORES_DIR="$MLP1_CORES_DIR" \
     MLP1_CORES_REPORT="$MLP1_CORES_REPORT" \
