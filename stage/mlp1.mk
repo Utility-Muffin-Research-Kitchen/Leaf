@@ -58,7 +58,7 @@ override LEAF_BETA_TAG_INPUT := $(value TAG)
 unexport TAG
 export LEAF_BETA_TAG_INPUT
 
-.PHONY: stage stage-app stage-emulator stage-emulators stage-public-root stage-retroarch stage-refresh refresh-jawaka jawaka-build shader-bundle-mlp1 assemble-jawaka stage-jawaka release-zips release-sd-zip release-recovery-zip beta-zips verify-beta-zips stable-zips verify-stable-zips
+.PHONY: stage stage-app stage-core-test stage-emulator stage-emulators stage-public-root stage-retroarch stage-refresh refresh-jawaka jawaka-build shader-bundle-mlp1 assemble-jawaka stage-jawaka release-zips release-sd-zip release-recovery-zip beta-zips verify-beta-zips stable-zips verify-stable-zips
 
 # Build the Jawaka MLP1 binaries (cross-compile via its own Docker target).
 jawaka-build:
@@ -299,6 +299,53 @@ stage-retroarch:
 	"$${ADB[@]}" shell "chmod 755 '$$remote_platform/bin/retroarch' '$$remote_platform/cores/'*_libretro.so 2>/dev/null || true"; \
 	"$${ADB[@]}" shell sync; \
 	echo "RetroArch platform payload staged."
+
+# Testing-only fast path for a targeted core build. It never replaces the
+# device's full build report or any sibling core; release staging remains gated
+# by stage-retroarch's complete stock-parity report.
+stage-core-test:
+	@set -euo pipefail; \
+	core="$(CORE)"; \
+	case "$$core" in ''|*[!a-z0-9_]*) echo "usage: make stage-core-test CORE=<core-id> DEVICE=mlp1" >&2; exit 2;; esac; \
+	if ! python3 "$(MLP1_CORE_REPORT_TOOL)" verify \
+			--report "$(MLP1_CORES_REPORT)" \
+			--cores-dir "$(MLP1_CORES_DIR)" >/dev/null 2>&1; then \
+		echo "Probing targeted MLP1 build report on the selected device"; \
+		ADB_SERIAL="$${ADB_SERIAL:-}" "$(MLP1_CORE_PROBE_RUNNER)" \
+			--report "$(MLP1_CORES_REPORT)" \
+			--cores-dir "$(MLP1_CORES_DIR)"; \
+	fi; \
+	python3 "$(MLP1_CORE_REPORT_TOOL)" verify \
+		--report "$(MLP1_CORES_REPORT)" \
+		--cores-dir "$(MLP1_CORES_DIR)"; \
+	row="$$(python3 "$(MLP1_CORE_REPORT_TOOL)" manifest \
+		--report "$(MLP1_CORES_REPORT)" \
+		--cores-dir "$(MLP1_CORES_DIR)" | awk -F '\t' -v wanted="$$core" '$$1 == wanted { print; exit }')"; \
+	[ -n "$$row" ] || { echo "error: targeted report does not contain core: $$core" >&2; exit 2; }; \
+	IFS=$$'\t' read -r _ core_file expected_sha256 <<<"$$row"; \
+	info_file="$${core_file%.so}.info"; \
+	core_path="$(MLP1_CORES_DIR)/$$core_file"; \
+	info_path="$(MLP1_INFO_DIR)/$$info_file"; \
+	[ -f "$$info_path" ] || { echo "error: missing matching info file: $$info_path" >&2; exit 2; }; \
+	if [ -n "$${ADB_SERIAL:-}" ]; then serial="$$ADB_SERIAL"; else serial="$$(adb devices | awk 'NR>1 && $$2=="device" {print $$1; exit}')"; fi; \
+	[ -n "$$serial" ] || { echo "No online adb device found." >&2; exit 1; }; \
+	ADB=(adb -s "$$serial"); \
+	if "$${ADB[@]}" shell 'pidof retroarch >/dev/null'; then \
+		echo "error: exit the running RetroArch game before replacing $$core_file" >&2; \
+		exit 2; \
+	fi; \
+	remote_sd="$$(PLATFORM_ID="mlp1" REMOTE_SDCARD_PATH="$(REMOTE_SDCARD_PATH)" ADB_SERIAL="$$serial" "$(LEAF_ROOT)/scripts/adb-resolve-umrk-sd.sh")"; \
+	remote_system="$(REMOTE_SYSTEM_PATH)"; \
+	if [ -z "$$remote_system" ]; then remote_system="$$remote_sd/.system/leaf"; fi; \
+	remote_platform="$(REMOTE_PLATFORM_PATH)"; \
+	if [ -z "$$remote_platform" ]; then remote_platform="$$remote_system/platforms/mlp1"; fi; \
+	"$${ADB[@]}" shell "mkdir -p '$$remote_platform/cores' '$$remote_platform/info'"; \
+	"$${ADB[@]}" push "$$core_path" "$$remote_platform/cores/$$core_file" >/dev/null; \
+	"$${ADB[@]}" push "$$info_path" "$$remote_platform/info/$$info_file" >/dev/null; \
+	"$${ADB[@]}" shell "chmod 755 '$$remote_platform/cores/$$core_file' && sync"; \
+	actual_sha256="$$("$${ADB[@]}" shell "sha256sum '$$remote_platform/cores/$$core_file'" | awk '{print $$1}')"; \
+	[ "$$actual_sha256" = "$$expected_sha256" ] || { echo "error: device checksum mismatch for $$core_file" >&2; exit 1; }; \
+	echo "Testing core staged: $$core ($$expected_sha256)"
 
 # Create the public SD folders Leaf exposes to users. Internal runtime files live
 # under .system/leaf; these directories stay at the card root for content.

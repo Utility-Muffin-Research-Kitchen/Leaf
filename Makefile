@@ -35,6 +35,7 @@ help:
 	@echo "  make refresh-jawaka DEVICE=mlp1           refresh helper (reboot advised with init hook)"
 	@echo "  make stage-jawaka DEVICE=mlp1             launcher payload only"
 	@echo "  make stage-retroarch DEVICE=mlp1          RetroArch binary + cores + info + shaders"
+	@echo "  make stage-core-test CORE=np2kai DEVICE=mlp1  testing only: stage one checksum-verified core"
 	@echo "  make stage-emulator EMULATOR=ppsspp DEVICE=mlp1 stage a standalone emulator"
 	@echo "  make stage-emulator EMULATOR=drastic DEVICE=mlp1 stage DraStic"
 	@echo "  make stage-emulator EMULATOR=mupen64plus DEVICE=mlp1 stage standalone N64"
