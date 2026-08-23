@@ -76,6 +76,7 @@ make stage-refresh DEVICE=mlp1              # full stage, then restart Jawaka GU
 make refresh-jawaka DEVICE=mlp1             # restart Jawaka/Loong GUI stack only
 make stage-jawaka DEVICE=mlp1               # launcher payload only
 make stage-retroarch DEVICE=mlp1            # RetroArch binary + cores + info + shaders
+make stage-core-test CORE=np2kai DEVICE=mlp1 # testing only: one targeted, verified core
 make stage-emulator EMULATOR=drastic DEVICE=mlp1
 make stage-emulator EMULATOR=mupen64plus DEVICE=mlp1
 make stage-emulator EMULATOR=flycast DEVICE=mlp1
@@ -94,6 +95,11 @@ make release-zips DEVICE=mlp1               # build end-user install + recovery 
 make release-sd-zip DEVICE=mlp1             # build end-user install ZIP only
 make release-recovery-zip DEVICE=mlp1       # build end-user recovery ZIP only
 ```
+
+`stage-core-test` is the fast device-iteration path after a targeted
+`Cores-spruce/build-mlp1.sh <core>` build. It stages only the named core and
+matching info file from a checksum-bound report. Full staging and release ZIPs
+still require the complete stock-parity report.
 
 On MLP1, `stage-app` uses Jawaka's `package-quiesce-v1` barrier before it
 removes or pushes any package bytes. Close foreground apps first. A missing
