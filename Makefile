@@ -53,6 +53,7 @@ help:
 	@echo "    REBUILD_CORES=1                         explicitly permit compiling missing/stale cores"
 	@echo "    FORCE_REBUILD_CORES=1                   with REBUILD_CORES=1, bypass every valid cache hit"
 	@echo "  make beta-zips TAG=v0.8.0-beta.3 DEVICE=mlp1  build clean beta ZIPs from one tag, then verify"
+	@echo "  make stable-zips TAG=v0.10.0 DEVICE=mlp1      build clean stable ZIPs from one tag, then verify"
 	@echo "  make release-sd-zip DEVICE=mlp1           build end-user install ZIP"
 	@echo "  make release-recovery-zip DEVICE=mlp1     build end-user recovery ZIP"
 	@echo "  make pakrat-local-feed-test               test multi-app and exact-artifact local feeds"
