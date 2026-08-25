@@ -470,6 +470,31 @@ validate_retroarch_contract() {
         --build-report "$report" \
         --package-root "$platform_dir" \
         || die "RetroArch runtime metadata contract validation failed"
+
+    python3 - "$platform_dir" <<'EOF' || die "Amiga PUAE release validation failed"
+import json
+import pathlib
+import sys
+
+platform = pathlib.Path(sys.argv[1])
+defaults = platform / "defaults"
+cores = json.loads((defaults / "cores.json").read_text(encoding="utf-8"))["cores"]
+systems = json.loads((defaults / "systems.json").read_text(encoding="utf-8"))["systems"]
+
+amiga = [row for row in systems if row.get("tag") == "AMIGA"]
+if len(amiga) != 1:
+    raise SystemExit(f"error: expected exactly one AMIGA system, found {len(amiga)}")
+if amiga[0].get("default_core") != "puae" or amiga[0].get("alternate_cores") != []:
+    raise SystemExit("error: AMIGA must use packaged puae with no alternate core")
+
+puae = [row for row in cores if row.get("id") == "puae"]
+if len(puae) != 1 or not puae[0].get("packaged"):
+    raise SystemExit("error: puae must be present and packaged")
+binary = puae[0].get("file_name", "puae_libretro.so")
+if not (platform / "cores" / binary).is_file():
+    raise SystemExit(f"error: missing packaged puae core: {binary}")
+print("Amiga PUAE gate: catalog policy and packaged core verified")
+EOF
 }
 
 validate_asset_bundle() {
