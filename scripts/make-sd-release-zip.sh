@@ -488,7 +488,7 @@ if amiga[0].get("default_core") != "puae" or amiga[0].get("alternate_cores") != 
     raise SystemExit("error: AMIGA must use packaged puae with no alternate core")
 
 puae = [row for row in cores if row.get("id") == "puae"]
-if len(puae) != 1 or not puae[0].get("packaged"):
+if len(puae) != 1 or puae[0].get("status") != "packaged":
     raise SystemExit("error: puae must be present and packaged")
 binary = puae[0].get("file_name", "puae_libretro.so")
 if not (platform / "cores" / binary).is_file():
