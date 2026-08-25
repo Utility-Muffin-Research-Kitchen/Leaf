@@ -481,7 +481,7 @@ defaults = platform / "defaults"
 cores = json.loads((defaults / "cores.json").read_text(encoding="utf-8"))["cores"]
 systems = json.loads((defaults / "systems.json").read_text(encoding="utf-8"))["systems"]
 
-amiga = [row for row in systems if row.get("tag") == "AMIGA"]
+amiga = [row for row in systems if row.get("id") == "AMIGA"]
 if len(amiga) != 1:
     raise SystemExit(f"error: expected exactly one AMIGA system, found {len(amiga)}")
 if amiga[0].get("default_core") != "puae" or amiga[0].get("alternate_cores") != []:
