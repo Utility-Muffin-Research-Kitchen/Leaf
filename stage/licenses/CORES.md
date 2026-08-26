@@ -47,6 +47,8 @@ from the named upstream release asset.
 | picodrive | PicoDrive (non-commercial) | https://github.com/libretro/picodrive |
 | ppsspp (standalone) | GPL-2.0+ | https://github.com/hrydgard/ppsspp |
 | prosystem | GPL-2.0 | https://github.com/libretro/prosystem-libretro |
+| puae | GPL-2.0 | https://github.com/libretro/libretro-uae |
+| puae2021 | GPL-2.0 | https://github.com/libretro/libretro-uae |
 | snes9x | Snes9x (non-commercial) | https://github.com/libretro/snes9x |
 | stella2014 | GPL-2.0 | https://github.com/libretro/stella2014-libretro |
 | swanstation | GPL-3.0 | https://github.com/libretro/swanstation |
