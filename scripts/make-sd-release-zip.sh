@@ -484,16 +484,17 @@ systems = json.loads((defaults / "systems.json").read_text(encoding="utf-8"))["s
 amiga = [row for row in systems if row.get("id") == "AMIGA"]
 if len(amiga) != 1:
     raise SystemExit(f"error: expected exactly one AMIGA system, found {len(amiga)}")
-if amiga[0].get("default_core") != "puae" or amiga[0].get("alternate_cores") != []:
-    raise SystemExit("error: AMIGA must use packaged puae with no alternate core")
+if amiga[0].get("default_core") != "puae2021" or amiga[0].get("alternate_cores") != ["puae"]:
+    raise SystemExit("error: AMIGA must use puae2021 with puae as its alternate")
 
-puae = [row for row in cores if row.get("id") == "puae"]
-if len(puae) != 1 or puae[0].get("status") != "packaged":
-    raise SystemExit("error: puae must be present and packaged")
-binary = puae[0].get("file_name", "puae_libretro.so")
-if not (platform / "cores" / binary).is_file():
-    raise SystemExit(f"error: missing packaged puae core: {binary}")
-print("Amiga PUAE gate: catalog policy and packaged core verified")
+for core_id in ("puae2021", "puae"):
+    matches = [row for row in cores if row.get("id") == core_id]
+    if len(matches) != 1 or matches[0].get("status") != "packaged":
+        raise SystemExit(f"error: {core_id} must be present and packaged")
+    binary = matches[0].get("file_name", f"{core_id}_libretro.so")
+    if not (platform / "cores" / binary).is_file():
+        raise SystemExit(f"error: missing packaged {core_id} core: {binary}")
+print("Amiga PUAE gate: default, alternate, and packaged cores verified")
 EOF
 }
 
