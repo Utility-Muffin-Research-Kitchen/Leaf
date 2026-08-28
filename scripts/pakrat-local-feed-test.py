@@ -41,6 +41,9 @@ class LocalFeedTest(unittest.TestCase):
         version: str = "1.0.0",
         min_leaf_version: str | None = None,
         runtime_min_leaf_version: str | None | object = MATCH_METADATA,
+        kind: str | None = None,
+        provides: dict | None = None,
+        platform: str = "mlp1",
     ) -> Path:
         app_dir = self.apps_root / directory
         package_dir = app_dir / "build" / "mlp1" / "package" / install_name
@@ -58,6 +61,8 @@ class LocalFeedTest(unittest.TestCase):
         )
         if runtime_minimum is not None:
             runtime["min_leaf_version"] = runtime_minimum
+        if provides is not None:
+            runtime["provides"] = provides
         (package_dir / "pak.json").write_text(
             json.dumps(runtime) + "\n", encoding="utf-8"
         )
@@ -74,7 +79,7 @@ class LocalFeedTest(unittest.TestCase):
             "leaf": {
                 "packages": [
                     {
-                        "platform": "mlp1",
+                        "platform": platform,
                         "version": version,
                         "artifact_name": artifact_name,
                         "install_name": install_name,
@@ -87,6 +92,8 @@ class LocalFeedTest(unittest.TestCase):
         }
         if min_leaf_version is not None:
             metadata["leaf"]["packages"][0]["min_leaf_version"] = min_leaf_version
+        if kind is not None:
+            metadata["kind"] = kind
         (app_dir / "pakrat.json").write_text(
             json.dumps(metadata, indent=2) + "\n", encoding="utf-8"
         )
@@ -161,6 +168,202 @@ class LocalFeedTest(unittest.TestCase):
                 encoding="utf-8"
             )
         )
+
+    # ---- STORE-CONTENT-1: the content[] lane -------------------------------
+
+    SCUMMVM_PROVIDES = {
+        "schema": 1,
+        "systems": [
+            {
+                "id": "SCUMMVM",
+                "name": "ScummVM",
+                "patterns": ["SCUMMVM"],
+                "extensions": ["scummvm"],
+                "rom_root": "Roms/SCUMMVM",
+                "image_root": "Images/SCUMMVM",
+                "default_core": "scummvm",
+                "icon_flat": "art/SCUMMVM.png",
+            }
+        ],
+        "cores": [],
+        "system_extensions": [],
+    }
+
+    def test_content_package_publishes_with_no_ungated_floor(self) -> None:
+        """The case that forced a separate lane: every version is gated, so
+        there is no ungated safe floor and the apps[] rule could never be
+        satisfied."""
+        app = self.write_app(
+            "ScummVM",
+            "org.umrk.scummvm",
+            "ScummVM.pak",
+            "ScummVM.mlp1.pak.zip",
+            min_leaf_version="0.11.0",
+            kind="content",
+            provides=self.SCUMMVM_PROVIDES,
+        )
+        self.run_feed([app])
+        catalog = self.catalog()
+        self.assertEqual(catalog["apps"], [])
+        self.assertEqual(len(catalog["content"]), 1)
+        entry = catalog["content"][0]
+        self.assertEqual(entry["id"], "org.umrk.scummvm")
+        package = entry["packages"][0]
+        self.assertEqual(package["min_leaf_version"], "0.11.0")
+        self.assertTrue(
+            all("min_leaf_version" in v for v in package["versions"]),
+            "a content package needs no ungated floor",
+        )
+
+    def test_gate_unaware_client_sees_only_apps(self) -> None:
+        """A client that predates this contract parses apps[], ignores the
+        unknown content key, and never learns a content pak exists."""
+        plain = self.write_app(
+            "Plain", "org.umrk.plain", "Plain.pak", "Plain.mlp1.pak.zip"
+        )
+        content = self.write_app(
+            "ScummVM",
+            "org.umrk.scummvm",
+            "ScummVM.pak",
+            "ScummVM.mlp1.pak.zip",
+            min_leaf_version="0.11.0",
+            kind="content",
+            provides=self.SCUMMVM_PROVIDES,
+        )
+        self.run_feed([plain, content])
+        catalog = self.catalog()
+        self.assertEqual([a["id"] for a in catalog["apps"]], ["org.umrk.plain"])
+        self.assertEqual(
+            [a["id"] for a in catalog["content"]], ["org.umrk.scummvm"]
+        )
+        self.assertEqual(catalog["schema"], 1, "the schema must not bump")
+
+    def test_content_key_is_absent_when_no_content_package_exists(self) -> None:
+        """Every storefront published before this contract stays byte-shaped
+        exactly as it was."""
+        app = self.write_app(
+            "Plain", "org.umrk.plain", "Plain.pak", "Plain.mlp1.pak.zip"
+        )
+        self.run_feed([app])
+        self.assertNotIn("content", self.catalog())
+
+    def test_content_artifact_without_provides_is_rejected(self) -> None:
+        """The lane is a claim; the built .pak is the fact."""
+        app = self.write_app(
+            "ScummVM",
+            "org.umrk.scummvm",
+            "ScummVM.pak",
+            "ScummVM.mlp1.pak.zip",
+            min_leaf_version="0.11.0",
+            kind="content",
+        )
+        result = self.run_feed([app], expected_ok=False)
+        self.assertIn("declares no `provides`", result.stderr)
+
+    def test_ungated_content_package_is_rejected(self) -> None:
+        app = self.write_app(
+            "ScummVM",
+            "org.umrk.scummvm",
+            "ScummVM.pak",
+            "ScummVM.mlp1.pak.zip",
+            kind="content",
+            provides=self.SCUMMVM_PROVIDES,
+        )
+        result = self.run_feed([app], expected_ok=False)
+        self.assertIn("every content version must declare min_leaf_version",
+                      result.stderr)
+
+    def test_provides_artifact_in_apps_lane_is_rejected(self) -> None:
+        """The mirror rule: a provides pak is gated on this contract by
+        construction, so the gate-unaware lane is the wrong home for it."""
+        app = self.write_app(
+            "ScummVM",
+            "org.umrk.scummvm",
+            "ScummVM.pak",
+            "ScummVM.mlp1.pak.zip",
+            provides=self.SCUMMVM_PROVIDES,
+        )
+        result = self.run_feed([app], expected_ok=False)
+        self.assertIn("belongs in the content lane", result.stderr)
+
+    def test_shared_platform_content_package_is_rejected(self) -> None:
+        """D16: cores and standalone emulators are platform-specific."""
+        app = self.write_app(
+            "ScummVM",
+            "org.umrk.scummvm",
+            "ScummVM.pak",
+            "ScummVM.mlp1.pak.zip",
+            min_leaf_version="0.11.0",
+            kind="content",
+            provides=self.SCUMMVM_PROVIDES,
+            platform="shared",
+        )
+        result = self.run_feed([app], expected_ok=False)
+        self.assertIn("shared", result.stderr)
+
+    def test_id_cannot_appear_in_both_lanes(self) -> None:
+        """S-3: both lanes resolve to the same install_path."""
+        app = self.write_app(
+            "Plain", "org.umrk.dual", "Plain.pak", "Plain.mlp1.pak.zip"
+        )
+        twin = self.write_app(
+            "Twin",
+            "org.umrk.dual",
+            "Twin.pak",
+            "Twin.mlp1.pak.zip",
+            min_leaf_version="0.11.0",
+            kind="content",
+            provides=self.SCUMMVM_PROVIDES,
+        )
+        result = self.run_feed([app, twin], expected_ok=False)
+        self.assertIn("duplicate app id", result.stderr)
+
+    def test_content_history_stays_immutable_and_append_only(self) -> None:
+        """The safe-floor exemption is the ONE rule content[] relaxes."""
+        app = self.write_app(
+            "ScummVM",
+            "org.umrk.scummvm",
+            "ScummVM.pak",
+            "ScummVM.mlp1.pak.zip",
+            min_leaf_version="0.11.0",
+            kind="content",
+            provides=self.SCUMMVM_PROVIDES,
+        )
+        self.run_feed([app])
+        first = self.catalog()["content"][0]["packages"][0]["versions"][0]
+
+        self.update_app(app, "1.1.0", "0.11.0")
+        self.run_feed([app])
+        versions = self.catalog()["content"][0]["packages"][0]["versions"]
+        self.assertEqual([v["version"] for v in versions], ["1.1.0", "1.0.0"])
+        self.assertEqual(
+            versions[1], first, "a published content version is frozen"
+        )
+        # The legacy fields mirror the NEWEST entry, gate included, because in
+        # this lane there is no ungated floor for them to mirror instead.
+        package = self.catalog()["content"][0]["packages"][0]
+        self.assertEqual(package["version"], "1.1.0")
+        self.assertEqual(package["min_leaf_version"], "0.11.0")
+
+    def test_package_cannot_change_lanes_once_published(self) -> None:
+        app = self.write_app(
+            "ScummVM",
+            "org.umrk.scummvm",
+            "ScummVM.pak",
+            "ScummVM.mlp1.pak.zip",
+            min_leaf_version="0.11.0",
+            kind="content",
+            provides=self.SCUMMVM_PROVIDES,
+        )
+        self.run_feed([app])
+        metadata_path = app / "pakrat.json"
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        metadata.pop("kind")
+        metadata_path.write_text(json.dumps(metadata, indent=2) + "\n",
+                                 encoding="utf-8")
+        result = self.run_feed([app], expected_ok=False)
+        self.assertIn("belongs in the content lane", result.stderr)
+
 
     def test_multiple_explicit_apps(self) -> None:
         first = self.write_app(

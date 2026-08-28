@@ -74,7 +74,7 @@ help:
 	@echo "  make benchmark-ppsspp ROM=/path CORE=vulkan PRESET=balanced TRACE=scripts/ppsspp-input-traces/example.json"
 
 bootstrap:
-	@LEAF_WORKSPACE_DIR="$(WORKSPACE_DIR)" scripts/bootstrap.sh $(REQUIRED_REPOS) --optional $(OPTIONAL_PRIVATE_REPOS)
+	@LEAF_WORKSPACE_DIR="$(WORKSPACE_DIR)" scripts/bootstrap.sh $(REQUIRED_REPOS) --optional $(OPTIONAL_PRIVATE_REPOS) $(OPTIONAL_EXAMPLE_REPOS)
 
 flycast-release-policy-smoke:
 	@python3 scripts/validate-flycast-standalone-release-test.py
