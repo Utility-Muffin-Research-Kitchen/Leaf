@@ -332,6 +332,8 @@ def validate_mlp1_recording_payload(platform: Path) -> None:
         or "--disable-ffmpeg" in flags
     ):
         raise PolicyError("MLP1 RetroArch was not built with FFmpeg recording support")
+    if "--enable-ssl" not in flags or "--disable-ssl" in flags:
+        raise PolicyError("MLP1 RetroArch was not built with TLS support")
 
 
 def read_staged_environment(env_path: Path) -> dict[str, str]:

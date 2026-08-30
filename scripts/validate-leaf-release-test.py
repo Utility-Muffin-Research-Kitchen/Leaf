@@ -265,7 +265,7 @@ class CandidateTests(unittest.TestCase):
             encoding="utf-8",
         )
         (platform / "bin" / "retroarch.build-manifest.json").write_text(
-            json.dumps({"configure_flags": ["--enable-ffmpeg"]}),
+            json.dumps({"configure_flags": ["--enable-ffmpeg", "--enable-ssl"]}),
             encoding="utf-8",
         )
         recording_libs = platform / "lib" / "ffmpeg"
@@ -358,6 +358,25 @@ class CandidateTests(unittest.TestCase):
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(MODULE.PolicyError, "recording support"):
+                MODULE.validate_candidate(args)
+
+    def test_candidate_rejects_retroarch_without_tls_support(self):
+        with tempfile.TemporaryDirectory() as raw:
+            args = self.make_candidate(Path(raw))
+            manifest = (
+                args.release_root
+                / "platforms"
+                / "mlp1"
+                / "bin"
+                / "retroarch.build-manifest.json"
+            )
+            manifest.write_text(
+                json.dumps(
+                    {"configure_flags": ["--enable-ffmpeg", "--disable-ssl"]}
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(MODULE.PolicyError, "TLS support"):
                 MODULE.validate_candidate(args)
 
     def test_candidate_rejects_missing_source_paths_capability(self):
