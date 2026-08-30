@@ -14,6 +14,11 @@ cat >"$fixture/bin/adb" <<'EOF'
 set -u
 printf '%s\n' "$*" >>"$FAKE_ADB_LOG"
 case "$*" in
+    *'SELECT store_id'*)
+        if [ "${FAKE_ADB_OWNED:-0}" -eq 1 ]; then
+            printf 'org.umrk.fixture\tmlp1/Joe'"'"'s Calibrage.pak\n'
+        fi
+        ;;
     *package-quiesce-begin*)
         if [ "${FAKE_ADB_BEGIN_ERROR:-0}" -eq 1 ]; then
             printf '%s\n' '{"type":"error","message":"stale-generation"}'
@@ -51,6 +56,24 @@ remote_remove_marker="rm -rf -- \"\$1\""
 line_for() {
     grep -F -n -m1 -- "$1" "$FAKE_ADB_LOG" | cut -d: -f1
 }
+
+: >"$FAKE_ADB_LOG"
+owned_error="$fixture/owned.err"
+if FAKE_ADB_OWNED=1 \
+    "$ROOT_DIR/scripts/adb-stage-app-package.sh" "$fixture/local" "$remote_dir" \
+        >/dev/null 2>"$owned_error"; then
+    echo "expected Pak Rat ownership to block direct staging" >&2
+    exit 1
+fi
+grep -Fq "refusing to overwrite Pak Rat-owned package org.umrk.fixture" \
+    "$owned_error"
+grep -Fq 'SELECT store_id' "$FAKE_ADB_LOG"
+if grep -Fq package-quiesce-begin "$FAKE_ADB_LOG" ||
+   grep -Fq "$remote_remove_marker" "$FAKE_ADB_LOG" ||
+   grep -Fq ' push ' "$FAKE_ADB_LOG"; then
+    echo "Pak Rat-owned package reached the staging mutation path" >&2
+    exit 1
+fi
 
 : >"$FAKE_ADB_LOG"
 "$ROOT_DIR/scripts/adb-stage-app-package.sh" "$fixture/local" "$remote_dir" \

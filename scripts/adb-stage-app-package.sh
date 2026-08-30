@@ -41,6 +41,24 @@ fi
 ADB=(adb -s "$serial")
 operation_id="stage-app-$$"
 quiesced=0
+platform_id="${PLATFORM_ID:-${DEVICE:-mlp1}}"
+remote_sd="$(
+    PLATFORM_ID="$platform_id" \
+    REMOTE_SDCARD_PATH="${REMOTE_SDCARD_PATH:-auto}" \
+    ADB_SERIAL="$serial" \
+        "$ROOT_DIR/scripts/adb-resolve-umrk-sd.sh"
+)"
+install_path="${remote_dir#*/Apps/}"
+printf -v db_path_arg '%q' "$remote_sd/.umrk/$platform_id/library.db"
+pakrat_installs="$("${ADB[@]}" shell \
+    "sh -c '[ ! -f \"\$1\" ] || sqlite3 \"\$1\" \"SELECT store_id || char(9) || install_path FROM pakrat_installs;\"' sh $db_path_arg")"
+pakrat_installs="${pakrat_installs//$'\r'/}"
+while IFS=$'\t' read -r store_id owned_path; do
+    if [ "$owned_path" = "$install_path" ]; then
+        echo "refusing to overwrite Pak Rat-owned package $store_id at Apps/$install_path; uninstall it in Pak Rat before using stage-app" >&2
+        exit 1
+    fi
+done <<<"$pakrat_installs"
 
 # adb joins the remote command into one shell string. Quote the validated path
 # as one remote-shell argument, then let the inner sh script use it only as $1.
@@ -50,8 +68,8 @@ printf -v remote_dir_arg '%q' "$remote_dir"
 
 release_quiesce() {
     ADB_SERIAL="$serial" \
-    PLATFORM_ID="${PLATFORM_ID:-${DEVICE:-mlp1}}" \
-    REMOTE_SDCARD_PATH="${REMOTE_SDCARD_PATH:-auto}" \
+    PLATFORM_ID="$platform_id" \
+    REMOTE_SDCARD_PATH="$remote_sd" \
         "$ROOT_DIR/scripts/adb-package-quiesce.sh" end "$operation_id"
 }
 
@@ -67,8 +85,8 @@ on_exit() {
 trap on_exit EXIT
 
 if ! ADB_SERIAL="$serial" \
-    PLATFORM_ID="${PLATFORM_ID:-${DEVICE:-mlp1}}" \
-    REMOTE_SDCARD_PATH="${REMOTE_SDCARD_PATH:-auto}" \
+    PLATFORM_ID="$platform_id" \
+    REMOTE_SDCARD_PATH="$remote_sd" \
         "$ROOT_DIR/scripts/adb-package-quiesce.sh" begin "$operation_id"; then
     # A preflight refusal never latched the barrier; an unverified stop did.
     # A matching release is therefore a harmless best-effort cleanup in the
