@@ -59,6 +59,14 @@ def main() -> None:
     if not isinstance(manifest, dict):
         fail(f"build manifest is not a JSON object: {args.manifest}")
 
+    flags = manifest.get("configure_flags")
+    if (
+        not isinstance(flags, list)
+        or "--enable-ssl" not in flags
+        or "--disable-ssl" in flags
+    ):
+        fail("RetroArch was not built with TLS support")
+
     controls = manifest.get("patch_controls")
     if not isinstance(controls, dict) or "MLP1_PATCH_SET" not in controls:
         fail("build manifest does not record patch_controls.MLP1_PATCH_SET")
