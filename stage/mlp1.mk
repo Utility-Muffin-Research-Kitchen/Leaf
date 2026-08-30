@@ -193,6 +193,7 @@ assemble-jawaka: jawaka-build shader-bundle-mlp1
 	@python3 "$(MLP1_ASSET_TOOL)" validate --output "$(PLATFORM_PAYLOAD_DIR)/assets"
 	@test -f "$(PLATFORM_PAYLOAD_DIR)/cores/build-report.json" || { echo "missing MLP1 core build report: $(PLATFORM_PAYLOAD_DIR)/cores/build-report.json" >&2; exit 1; }
 	@python3 "$(UMRK_WORKSPACE_DIR)/scripts/retroarch_validate_package.py" \
+		--umrk-root "$(WORKSPACE_DIR)" \
 		--metadata-dir "$(MLP1_METADATA_DIR)" \
 		--build-report "$(PLATFORM_PAYLOAD_DIR)/cores/build-report.json" \
 		--package-root "$(PLATFORM_PAYLOAD_DIR)"
