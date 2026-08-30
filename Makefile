@@ -49,6 +49,7 @@ help:
 	@echo "  make stage-app APP=VideoFromHell DEVICE=mlp1 explicitly stage the optional Video From Hell app"
 	@echo "  make stage-app APP=Nimbus DEVICE=mlp1       explicitly stage the optional Nimbus app"
 	@echo "  make stage-app APP=PortMaster-mlp1 DEVICE=mlp1 explicitly stage the optional PortMaster app"
+	@echo "  make stage-app APP=ScummVM-pak DEVICE=mlp1 explicitly stage the reference content pak"
 	@echo "  make release-zips DEVICE=mlp1             build end-user install + recovery ZIPs"
 	@echo "    REBUILD_CORES=1                         explicitly permit compiling missing/stale cores"
 	@echo "    FORCE_REBUILD_CORES=1                   with REBUILD_CORES=1, bypass every valid cache hit"
@@ -74,7 +75,7 @@ help:
 	@echo "  make benchmark-ppsspp ROM=/path CORE=vulkan PRESET=balanced TRACE=scripts/ppsspp-input-traces/example.json"
 
 bootstrap:
-	@LEAF_WORKSPACE_DIR="$(WORKSPACE_DIR)" scripts/bootstrap.sh $(REQUIRED_REPOS) --optional $(OPTIONAL_PRIVATE_REPOS)
+	@LEAF_WORKSPACE_DIR="$(WORKSPACE_DIR)" scripts/bootstrap.sh $(REQUIRED_REPOS) --optional $(OPTIONAL_PRIVATE_REPOS) $(OPTIONAL_EXAMPLE_REPOS)
 
 flycast-release-policy-smoke:
 	@python3 scripts/validate-flycast-standalone-release-test.py

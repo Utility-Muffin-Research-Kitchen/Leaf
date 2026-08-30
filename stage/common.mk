@@ -38,3 +38,9 @@ REQUIRED_REPOS := Catastrophe Jawaka Thing-File ssh-server CentralScrutinizer Fu
 # Private maintainer-only repos. Bootstrap probes these and silently skips them
 # when credentials are unavailable.
 OPTIONAL_PRIVATE_REPOS := umrk-workspace
+
+# Example paks. Deliberately NOT required: each one builds from a clean clone
+# with no sibling checkout, which is the property that makes it usable as a
+# template by someone outside this workspace. Nothing in Leaf's build or
+# staging depends on them.
+OPTIONAL_EXAMPLE_REPOS := ScummVM-pak

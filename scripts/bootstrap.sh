@@ -26,6 +26,8 @@ url_for() {
         mlp1-toolchain)              echo "https://github.com/Utility-Muffin-Research-Kitchen/mlp1-toolchain.git" ;;
         miniloong-launcher-switcher) echo "https://github.com/Helaas/miniloong-launcher-switcher.git" ;;
         miniloong-adb-keeper)        echo "https://github.com/Helaas/miniloong-adb-keeper.git" ;;
+        leaf-contracts)              echo "https://github.com/Utility-Muffin-Research-Kitchen/leaf-contracts.git" ;;
+        ScummVM-pak)                 echo "https://github.com/Utility-Muffin-Research-Kitchen/ScummVM-pak.git" ;;
         *) echo "" ;;
     esac
 }

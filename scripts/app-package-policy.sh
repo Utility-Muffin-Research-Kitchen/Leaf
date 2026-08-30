@@ -128,6 +128,14 @@ leaf_app_policy() {
             supported_devices="mlp1"
             distribution="pakrat"
             ;;
+        ScummVM-pak)
+            package_target="package-mlp1"
+            package_dir="$workspace_dir/ScummVM-pak/build/package/ScummVM.pak"
+            package_name="ScummVM.pak"
+            destination_platform="mlp1"
+            supported_devices="mlp1"
+            distribution="pakrat"
+            ;;
         ssh-server)
             package_target="package-platform"
             package_platform="mlp1"

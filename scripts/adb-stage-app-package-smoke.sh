@@ -24,6 +24,13 @@ case "$*" in
     *package-quiesce-end*)
         printf '%s\n' '{"type":"ok","action":"package-quiesce-end"}'
         ;;
+    *scan-library*)
+        if [ "${FAKE_ADB_SCAN_ERROR:-0}" -eq 1 ]; then
+            printf '%s\n' '{"type":"error","message":"scan-failed"}'
+        else
+            printf '%s\n' '{"type":"ok","action":"scan-library started"}'
+        fi
+        ;;
     *' push '*)
         if [ "${FAKE_ADB_PUSH_ERROR:-0}" -eq 1 ]; then exit 1; fi
         ;;
@@ -52,9 +59,11 @@ begin_line="$(line_for package-quiesce-begin)"
 remove_line="$(line_for "$remote_remove_marker")"
 push_line="$(line_for ' push ')"
 end_line="$(line_for package-quiesce-end)"
+scan_line="$(line_for scan-library)"
 [ "$begin_line" -lt "$remove_line" ]
 [ "$remove_line" -lt "$push_line" ]
 [ "$push_line" -lt "$end_line" ]
+[ "$end_line" -lt "$scan_line" ]
 
 : >"$FAKE_ADB_LOG"
 if FAKE_ADB_PUSH_ERROR=1 \
@@ -66,6 +75,17 @@ fi
 grep -Fq package-quiesce-begin "$FAKE_ADB_LOG"
 grep -Fq ' push ' "$FAKE_ADB_LOG"
 grep -Fq package-quiesce-end "$FAKE_ADB_LOG"
+grep -Fq scan-library "$FAKE_ADB_LOG"
+
+: >"$FAKE_ADB_LOG"
+if FAKE_ADB_SCAN_ERROR=1 \
+    "$ROOT_DIR/scripts/adb-stage-app-package.sh" "$fixture/local" "$remote_dir" \
+        >/dev/null 2>&1; then
+    echo "expected a rejected library scan to fail staging" >&2
+    exit 1
+fi
+grep -Fq package-quiesce-end "$FAKE_ADB_LOG"
+grep -Fq scan-library "$FAKE_ADB_LOG"
 
 : >"$FAKE_ADB_LOG"
 if FAKE_ADB_BEGIN_ERROR=1 \

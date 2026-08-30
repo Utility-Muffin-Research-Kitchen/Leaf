@@ -265,7 +265,9 @@ def version_entry(entry: object, source: Path) -> dict:
     return result
 
 
-def normalized_history_package(app: dict, package: object, source: Path) -> dict:
+def normalized_history_package(
+    app: dict, package: object, source: Path, is_content: bool = False
+) -> dict:
     if not isinstance(package, dict):
         die(f"{source}: package must be an object")
     platform = require_metadata_string(package, "platform", source)
@@ -281,7 +283,7 @@ def normalized_history_package(app: dict, package: object, source: Path) -> dict
         die(f"{source}: runtime_manifest_path must be a non-empty string")
 
     legacy = version_entry(package, source)
-    if "min_leaf_version" in legacy:
+    if "min_leaf_version" in legacy and not is_content:
         die(f"{source}: legacy package version must be an ungated safe floor")
     versions_value = package.get("versions")
     legacy_import = versions_value is None
@@ -303,16 +305,32 @@ def normalized_history_package(app: dict, package: object, source: Path) -> dict
     by_version = {value["version"]: value for value in versions}
     if len(by_version) != len(versions):
         die(f"{source}: duplicate package version")
-    floors = [value for value in versions if "min_leaf_version" not in value]
-    if not floors:
-        die(f"{source}: package history has no ungated safe floor")
-    floor = max(floors, key=lambda value: version_key(value["version"]))
-    if (
-        legacy["version"] != floor["version"]
-        or legacy["artifact"] != floor["artifact"]
-        or app.get("version") != floor["version"]
-    ):
-        die(f"{source}: legacy app/package fields do not match the safe floor")
+    if is_content:
+        # Every content package gates on the contract that defines it, so it
+        # has no ungated floor and needs none: gate-unaware clients never
+        # parse this lane. The legacy fields still mirror something real --
+        # the newest entry rather than the newest ungated one.
+        if any("min_leaf_version" not in value for value in versions):
+            die(f"{source}: every content version must declare min_leaf_version")
+        floor = max(versions, key=lambda value: version_key(value["version"]))
+        if (
+            legacy["version"] != floor["version"]
+            or legacy["artifact"] != floor["artifact"]
+            or legacy.get("min_leaf_version") != floor.get("min_leaf_version")
+            or app.get("version") != floor["version"]
+        ):
+            die(f"{source}: legacy app/package fields do not match the newest version")
+    else:
+        floors = [value for value in versions if "min_leaf_version" not in value]
+        if not floors:
+            die(f"{source}: package history has no ungated safe floor")
+        floor = max(floors, key=lambda value: version_key(value["version"]))
+        if (
+            legacy["version"] != floor["version"]
+            or legacy["artifact"] != floor["artifact"]
+            or app.get("version") != floor["version"]
+        ):
+            die(f"{source}: legacy app/package fields do not match the safe floor")
 
     return {
         "platform": platform,
@@ -333,29 +351,38 @@ def load_history_index(path: Path | None) -> dict[tuple[str, str, str], dict]:
     apps = catalog.get("apps")
     if not isinstance(apps, list):
         die(f"{path}: history apps must be an array")
+    content = catalog.get("content", [])
+    if not isinstance(content, list):
+        die(f"{path}: history content must be an array")
     result: dict[tuple[str, str, str], dict] = {}
     seen_ids: set[str] = set()
-    for app in apps:
-        if not isinstance(app, dict):
-            die(f"{path}: history app must be an object")
-        app_id = require_metadata_string(app, "id", path)
-        if app_id in seen_ids:
-            die(f"{path}: duplicate history app id: {app_id}")
-        seen_ids.add(app_id)
-        packages = app.get("packages")
-        if not isinstance(packages, list) or not packages:
-            die(f"{path}: history app packages must be a non-empty array")
-        for package in packages:
-            normalized = normalized_history_package(app, package, path)
-            key = (
-                app_id,
-                normalized["platform"],
-                normalized["install_name"].casefold(),
-            )
-            if key in result:
-                die(f"{path}: duplicate history package for {app_id}")
-            normalized["source_path"] = path
-            result[key] = normalized
+    for entries, is_content in ((apps, False), (content, True)):
+        for app in entries:
+            if not isinstance(app, dict):
+                die(f"{path}: history app must be an object")
+            app_id = require_metadata_string(app, "id", path)
+            # S-3, enforced against published history too: an id that has
+            # appeared in both lanes cannot be resolved to one install_path.
+            if app_id in seen_ids:
+                die(f"{path}: duplicate history app id: {app_id}")
+            seen_ids.add(app_id)
+            packages = app.get("packages")
+            if not isinstance(packages, list) or not packages:
+                die(f"{path}: history app packages must be a non-empty array")
+            for package in packages:
+                normalized = normalized_history_package(
+                    app, package, path, is_content
+                )
+                key = (
+                    app_id,
+                    normalized["platform"],
+                    normalized["install_name"].casefold(),
+                )
+                if key in result:
+                    die(f"{path}: duplicate history package for {app_id}")
+                normalized["source_path"] = path
+                normalized["is_content"] = is_content
+                result[key] = normalized
     return result
 
 
@@ -419,6 +446,7 @@ def merge_package_history(
     artifacts_root: Path,
     base_url: str,
     source: Path,
+    is_content: bool = False,
 ) -> tuple[list[dict], dict]:
     if history is None:
         versions: list[dict] = []
@@ -455,6 +483,14 @@ def merge_package_history(
             f"{source}: versions exceeds the "
             f"{MAX_VERSIONS_PER_PACKAGE}-entry client limit"
         )
+    if is_content:
+        # STORE-CONTENT-1: there is no ungated safe floor in content[], but
+        # every entry still has a gate. Immutability and append-only history
+        # above apply unchanged.
+        if any("min_leaf_version" not in value for value in versions):
+            die(f"{source}: every content version must declare min_leaf_version")
+        floor = max(versions, key=lambda value: version_key(value["version"]))
+        return versions, floor
     floors = [value for value in versions if "min_leaf_version" not in value]
     if not floors:
         die(
@@ -524,6 +560,7 @@ def build_storefront(args: argparse.Namespace) -> Path:
     artifact_overrides = parse_artifact_overrides(args.artifact)
     base_url = ensure_base_url(args.base_url)
     apps: list[dict] = []
+    content: list[dict] = []
     seen_ids: set[str] = set()
     seen_install_names: set[str] = set()
     used_history_keys: set[tuple[str, str, str]] = set()
@@ -535,13 +572,30 @@ def build_storefront(args: argparse.Namespace) -> Path:
             die(f"{metadata_path}: schema must be 1")
         app_id = require_metadata_string(meta, "id", metadata_path)
         require_path_segment(app_id, "app id", metadata_path)
+        # S-3: one lane per id. Both lanes resolve to the same install_path,
+        # so an id in both is a duplicate-identity bug, not two audiences.
         if app_id in seen_ids:
             die(f"duplicate app id: {app_id}")
         seen_ids.add(app_id)
+        kind = meta.get("kind", "app")
+        if kind not in ("app", "content"):
+            die(f"{metadata_path}: kind must be \"app\" or \"content\"")
+        is_content = kind == "content"
 
         packages = meta.get("leaf", {}).get("packages", [])
         if not isinstance(packages, list) or not packages:
             die(f"{metadata_path}: leaf.packages must be a non-empty array")
+        if is_content:
+            # D16: cores and standalone emulator binaries are
+            # platform-specific, so there is nothing a shared content pak
+            # could correctly ship. Refused explicitly rather than left to
+            # fail later as "no MLP1 package", which would hide the reason.
+            for pkg in packages:
+                if isinstance(pkg, dict) and pkg.get("platform") == "shared":
+                    die(
+                        f"{metadata_path}: content packages must name a "
+                        "concrete platform; \"shared\" is refused"
+                    )
         selected = [pkg for pkg in packages if pkg.get("platform") == "mlp1"]
         if not selected:
             die(f"{metadata_path}: no MLP1 Leaf package")
@@ -572,6 +626,11 @@ def build_storefront(args: argparse.Namespace) -> Path:
                 pkg.get("version"), "package version", metadata_path
             )
             minimum = optional_min_leaf_version(pkg, metadata_path)
+            if is_content and minimum is None:
+                die(
+                    f"{metadata_path}: every content version must declare "
+                    "min_leaf_version"
+                )
 
             install_key = install_name.casefold()
             if install_key in seen_install_names:
@@ -620,6 +679,22 @@ def build_storefront(args: argparse.Namespace) -> Path:
             runtime, installed_size = inspect_zip_artifact(
                 candidate_path, install_name, runtime_manifest_path
             )
+            # The lane is a claim; the built .pak is the fact. A package in
+            # content[] whose artifact declares no `provides` would install
+            # and then contribute nothing, and a `provides` pak in apps[]
+            # would be offered to gate-unaware clients that cannot use it.
+            artifact_provides = isinstance(runtime.get("provides"), dict)
+            if is_content and not artifact_provides:
+                die(
+                    f"{candidate_path}: kind is content but the runtime "
+                    "manifest declares no `provides` block"
+                )
+            if not is_content and artifact_provides:
+                die(
+                    f"{candidate_path}: runtime manifest declares `provides`, "
+                    "so this package belongs in the content lane "
+                    "(set \"kind\": \"content\" in pakrat.json)"
+                )
             if version != runtime.get("pak_version"):
                 die(
                     f"{candidate_path}: runtime pak_version "
@@ -661,6 +736,11 @@ def build_storefront(args: argparse.Namespace) -> Path:
                 die(f"{metadata_path}: package identity disagrees with history")
             if history is not None:
                 used_history_keys.add(history_key)
+            if history is not None and history.get("is_content", False) != is_content:
+                die(
+                    f"{metadata_path}: {app_id} changed lanes; published "
+                    "history cannot move between apps[] and content[]"
+                )
             versions, floor = merge_package_history(
                 history,
                 current,
@@ -669,22 +749,28 @@ def build_storefront(args: argparse.Namespace) -> Path:
                 artifacts_root,
                 base_url,
                 metadata_path,
+                is_content,
             )
             candidate_path.replace(artifact_path)
 
             current_versions.add(version)
             app_floor_versions.add(floor["version"])
-            app_packages.append(
-                {
-                    "platform": "mlp1",
-                    "runtime": "leaf",
-                    "version": floor["version"],
-                    "install_name": install_name,
-                    "runtime_manifest_path": runtime_manifest_path,
-                    "artifact": copy.deepcopy(floor["artifact"]),
-                    "versions": versions,
-                }
-            )
+            emitted = {
+                "platform": "mlp1",
+                "runtime": "leaf",
+                "version": floor["version"],
+                "install_name": install_name,
+                "runtime_manifest_path": runtime_manifest_path,
+                "artifact": copy.deepcopy(floor["artifact"]),
+                "versions": versions,
+            }
+            # In apps[] the legacy fields ARE the ungated safe floor, so they
+            # never carry a gate. In content[] they mirror the newest entry,
+            # which has one -- and omitting it would leave the legacy fields
+            # claiming an install that no gated client would accept.
+            if is_content and "min_leaf_version" in floor:
+                emitted["min_leaf_version"] = floor["min_leaf_version"]
+            app_packages.append(emitted)
 
         if len(current_versions) != 1:
             die(f"{metadata_path}: all MLP1 packages must use one app version")
@@ -696,7 +782,7 @@ def build_storefront(args: argparse.Namespace) -> Path:
             isinstance(value, str) and value for value in categories
         ):
             die(f"{metadata_path}: categories must be a string array")
-        apps.append(
+        (content if is_content else apps).append(
             {
                 "id": app_id,
                 "name": require_metadata_string(meta, "name", metadata_path),
@@ -729,6 +815,12 @@ def build_storefront(args: argparse.Namespace) -> Path:
         "generated_at": generated_at,
         "apps": apps,
     }
+    # `schema` stays 1 and the key is only emitted when it has entries: a
+    # gate-unaware client parses apps[], ignores an unknown `content` key, and
+    # never learns a content pak exists. That is the whole reason this is a
+    # new lane rather than a flag on an existing one.
+    if content:
+        storefront["content"] = content
 
     storefront_partial = storefront_path.with_suffix(".json.partial")
     storefront_partial.write_text(
@@ -736,7 +828,7 @@ def build_storefront(args: argparse.Namespace) -> Path:
     )
     storefront_partial.replace(storefront_path)
     print(f"Wrote {storefront_path}")
-    for app in apps:
+    for app in apps + content:
         for pkg in app["packages"]:
             artifact = pkg["versions"][0]["artifact"]
             print(
