@@ -30,6 +30,7 @@ MLP1_VULKAN_RUNTIME ?= $(MLP1_GRAPHICS_RUNTIME)/vulkan/rk3566-g52-g29p1
 MLP1_DRASTIC_PACKAGE ?= $(LEAF_ROOT)/build/drastic/mlp1/drastic
 MLP1_MUPEN64PLUS_PACKAGE ?= $(N64_STANDALONE_DIR)/output/mlp1/mupen64plus
 MLP1_FLYCAST_PACKAGE ?= $(FLYCAST_STANDALONE_DIR)/output/mlp1/flycast
+MLP1_YABASANSHIRO_PACKAGE ?= $(YABASANSHIRO_STANDALONE_DIR)/output/mlp1/yabasanshiro
 MLP1_FFMPEG_BIN    ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/ffmpeg/bin/ffmpeg
 MLP1_FFMPEG_LIBS   ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/ffmpeg/flat
 MLP1_RECORD_CONVERT ?= $(RETROARCH_BUILDS_DIR)/config/mlp1/leaf-record-convert.sh
@@ -408,6 +409,12 @@ stage-emulator:
 			$(MAKE) -C "$(FLYCAST_STANDALONE_DIR)" package-mlp1 TOOLCHAIN_IMAGE="$(TOOLCHAIN_IMAGE)"; \
 			package_dir="$(MLP1_FLYCAST_PACKAGE)"; \
 			remote_name="flycast"; \
+			;; \
+		yabasanshiro) \
+			test -d "$(YABASANSHIRO_STANDALONE_DIR)" || { echo "missing repo: $(YABASANSHIRO_STANDALONE_DIR)" >&2; exit 1; }; \
+			$(MAKE) -C "$(YABASANSHIRO_STANDALONE_DIR)" package-mlp1 TOOLCHAIN_IMAGE="$(TOOLCHAIN_IMAGE)"; \
+			package_dir="$(MLP1_YABASANSHIRO_PACKAGE)"; \
+			remote_name="yabasanshiro"; \
 			;; \
 		*) \
 			echo "unsupported emulator policy: $(EMULATOR) for DEVICE=$(DEVICE)" >&2; \
