@@ -9,7 +9,7 @@ WORKSPACE_DIR="${LEAF_WORKSPACE_DIR:-$(cd "$LEAF_ROOT/.." && pwd)}"
 
 DEVICE="${DEVICE:-mlp1}"
 STAGE_APPS="${STAGE_APPS-ssh-server Thing-File CentralScrutinizer Fugazi joes-calibrage retroarch-builds}"
-STAGE_EMULATORS="${STAGE_EMULATORS-ppsspp drastic mupen64plus flycast}"
+STAGE_EMULATORS="${STAGE_EMULATORS-ppsspp drastic mupen64plus flycast yabasanshiro}"
 PUBLIC_ROOT_DIRS="${PUBLIC_ROOT_DIRS-Roms Images Videos Apps BIOS Saves States Cheats}"
 RELEASE_BUILD="${RELEASE_BUILD:-$LEAF_ROOT/build/release}"
 STAGE_BUILD="${STAGE_BUILD:-$LEAF_ROOT/build/stage/mlp1}"
@@ -21,6 +21,7 @@ PPSSPP_SPRUCE_DIR="${PPSSPP_SPRUCE_DIR:-$WORKSPACE_DIR/PPSSPP-spruce}"
 STEWARD_NDS_DIR="${STEWARD_NDS_DIR:-$WORKSPACE_DIR/steward-fu-nds}"
 N64_STANDALONE_DIR="${N64_STANDALONE_DIR:-$WORKSPACE_DIR/N64-standalone}"
 FLYCAST_STANDALONE_DIR="${FLYCAST_STANDALONE_DIR:-$WORKSPACE_DIR/Flycast-standalone}"
+YABASANSHIRO_STANDALONE_DIR="${YABASANSHIRO_STANDALONE_DIR:-$WORKSPACE_DIR/Yabasanshiro-standalone}"
 RETROARCH_BUILDS_DIR="${RETROARCH_BUILDS_DIR:-$WORKSPACE_DIR/retroarch-builds}"
 CORES_SPRUCE_DIR="${CORES_SPRUCE_DIR:-$WORKSPACE_DIR/Cores-spruce}"
 LAUNCHER_SWITCHER_DIR="${LAUNCHER_SWITCHER_DIR:-$WORKSPACE_DIR/miniloong-launcher-switcher}"
@@ -42,6 +43,7 @@ MLP1_VULKAN_RUNTIME="${MLP1_VULKAN_RUNTIME:-$MLP1_GRAPHICS_RUNTIME/vulkan/rk3566
 MLP1_DRASTIC_PACKAGE="${MLP1_DRASTIC_PACKAGE:-$LEAF_ROOT/build/drastic/mlp1/drastic}"
 MLP1_MUPEN64PLUS_PACKAGE="${MLP1_MUPEN64PLUS_PACKAGE:-$N64_STANDALONE_DIR/output/mlp1/mupen64plus}"
 MLP1_FLYCAST_PACKAGE="${MLP1_FLYCAST_PACKAGE:-$FLYCAST_STANDALONE_DIR/output/mlp1/flycast}"
+MLP1_YABASANSHIRO_PACKAGE="${MLP1_YABASANSHIRO_PACKAGE:-$YABASANSHIRO_STANDALONE_DIR/output/mlp1/yabasanshiro}"
 # Read the canonical patch set rather than carrying a second copy of it. Two
 # hand-maintained defaults drifted apart twice; the file is the single source.
 MLP1_RETROARCH_PATCH_SET_FILE="${MLP1_RETROARCH_PATCH_SET_FILE:-$LEAF_ROOT/config/mlp1-retroarch-patch-set.txt}"
@@ -62,7 +64,7 @@ Environment:
   REBUILD_CORES=1  explicitly allow missing/stale stock-parity cores to compile
   FORCE_REBUILD_CORES=1  with REBUILD_CORES=1, bypass every valid core cache hit
   STAGE_APPS="ssh-server Thing-File CentralScrutinizer Fugazi joes-calibrage retroarch-builds"
-  STAGE_EMULATORS="ppsspp drastic mupen64plus flycast"
+  STAGE_EMULATORS="ppsspp drastic mupen64plus flycast yabasanshiro"
 EOF
 }
 
@@ -159,6 +161,12 @@ configure_release_components() {
         RELEASE_COMPONENT_ARGS+=(--component "app:$app=$WORKSPACE_DIR/$app")
         REQUIRED_COMPONENT_ARGS+=(--required-component "app:$app")
     done
+    case " $STAGE_EMULATORS " in
+        *" yabasanshiro "*)
+            RELEASE_COMPONENT_ARGS+=(--component "emulator:yabasanshiro=$YABASANSHIRO_STANDALONE_DIR")
+            REQUIRED_COMPONENT_ARGS+=(--required-component "emulator:yabasanshiro")
+            ;;
+    esac
 }
 
 write_component_provenance() {
@@ -436,6 +444,7 @@ for e in packaged:
     license_id = {
         "ppsspp_gles": "ppsspp",
         "flycast_standalone": "flycast",
+        "yabasanshiro_standalone": "yabasanshiro_standalone",
     }.get(cid, cid)
     if not os.path.isfile(os.path.join(lic_dir, license_id + ".txt")):
         missing_lic.append(cid)
@@ -691,6 +700,49 @@ package_app() {
     printf '%s/%s\n' "$destination_platform" "$package_name" >>"$MANAGED_APPS_FILE"
 }
 
+prepare_yabasanshiro_source() {
+    local source_repo="https://github.com/Utility-Muffin-Research-Kitchen/Yabasanshiro-standalone"
+    local source_tag="$LEAF_RELEASE_TAG"
+    local source_archive source_sha source_name source_extra remote_sha local_sha checksum_file
+    local YABASANSHIRO_UPSTREAM_VERSION
+
+    [ -f "$YABASANSHIRO_STANDALONE_DIR/upstream.env" ] || \
+        die "missing YabaSanshiro upstream metadata: $YABASANSHIRO_STANDALONE_DIR/upstream.env"
+    # shellcheck disable=SC1091
+    . "$YABASANSHIRO_STANDALONE_DIR/upstream.env"
+    source_archive="yabasanshiro-standalone-${YABASANSHIRO_UPSTREAM_VERSION}-mlp1-source.tar.gz"
+
+    YABASANSHIRO_SOURCE_URL="$source_repo"
+    YABASANSHIRO_SOURCE_SHA256=""
+    [ -n "$LEAF_RELEASE_TAG" ] || return 0
+    [ -n "$source_tag" ] || die "tagged Leaf release has no YabaSanshiro source tag"
+    command -v curl >/dev/null 2>&1 || die "curl command not found"
+
+    local_sha="$(git -C "$YABASANSHIRO_STANDALONE_DIR" rev-parse HEAD)"
+    remote_sha="$(git ls-remote --refs "$source_repo.git" "refs/tags/$source_tag" | awk 'NR == 1 {print $1}')"
+    [ -n "$remote_sha" ] || die "missing published YabaSanshiro source tag: $source_tag"
+    [ "$remote_sha" = "$local_sha" ] || \
+        die "YabaSanshiro source tag $source_tag points at $remote_sha, expected $local_sha"
+
+    YABASANSHIRO_SOURCE_URL="$source_repo/releases/download/$source_tag/$source_archive"
+    curl -fsSIL "$YABASANSHIRO_SOURCE_URL" -o /dev/null || \
+        die "missing published YabaSanshiro source archive: $YABASANSHIRO_SOURCE_URL"
+    checksum_file="$(mktemp "${TMPDIR:-/tmp}/leaf-yabasanshiro-source.XXXXXX")"
+    if ! curl -fsSL "$YABASANSHIRO_SOURCE_URL.sha256" -o "$checksum_file"; then
+        rm -f "$checksum_file"
+        die "missing published YabaSanshiro source checksum: $YABASANSHIRO_SOURCE_URL.sha256"
+    fi
+    read -r source_sha source_name source_extra <"$checksum_file" || true
+    rm -f "$checksum_file"
+    case "$source_sha" in
+        *[!0-9a-f]*|'') die "invalid published YabaSanshiro source checksum" ;;
+    esac
+    [ "${#source_sha}" -eq 64 ] || die "invalid published YabaSanshiro source checksum"
+    [ "$source_name" = "$source_archive" ] && [ -z "${source_extra:-}" ] || \
+        die "YabaSanshiro source checksum names an unexpected asset: ${source_name:-<empty>}"
+    YABASANSHIRO_SOURCE_SHA256="$source_sha"
+}
+
 package_emulator() {
     local emulator="$1"
     local package_dir remote_name
@@ -722,6 +774,16 @@ package_emulator() {
             make -C "$FLYCAST_STANDALONE_DIR" package-mlp1 TOOLCHAIN_IMAGE="$TOOLCHAIN_IMAGE"
             package_dir="$MLP1_FLYCAST_PACKAGE"
             remote_name="flycast"
+            ;;
+        yabasanshiro)
+            [ -d "$YABASANSHIRO_STANDALONE_DIR" ] || die "missing YabaSanshiro standalone repo: $YABASANSHIRO_STANDALONE_DIR"
+            prepare_yabasanshiro_source
+            make -C "$YABASANSHIRO_STANDALONE_DIR" package-mlp1 \
+                TOOLCHAIN_IMAGE="$TOOLCHAIN_IMAGE" \
+                YABASANSHIRO_SOURCE_URL="$YABASANSHIRO_SOURCE_URL" \
+                YABASANSHIRO_SOURCE_SHA256="$YABASANSHIRO_SOURCE_SHA256"
+            package_dir="$MLP1_YABASANSHIRO_PACKAGE"
+            remote_name="yabasanshiro"
             ;;
         *)
             die "unsupported release emulator policy: $emulator for DEVICE=$DEVICE"
@@ -796,6 +858,17 @@ validate_standalone_flycast_release() {
     python3 "$LEAF_ROOT/scripts/validate-flycast-standalone-release.py" \
         "$platform_dir" ||
         die "Flycast standalone release validation failed"
+}
+
+validate_standalone_yabasanshiro_release() {
+    local platform_dir="$RELEASE_ROOT/platforms/mlp1"
+    local source_args=()
+    if [ -n "$LEAF_RELEASE_TAG" ]; then
+        source_args+=(--require-published-source)
+    fi
+    python3 "$LEAF_ROOT/scripts/validate-yabasanshiro-standalone-release.py" \
+        "${source_args[@]}" "$platform_dir" ||
+        die "YabaSanshiro standalone release validation failed"
 }
 
 write_install_readme() {
@@ -925,6 +998,7 @@ build_install_zip() {
     done
     validate_standalone_n64_release
     validate_standalone_flycast_release
+    validate_standalone_yabasanshiro_release
     validate_ppsspp_vulkan_release
 
     cp -R "$LEAF_ROOT/stage/licenses" "$RELEASE_ROOT/licenses"

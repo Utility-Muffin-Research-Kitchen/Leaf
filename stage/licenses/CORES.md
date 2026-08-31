@@ -53,6 +53,7 @@ from the named upstream release asset.
 | stella2014 | GPL-2.0 | https://github.com/libretro/stella2014-libretro |
 | swanstation | GPL-3.0 | https://github.com/libretro/swanstation |
 | yabasanshiro | GPL-2.0 | https://github.com/libretro/yabause |
+| yabasanshiro (standalone) | GPL-2.0 | https://github.com/Utility-Muffin-Research-Kitchen/Yabasanshiro-standalone |
 
 Leaf never includes game ROMs or proprietary console BIOS files; users must
 supply their own where an emulator requires them. RetroArch itself is GPL-3.0
