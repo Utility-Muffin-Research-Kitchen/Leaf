@@ -3,7 +3,7 @@
 
 # Apps staged by `make stage`.
 STAGE_APPS ?= ssh-server Thing-File CentralScrutinizer Fugazi joes-calibrage retroarch-builds
-STAGE_EMULATORS ?= ppsspp drastic mupen64plus flycast
+STAGE_EMULATORS ?= ppsspp drastic mupen64plus flycast yabasanshiro
 PUBLIC_ROOT_DIRS ?= Roms Images Videos Apps BIOS Saves States Cheats
 
 # --- Launcher payload assembly inputs --------------------------------------
@@ -30,6 +30,7 @@ MLP1_VULKAN_RUNTIME ?= $(MLP1_GRAPHICS_RUNTIME)/vulkan/rk3566-g52-g29p1
 MLP1_DRASTIC_PACKAGE ?= $(LEAF_ROOT)/build/drastic/mlp1/drastic
 MLP1_MUPEN64PLUS_PACKAGE ?= $(N64_STANDALONE_DIR)/output/mlp1/mupen64plus
 MLP1_FLYCAST_PACKAGE ?= $(FLYCAST_STANDALONE_DIR)/output/mlp1/flycast
+MLP1_YABASANSHIRO_PACKAGE ?= $(YABASANSHIRO_STANDALONE_DIR)/output/mlp1/yabasanshiro
 MLP1_FFMPEG_BIN    ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/ffmpeg/bin/ffmpeg
 MLP1_FFMPEG_LIBS   ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/ffmpeg/flat
 MLP1_RECORD_CONVERT ?= $(RETROARCH_BUILDS_DIR)/config/mlp1/leaf-record-convert.sh
@@ -192,6 +193,7 @@ assemble-jawaka: jawaka-build shader-bundle-mlp1
 	@python3 "$(MLP1_ASSET_TOOL)" validate --output "$(PLATFORM_PAYLOAD_DIR)/assets"
 	@test -f "$(PLATFORM_PAYLOAD_DIR)/cores/build-report.json" || { echo "missing MLP1 core build report: $(PLATFORM_PAYLOAD_DIR)/cores/build-report.json" >&2; exit 1; }
 	@python3 "$(UMRK_WORKSPACE_DIR)/scripts/retroarch_validate_package.py" \
+		--umrk-root "$(WORKSPACE_DIR)" \
 		--metadata-dir "$(MLP1_METADATA_DIR)" \
 		--build-report "$(PLATFORM_PAYLOAD_DIR)/cores/build-report.json" \
 		--package-root "$(PLATFORM_PAYLOAD_DIR)"
@@ -409,6 +411,12 @@ stage-emulator:
 			package_dir="$(MLP1_FLYCAST_PACKAGE)"; \
 			remote_name="flycast"; \
 			;; \
+		yabasanshiro) \
+			test -d "$(YABASANSHIRO_STANDALONE_DIR)" || { echo "missing repo: $(YABASANSHIRO_STANDALONE_DIR)" >&2; exit 1; }; \
+			$(MAKE) -C "$(YABASANSHIRO_STANDALONE_DIR)" package-mlp1 TOOLCHAIN_IMAGE="$(TOOLCHAIN_IMAGE)"; \
+			package_dir="$(MLP1_YABASANSHIRO_PACKAGE)"; \
+			remote_name="yabasanshiro"; \
+			;; \
 		*) \
 			echo "unsupported emulator policy: $(EMULATOR) for DEVICE=$(DEVICE)" >&2; \
 			exit 1; \
@@ -533,6 +541,7 @@ release-zips:
 	STEWARD_NDS_DIR="$(STEWARD_NDS_DIR)" \
 	N64_STANDALONE_DIR="$(N64_STANDALONE_DIR)" \
 	FLYCAST_STANDALONE_DIR="$(FLYCAST_STANDALONE_DIR)" \
+	YABASANSHIRO_STANDALONE_DIR="$(YABASANSHIRO_STANDALONE_DIR)" \
 	RETROARCH_BUILDS_DIR="$(RETROARCH_BUILDS_DIR)" \
 	CORES_SPRUCE_DIR="$(CORES_SPRUCE_DIR)" \
 	LAUNCHER_SWITCHER_DIR="$(LAUNCHER_SWITCHER_DIR)" \
@@ -549,6 +558,7 @@ release-zips:
 	MLP1_DRASTIC_PACKAGE="$(MLP1_DRASTIC_PACKAGE)" \
 	MLP1_MUPEN64PLUS_PACKAGE="$(MLP1_MUPEN64PLUS_PACKAGE)" \
 	MLP1_FLYCAST_PACKAGE="$(MLP1_FLYCAST_PACKAGE)" \
+	MLP1_YABASANSHIRO_PACKAGE="$(MLP1_YABASANSHIRO_PACKAGE)" \
 	MLP1_RETROARCH_PATCH_SET="$(MLP1_RETROARCH_PATCH_SET)" \
 	"$(LEAF_ROOT)/scripts/make-sd-release-zip.sh" both
 
@@ -570,6 +580,7 @@ release-sd-zip:
 	STEWARD_NDS_DIR="$(STEWARD_NDS_DIR)" \
 	N64_STANDALONE_DIR="$(N64_STANDALONE_DIR)" \
 	FLYCAST_STANDALONE_DIR="$(FLYCAST_STANDALONE_DIR)" \
+	YABASANSHIRO_STANDALONE_DIR="$(YABASANSHIRO_STANDALONE_DIR)" \
 	RETROARCH_BUILDS_DIR="$(RETROARCH_BUILDS_DIR)" \
 	CORES_SPRUCE_DIR="$(CORES_SPRUCE_DIR)" \
 	LAUNCHER_SWITCHER_DIR="$(LAUNCHER_SWITCHER_DIR)" \
@@ -586,6 +597,7 @@ release-sd-zip:
 	MLP1_DRASTIC_PACKAGE="$(MLP1_DRASTIC_PACKAGE)" \
 	MLP1_MUPEN64PLUS_PACKAGE="$(MLP1_MUPEN64PLUS_PACKAGE)" \
 	MLP1_FLYCAST_PACKAGE="$(MLP1_FLYCAST_PACKAGE)" \
+	MLP1_YABASANSHIRO_PACKAGE="$(MLP1_YABASANSHIRO_PACKAGE)" \
 	MLP1_RETROARCH_PATCH_SET="$(MLP1_RETROARCH_PATCH_SET)" \
 	"$(LEAF_ROOT)/scripts/make-sd-release-zip.sh" install
 

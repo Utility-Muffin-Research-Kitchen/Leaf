@@ -163,7 +163,7 @@ make release-zips DEVICE=mlp1
 ```
 
 The release command builds missing MLP1 components, assembles the launcher and
-platform payload, packages standalone emulators including N64 and first-party apps, and asks
+platform payload, packages standalone emulators and first-party apps, and asks
 `miniloong-launcher-switcher` to generate the stock `loong_upgrade` install and
 recovery payloads.
 
@@ -204,6 +204,14 @@ make beta-zips   TAG=v0.9.0-beta.1 DEVICE=mlp1
 repository; `beta-zips` accepts only `vX.Y.Z-beta.N` and publishes to `Leaf-beta`.
 Each derives the complete identity from the tag and verifies the built artifact
 afterwards.
+
+Before building a tagged release, run the `Publish corresponding source`
+workflow in `Yabasanshiro-standalone` with the same Leaf tag. The workflow
+publishes the exact GPL source archive and checksum, but no emulator binary.
+Leaf then packages the runtime and records a direct link to that source asset.
+Tagged Leaf builds fail closed if the source tag is missing, points at a
+different standalone commit, or lacks its checksum sidecar. Untagged development
+builds record the public source repository without requiring a release asset.
 
 Both build the install and recovery ZIPs and verify the embedded provenance plus
 `leaf-update.json`. Release-candidate tags
