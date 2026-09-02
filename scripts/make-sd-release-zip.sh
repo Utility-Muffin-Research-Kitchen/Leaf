@@ -33,6 +33,8 @@ MLP1_RETROARCH_BIN="${MLP1_RETROARCH_BIN:-$RETROARCH_BUILDS_DIR/output/mlp1/bin/
 MLP1_RETROARCH_MANIFEST="${MLP1_RETROARCH_MANIFEST:-$RETROARCH_BUILDS_DIR/output/mlp1/build-manifest.json}"
 MLP1_SHADERS_DIR="${MLP1_SHADERS_DIR:-$RETROARCH_BUILDS_DIR/output/mlp1/shaders}"
 MLP1_SHADER_TOOL="${MLP1_SHADER_TOOL:-$RETROARCH_BUILDS_DIR/scripts/mlp1_shader_bundle.py}"
+MLP1_SHADER_COVERAGE_TOOL="${MLP1_SHADER_COVERAGE_TOOL:-$LEAF_ROOT/scripts/validate-shader-coverage.py}"
+MLP1_SHADER_COVERAGE_EXCLUSIONS="${MLP1_SHADER_COVERAGE_EXCLUSIONS:-$LEAF_ROOT/config/mlp1-shader-coverage-exclusions.json}"
 MLP1_ASSETS_DIR="${MLP1_ASSETS_DIR:-$RETROARCH_BUILDS_DIR/output/mlp1/assets}"
 MLP1_ASSET_TOOL="${MLP1_ASSET_TOOL:-$RETROARCH_BUILDS_DIR/scripts/mlp1_asset_bundle.py}"
 MLP1_CORES_DIR="${MLP1_CORES_DIR:-$CORES_SPRUCE_DIR/output/mlp1/cores}"
@@ -521,6 +523,11 @@ validate_shader_bundle() {
     local license_root="$2"
     python3 "$MLP1_SHADER_TOOL" validate --output "$platform_dir/shaders" ||
         die "MLP1 shader bundle release validation failed"
+    python3 "$MLP1_SHADER_COVERAGE_TOOL" \
+        --platform-dir "$platform_dir" \
+        --exclusions "$MLP1_SHADER_COVERAGE_EXCLUSIONS" \
+        --report-root "$UMRK_WORKSPACE_DIR" ||
+        die "MLP1 shader coverage release validation failed"
     [ -f "$license_root/SHADERS.md" ] ||
         die "missing shader license notice: $license_root/SHADERS.md"
 }
