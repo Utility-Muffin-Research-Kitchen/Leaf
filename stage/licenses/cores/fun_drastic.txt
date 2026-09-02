@@ -63,7 +63,7 @@ The package is not a single work. Each component keeps its own terms.
 | `config/usrcheat.dat`, `game_database.xml` | DraStic distribution | Redistributed as part of the DraStic data set |
 | `language/*.txt` | tenlevels and contributors | Proprietary, used with permission |
 | `fonts/Nunito-Bold.ttf` | The Nunito Project Authors | SIL Open Font License 1.1 |
-| `fonts/Translate.otf` | Bundled translation font | See `THIRD-PARTY-NOTICES.txt` |
+| `fonts/Translate.otf` | Adobe / the Noto Project (this is Noto Sans CJK SC Regular under another filename) | SIL Open Font License 1.1 |
 | `lib/libSDL2-2.0.so.0` | SDL | zlib license |
 | `lib/libasound.so.2` | ALSA project | LGPL-2.1-or-later |
 | `lib/libxkbcommon.so.0` | xkbcommon | MIT |
@@ -155,12 +155,24 @@ Licensed under the SIL Open Font License, Version 1.1. The full license text is
 available at https://openfontlicense.org/. Nunito is a Reserved Font Name; a
 modified copy may not be distributed under that name.
 
-Translate (fonts/Translate.otf)
--------------------------------
-Bundled by tenlevels as the wide-coverage font behind Fun DraStic's translation
-support. The upstream font and its license have not been identified by the
-project. Confirm its origin and terms with tenlevels before a public release
-that includes it.
+Noto Sans CJK SC (fonts/Translate.otf)
+--------------------------------------
+Copyright (c) 2014-2021 Adobe (http://www.adobe.com/).
+
+Shipped under the filename Translate.otf; the font itself is Noto Sans CJK SC
+Regular, version 2.004, unmodified. Its own name table carries the notice
+below. Renaming the file does not rename the font: the internal family name is
+still "Noto Sans CJK SC", which is what the OFL's Reserved Font Name clause
+governs.
+
+  This Font Software is licensed under the SIL Open Font License, Version 1.1.
+  This Font Software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+  CONDITIONS OF ANY KIND, either express or implied. See the SIL Open Font
+  License for the specific language, permissions and limitations governing your
+  use of this Font Software.
+
+The full license text is available at https://openfontlicense.org/ and at
+http://scripts.sil.org/OFL.
 
 DraStic (bin/drastic64, system/drastic_bios_*.bin, game_database.xml,
 config/usrcheat.dat)
