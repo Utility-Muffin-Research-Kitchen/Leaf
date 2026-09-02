@@ -33,18 +33,13 @@ LAUNCHER_SWITCHER_DIR  ?= $(WORKSPACE_DIR)/miniloong-launcher-switcher
 TOOLCHAIN_IMAGE ?= ghcr.io/utility-muffin-research-kitchen/mlp1-toolchain:local
 
 # Public sibling repos required for contributor build/stage workflows.
-REQUIRED_REPOS := Catastrophe Jawaka Thing-File ssh-server CentralScrutinizer Fugazi joes-calibrage PPSSPP-spruce steward-fu-nds N64-standalone Flycast-standalone Yabasanshiro-standalone \
+REQUIRED_REPOS := Catastrophe Jawaka Thing-File ssh-server CentralScrutinizer Fugazi joes-calibrage PPSSPP-spruce steward-fu-nds N64-standalone Flycast-standalone Yabasanshiro-standalone Fun-Drastic-standalone \
                   retroarch-builds Cores-spruce mlp1-toolchain miniloong-launcher-switcher \
                   miniloong-adb-keeper
 
 # Private maintainer-only repos. Bootstrap probes these and silently skips them
 # when credentials are unavailable.
-#
-# Fun-Drastic-standalone is optional rather than required because its upstream
-# archive is authorized material with no public home: `make package-mlp1` there
-# needs an explicitly supplied reviewed copy. Listing it as required would make
-# `make stage` fail for public contributors with no way to fix it.
-OPTIONAL_PRIVATE_REPOS := umrk-workspace Fun-Drastic-standalone
+OPTIONAL_PRIVATE_REPOS := umrk-workspace
 
 # Example paks. Deliberately NOT required: each one builds from a clean clone
 # with no sibling checkout, which is the property that makes it usable as a

@@ -5,6 +5,13 @@
 STAGE_APPS ?= ssh-server Thing-File CentralScrutinizer Fugazi joes-calibrage retroarch-builds
 # fun-drastic joins this list in the same change that flips the catalog entry
 # to "packaged" -- validate_packaged_cores couples the two.
+#
+# Its upstream archive is authorized material with no public home, so a
+# contributor without a copy cannot build it. `make stage-emulators` therefore
+# skips it with an explanatory note when FUN_DRASTIC_ARCHIVE is unset, rather
+# than failing the whole run; asking for it by name still fails loudly, and a
+# release build fails hard, because a release must not silently omit a core the
+# catalog marks packaged.
 STAGE_EMULATORS ?= ppsspp drastic mupen64plus flycast yabasanshiro fun-drastic
 PUBLIC_ROOT_DIRS ?= Roms Images Videos Apps BIOS Saves States Cheats
 
@@ -479,6 +486,13 @@ stage-emulators:
 	emulators="$(STAGE_EMULATORS)"; \
 	if [ -n "$$emulators" ]; then \
 		for emulator in $$emulators; do \
+			if [ "$$emulator" = "fun-drastic" ] && [ -z "$(FUN_DRASTIC_ARCHIVE)" ]; then \
+				echo "Skipping fun-drastic: FUN_DRASTIC_ARCHIVE is not set."; \
+				echo "  Fun DraStic packages from a reviewed upstream archive that is not"; \
+				echo "  published. Everything else stages normally. To include it:"; \
+				echo "    make stage-emulators DEVICE=$(DEVICE) FUN_DRASTIC_ARCHIVE=/path/to/drastic.zip"; \
+				continue; \
+			fi; \
 			$(MAKE) stage-emulator EMULATOR="$$emulator" DEVICE="$(DEVICE)"; \
 		done; \
 	fi
