@@ -35,6 +35,7 @@ MLP1_SHADERS_DIR="${MLP1_SHADERS_DIR:-$RETROARCH_BUILDS_DIR/output/mlp1/shaders}
 MLP1_SHADER_TOOL="${MLP1_SHADER_TOOL:-$RETROARCH_BUILDS_DIR/scripts/mlp1_shader_bundle.py}"
 MLP1_SHADER_COVERAGE_TOOL="${MLP1_SHADER_COVERAGE_TOOL:-$LEAF_ROOT/scripts/validate-shader-coverage.py}"
 MLP1_SHADER_COVERAGE_EXCLUSIONS="${MLP1_SHADER_COVERAGE_EXCLUSIONS:-$LEAF_ROOT/config/mlp1-shader-coverage-exclusions.json}"
+MLP1_SHADER_GLOBAL_SCOPE_TOOL="${MLP1_SHADER_GLOBAL_SCOPE_TOOL:-$LEAF_ROOT/scripts/validate-shader-global-scope.py}"
 MLP1_ASSETS_DIR="${MLP1_ASSETS_DIR:-$RETROARCH_BUILDS_DIR/output/mlp1/assets}"
 MLP1_ASSET_TOOL="${MLP1_ASSET_TOOL:-$RETROARCH_BUILDS_DIR/scripts/mlp1_asset_bundle.py}"
 MLP1_CORES_DIR="${MLP1_CORES_DIR:-$CORES_SPRUCE_DIR/output/mlp1/cores}"
@@ -532,6 +533,36 @@ validate_shader_bundle() {
         die "missing shader license notice: $license_root/SHADERS.md"
 }
 
+# Jawaka compiles the All RetroArch shader scope in or out and cannot see which
+# Fugazi ships beside it. A global save can replace a preset Fugazi owns, so an
+# enabled scope needs a Fugazi that can resolve the resulting conflict.
+validate_global_shader_scope() {
+    local release_root="$1"
+    local menu_binary="$release_root/platforms/$DEVICE/launcher/bin/jawaka-menu"
+    local source_args=()
+    local paks=()
+
+    [ -f "$menu_binary" ] || die "missing assembled menu binary: $menu_binary"
+    while IFS= read -r pak; do
+        paks+=("$pak")
+    done < <(find "$release_root/Apps" -maxdepth 2 -type d -name 'Fugazi.pak' 2>/dev/null | sort)
+
+    if [ "${#paks[@]}" -eq 0 ]; then
+        echo "global shader scope: no Fugazi in this release; nothing to gate"
+        return 0
+    fi
+    [ "${#paks[@]}" -eq 1 ] || die "release contains more than one Fugazi pak"
+
+    if [ -f "$JAWAKA_DIR/cmd/jawaka-menu/main.c" ]; then
+        source_args=(--jawaka-source "$JAWAKA_DIR/cmd/jawaka-menu/main.c")
+    fi
+    python3 "$MLP1_SHADER_GLOBAL_SCOPE_TOOL" \
+        --menu-binary "$menu_binary" \
+        --fugazi-pak "${paks[0]}" \
+        "${source_args[@]}" ||
+        die "assembled Fugazi does not support the enabled global shader scope"
+}
+
 validate_portmaster_integration() {
     local release_root="$1"
     python3 - "$release_root" <<'EOF' || die "PortMaster integration validation failed"
@@ -1019,6 +1050,7 @@ build_install_zip() {
     done
     sync_platform_managed_apps_manifest "$RELEASE_ROOT/platforms/mlp1/manifest.json" "$MANAGED_APPS_FILE"
     validate_pakrat_owned_apps "$RELEASE_ROOT"
+    validate_global_shader_scope "$RELEASE_ROOT"
     validate_portmaster_integration "$RELEASE_ROOT"
     audit_mlp1_build_tuning "$RELEASE_ROOT"
     finalize_component_provenance
