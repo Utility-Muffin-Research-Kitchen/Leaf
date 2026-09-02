@@ -3,7 +3,9 @@
 
 # Apps staged by `make stage`.
 STAGE_APPS ?= ssh-server Thing-File CentralScrutinizer Fugazi joes-calibrage retroarch-builds
-STAGE_EMULATORS ?= ppsspp drastic mupen64plus flycast yabasanshiro
+# fun-drastic joins this list in the same change that flips the catalog entry
+# to "packaged" -- validate_packaged_cores couples the two.
+STAGE_EMULATORS ?= ppsspp drastic mupen64plus flycast yabasanshiro fun-drastic
 PUBLIC_ROOT_DIRS ?= Roms Images Videos Apps BIOS Saves States Cheats
 
 # --- Launcher payload assembly inputs --------------------------------------
@@ -31,6 +33,11 @@ MLP1_DRASTIC_PACKAGE ?= $(LEAF_ROOT)/build/drastic/mlp1/drastic
 MLP1_MUPEN64PLUS_PACKAGE ?= $(N64_STANDALONE_DIR)/output/mlp1/mupen64plus
 MLP1_FLYCAST_PACKAGE ?= $(FLYCAST_STANDALONE_DIR)/output/mlp1/flycast
 MLP1_YABASANSHIRO_PACKAGE ?= $(YABASANSHIRO_STANDALONE_DIR)/output/mlp1/yabasanshiro
+MLP1_FUN_DRASTIC_PACKAGE ?= $(FUN_DRASTIC_STANDALONE_DIR)/output/mlp1/fun-drastic
+# The reviewed Fun DraStic archive, supplied explicitly. Empty by default: the
+# product repo refuses to package without it, which is the intended behavior
+# for a contributor who has no authorized copy.
+FUN_DRASTIC_ARCHIVE ?=
 MLP1_FFMPEG_BIN    ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/ffmpeg/bin/ffmpeg
 MLP1_FFMPEG_LIBS   ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/ffmpeg/flat
 MLP1_RECORD_CONVERT ?= $(RETROARCH_BUILDS_DIR)/config/mlp1/leaf-record-convert.sh
@@ -417,6 +424,12 @@ stage-emulator:
 			package_dir="$(MLP1_YABASANSHIRO_PACKAGE)"; \
 			remote_name="yabasanshiro"; \
 			;; \
+		fun-drastic) \
+			test -d "$(FUN_DRASTIC_STANDALONE_DIR)" || { echo "missing repo: $(FUN_DRASTIC_STANDALONE_DIR)" >&2; exit 1; }; \
+			$(MAKE) -C "$(FUN_DRASTIC_STANDALONE_DIR)" package-mlp1 FUN_DRASTIC_ARCHIVE="$(FUN_DRASTIC_ARCHIVE)"; \
+			package_dir="$(MLP1_FUN_DRASTIC_PACKAGE)"; \
+			remote_name="fun-drastic"; \
+			;; \
 		*) \
 			echo "unsupported emulator policy: $(EMULATOR) for DEVICE=$(DEVICE)" >&2; \
 			exit 1; \
@@ -542,6 +555,8 @@ release-zips:
 	N64_STANDALONE_DIR="$(N64_STANDALONE_DIR)" \
 	FLYCAST_STANDALONE_DIR="$(FLYCAST_STANDALONE_DIR)" \
 	YABASANSHIRO_STANDALONE_DIR="$(YABASANSHIRO_STANDALONE_DIR)" \
+	FUN_DRASTIC_STANDALONE_DIR="$(FUN_DRASTIC_STANDALONE_DIR)" \
+	FUN_DRASTIC_ARCHIVE="$(FUN_DRASTIC_ARCHIVE)" \
 	RETROARCH_BUILDS_DIR="$(RETROARCH_BUILDS_DIR)" \
 	CORES_SPRUCE_DIR="$(CORES_SPRUCE_DIR)" \
 	LAUNCHER_SWITCHER_DIR="$(LAUNCHER_SWITCHER_DIR)" \
@@ -559,6 +574,7 @@ release-zips:
 	MLP1_MUPEN64PLUS_PACKAGE="$(MLP1_MUPEN64PLUS_PACKAGE)" \
 	MLP1_FLYCAST_PACKAGE="$(MLP1_FLYCAST_PACKAGE)" \
 	MLP1_YABASANSHIRO_PACKAGE="$(MLP1_YABASANSHIRO_PACKAGE)" \
+	MLP1_FUN_DRASTIC_PACKAGE="$(MLP1_FUN_DRASTIC_PACKAGE)" \
 	MLP1_RETROARCH_PATCH_SET="$(MLP1_RETROARCH_PATCH_SET)" \
 	"$(LEAF_ROOT)/scripts/make-sd-release-zip.sh" both
 
@@ -581,6 +597,8 @@ release-sd-zip:
 	N64_STANDALONE_DIR="$(N64_STANDALONE_DIR)" \
 	FLYCAST_STANDALONE_DIR="$(FLYCAST_STANDALONE_DIR)" \
 	YABASANSHIRO_STANDALONE_DIR="$(YABASANSHIRO_STANDALONE_DIR)" \
+	FUN_DRASTIC_STANDALONE_DIR="$(FUN_DRASTIC_STANDALONE_DIR)" \
+	FUN_DRASTIC_ARCHIVE="$(FUN_DRASTIC_ARCHIVE)" \
 	RETROARCH_BUILDS_DIR="$(RETROARCH_BUILDS_DIR)" \
 	CORES_SPRUCE_DIR="$(CORES_SPRUCE_DIR)" \
 	LAUNCHER_SWITCHER_DIR="$(LAUNCHER_SWITCHER_DIR)" \
@@ -598,6 +616,7 @@ release-sd-zip:
 	MLP1_MUPEN64PLUS_PACKAGE="$(MLP1_MUPEN64PLUS_PACKAGE)" \
 	MLP1_FLYCAST_PACKAGE="$(MLP1_FLYCAST_PACKAGE)" \
 	MLP1_YABASANSHIRO_PACKAGE="$(MLP1_YABASANSHIRO_PACKAGE)" \
+	MLP1_FUN_DRASTIC_PACKAGE="$(MLP1_FUN_DRASTIC_PACKAGE)" \
 	MLP1_RETROARCH_PATCH_SET="$(MLP1_RETROARCH_PATCH_SET)" \
 	"$(LEAF_ROOT)/scripts/make-sd-release-zip.sh" install
 

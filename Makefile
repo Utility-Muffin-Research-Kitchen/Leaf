@@ -22,7 +22,7 @@ LARGE_LIBRARY_FIXTURE_ENV = \
 	REMOTE_SDCARD_PATH="$(REMOTE_SDCARD_PATH)"
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap doctor status status-internal pakrat-local-feed-test leaf-release-policy-test shader-bundle-release-policy-test input-roster-policy-test flycast-release-policy-smoke yabasanshiro-release-policy-smoke yabasanshiro-stage-policy-smoke core-rebuild-gate-test package-quiesce-smoke adb-enable-marker adb-disable-marker adb-tail-logs adb-large-library-create adb-large-library-clean adb-large-library-status adb-install-wrapper adb-uninstall-wrapper benchmark-ppsspp
+.PHONY: help bootstrap doctor status status-internal pakrat-local-feed-test leaf-release-policy-test shader-bundle-release-policy-test input-roster-policy-test flycast-release-policy-smoke yabasanshiro-release-policy-smoke yabasanshiro-stage-policy-smoke fun-drastic-release-policy-smoke fun-drastic-stage-policy-smoke core-rebuild-gate-test package-quiesce-smoke adb-enable-marker adb-disable-marker adb-tail-logs adb-large-library-create adb-large-library-clean adb-large-library-status adb-install-wrapper adb-uninstall-wrapper benchmark-ppsspp
 
 help:
 	@echo "Leaf workspace commands (DEVICE=$(DEVICE), WORKSPACE_DIR=$(WORKSPACE_DIR)):"
@@ -41,6 +41,7 @@ help:
 	@echo "  make stage-emulator EMULATOR=mupen64plus DEVICE=mlp1 stage standalone N64"
 	@echo "  make stage-emulator EMULATOR=flycast DEVICE=mlp1 stage standalone Dreamcast"
 	@echo "  make stage-emulator EMULATOR=yabasanshiro DEVICE=mlp1 stage standalone Saturn"
+	@echo "  make stage-emulator EMULATOR=fun-drastic DEVICE=mlp1 FUN_DRASTIC_ARCHIVE=... stage Fun DraStic"
 	@echo "  make stage-emulators DEVICE=mlp1          stage standalone emulators"
 	@echo "  make stage-app APP=CentralScrutinizer DEVICE=mlp1 stage a single app repo"
 	@echo "  make stage-app APP=Leaf-Itchio-Pak DEVICE=mlp1 explicitly stage the optional Itch.io app"
@@ -65,6 +66,7 @@ help:
 	@echo "  make flycast-release-policy-smoke         test standalone Flycast release gates"
 	@echo "  make yabasanshiro-release-policy-smoke    test standalone Saturn release gates"
 	@echo "  make yabasanshiro-stage-policy-smoke      test standalone Saturn dispatch"
+	@echo "  make fun-drastic-release-policy-smoke fun-drastic-stage-policy-smoke     test the second NDS emulator release gates"
 	@echo "  make core-rebuild-gate-test               test explicit long core-rebuild authorization"
 	@echo "  make package-quiesce-smoke                test fail-closed stage-app service barrier"
 	@echo "  make adb-enable-marker                    enable Leaf launcher marker"
@@ -88,6 +90,12 @@ yabasanshiro-release-policy-smoke:
 
 yabasanshiro-stage-policy-smoke:
 	@bash scripts/yabasanshiro-stage-policy-smoke.sh
+
+fun-drastic-release-policy-smoke:
+	@python3 scripts/validate-fun-drastic-release-test.py
+
+fun-drastic-stage-policy-smoke:
+	@bash scripts/fun-drastic-stage-policy-smoke.sh
 
 doctor:
 	@LEAF_WORKSPACE_DIR="$(WORKSPACE_DIR)" TOOLCHAIN_IMAGE="$(TOOLCHAIN_IMAGE)" scripts/doctor.sh

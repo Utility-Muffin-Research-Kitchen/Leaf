@@ -21,6 +21,7 @@ from the named upstream release asset.
 |---|---|---|
 | dosbox_pure | GPL-2.0 | https://github.com/libretro/dosbox-pure |
 | drastic (standalone) | LGPL-2.1 | https://github.com/steward-fu/nds |
+| fun_drastic (standalone) | Proprietary, used with permission | https://github.com/Utility-Muffin-Research-Kitchen/Fun-Drastic-standalone |
 | easyrpg | GPL-3.0 | https://github.com/EasyRPG/Player |
 | fake08 | MIT | https://github.com/jtothebell/fake-08 |
 | fbalpha2012 | FB Alpha (non-commercial) | https://github.com/libretro/fbalpha2012 |

@@ -23,6 +23,7 @@ STEWARD_NDS_DIR        ?= $(WORKSPACE_DIR)/steward-fu-nds
 N64_STANDALONE_DIR     ?= $(WORKSPACE_DIR)/N64-standalone
 FLYCAST_STANDALONE_DIR ?= $(WORKSPACE_DIR)/Flycast-standalone
 YABASANSHIRO_STANDALONE_DIR ?= $(WORKSPACE_DIR)/Yabasanshiro-standalone
+FUN_DRASTIC_STANDALONE_DIR ?= $(WORKSPACE_DIR)/Fun-Drastic-standalone
 RETROARCH_BUILDS_DIR   ?= $(WORKSPACE_DIR)/retroarch-builds
 CORES_SPRUCE_DIR       ?= $(WORKSPACE_DIR)/Cores-spruce
 TOOLCHAIN_DIR          ?= $(WORKSPACE_DIR)/mlp1-toolchain
@@ -38,7 +39,12 @@ REQUIRED_REPOS := Catastrophe Jawaka Thing-File ssh-server CentralScrutinizer Fu
 
 # Private maintainer-only repos. Bootstrap probes these and silently skips them
 # when credentials are unavailable.
-OPTIONAL_PRIVATE_REPOS := umrk-workspace
+#
+# Fun-Drastic-standalone is optional rather than required because its upstream
+# archive is authorized material with no public home: `make package-mlp1` there
+# needs an explicitly supplied reviewed copy. Listing it as required would make
+# `make stage` fail for public contributors with no way to fix it.
+OPTIONAL_PRIVATE_REPOS := umrk-workspace Fun-Drastic-standalone
 
 # Example paks. Deliberately NOT required: each one builds from a clean clone
 # with no sibling checkout, which is the property that makes it usable as a

@@ -206,6 +206,7 @@ def check_shipped_wrappers() -> None:
         WORKSPACE_ROOT / "PPSSPP-spruce" / "package-mlp1.sh",
         WORKSPACE_ROOT / "Flycast-standalone" / "config" / "mlp1" / "launch.sh",
         WORKSPACE_ROOT / "N64-standalone" / "config" / "mlp1" / "launch.sh",
+        WORKSPACE_ROOT / "Fun-Drastic-standalone" / "config" / "mlp1" / "launch.sh",
     ]
     for wrapper in wrappers:
         if not wrapper.exists():
