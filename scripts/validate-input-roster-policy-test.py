@@ -199,6 +199,65 @@ def check_binary_case() -> None:
             )
 
 
+def check_device_list_parser() -> None:
+    """ROSTER005. Both shapes shipped: the Handlers= miss was in all four
+    copies of this resolver, and the missing record reset was in two of them.
+    The second is the nastier one -- it returns a real event node belonging to
+    the previous device, so the caller's own [ -e ] guard passes."""
+    header = "#!/bin/sh\nresolve() {\n    awk '\n"
+    footer = "    ' /proc/bus/input/devices\n}\n"
+    name_and_sysfs = (
+        '        /^N: Name="Loong Gamepad"/ { name = 1 }\n'
+        "        /^S: Sysfs=\\/devices\\/virtual\\/input\\// { virtual = 1 }\n"
+    )
+    bare_match = (
+        "        /^H: Handlers=/ {\n"
+        "            for (i = 1; i <= NF; i++) {\n"
+        "                if ($i ~ /^event[0-9]+$/) { event = $i }\n"
+        "            }\n"
+        "        }\n"
+    )
+    stripped_match = (
+        "        /^H: Handlers=/ {\n"
+        "            for (i = 1; i <= NF; i++) {\n"
+        "                h = $i\n"
+        "                sub(/^Handlers=/, \"\", h)\n"
+        "                if (h ~ /^event[0-9]+$/) { event = h }\n"
+        "            }\n"
+        "        }\n"
+    )
+    blank_reset = '        /^$/ { name = 0; virtual = 0; event = "" }\n'
+    record_reset = '        /^I:/ { name = 0; virtual = 0; event = "" }\n'
+    tail = '        name && virtual && event != "" { print event; exit }\n'
+
+    cases = [
+        ("both defects", blank_reset + name_and_sysfs + bare_match + tail, 2),
+        ("handlers only", record_reset + name_and_sysfs + bare_match + tail, 1),
+        ("reset only", blank_reset + name_and_sysfs + stripped_match + tail, 1),
+        ("clean", record_reset + name_and_sysfs + stripped_match + tail, 0),
+    ]
+    for label, body, expected in cases:
+        with tempfile.TemporaryDirectory(prefix="leaf-roster005-") as temp:
+            wrapper = Path(temp) / "launch.sh"
+            wrapper.write_text(header + body + footer, encoding="utf-8")
+            result = run(wrapper)
+            found = result.stderr.count("ROSTER005")
+            if found != expected:
+                FAILURES.append(
+                    f"ROSTER005 {label}: expected {expected} finding(s), got "
+                    f"{found}\n{result.stderr.strip()}"
+                )
+
+    # A file that only mentions the path must not be flagged.
+    with tempfile.TemporaryDirectory(prefix="leaf-roster005-ok-") as temp:
+        wrapper = Path(temp) / "notes.sh"
+        wrapper.write_text(
+            "#!/bin/sh\n# see /proc/bus/input/devices\necho hi\n", encoding="utf-8"
+        )
+        if run(wrapper).returncode != 0:
+            FAILURES.append("ROSTER005 flagged a file that only mentions the path")
+
+
 def check_shipped_wrappers() -> None:
     """The gate must pass the wrappers currently shipped for MLP1. If this
     fails, the gate is wrong -- not the wrappers."""
@@ -206,6 +265,7 @@ def check_shipped_wrappers() -> None:
         WORKSPACE_ROOT / "PPSSPP-spruce" / "package-mlp1.sh",
         WORKSPACE_ROOT / "Flycast-standalone" / "config" / "mlp1" / "launch.sh",
         WORKSPACE_ROOT / "N64-standalone" / "config" / "mlp1" / "launch.sh",
+        WORKSPACE_ROOT / "Fun-Drastic-standalone" / "config" / "mlp1" / "launch.sh",
     ]
     for wrapper in wrappers:
         if not wrapper.exists():
@@ -219,6 +279,7 @@ def check_shipped_wrappers() -> None:
 
 
 check_binary_case()
+check_device_list_parser()
 check_shipped_wrappers()
 
 if FAILURES:

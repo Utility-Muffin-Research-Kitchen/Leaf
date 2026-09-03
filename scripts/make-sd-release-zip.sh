@@ -9,7 +9,7 @@ WORKSPACE_DIR="${LEAF_WORKSPACE_DIR:-$(cd "$LEAF_ROOT/.." && pwd)}"
 
 DEVICE="${DEVICE:-mlp1}"
 STAGE_APPS="${STAGE_APPS-ssh-server Thing-File CentralScrutinizer Fugazi joes-calibrage retroarch-builds}"
-STAGE_EMULATORS="${STAGE_EMULATORS-ppsspp drastic mupen64plus flycast yabasanshiro}"
+STAGE_EMULATORS="${STAGE_EMULATORS-ppsspp drastic mupen64plus flycast yabasanshiro fun-drastic}"
 PUBLIC_ROOT_DIRS="${PUBLIC_ROOT_DIRS-Roms Images Videos Apps BIOS Saves States Cheats}"
 RELEASE_BUILD="${RELEASE_BUILD:-$LEAF_ROOT/build/release}"
 STAGE_BUILD="${STAGE_BUILD:-$LEAF_ROOT/build/stage/mlp1}"
@@ -22,6 +22,8 @@ STEWARD_NDS_DIR="${STEWARD_NDS_DIR:-$WORKSPACE_DIR/steward-fu-nds}"
 N64_STANDALONE_DIR="${N64_STANDALONE_DIR:-$WORKSPACE_DIR/N64-standalone}"
 FLYCAST_STANDALONE_DIR="${FLYCAST_STANDALONE_DIR:-$WORKSPACE_DIR/Flycast-standalone}"
 YABASANSHIRO_STANDALONE_DIR="${YABASANSHIRO_STANDALONE_DIR:-$WORKSPACE_DIR/Yabasanshiro-standalone}"
+FUN_DRASTIC_STANDALONE_DIR="${FUN_DRASTIC_STANDALONE_DIR:-$WORKSPACE_DIR/Fun-Drastic-standalone}"
+FUN_DRASTIC_ARCHIVE="${FUN_DRASTIC_ARCHIVE:-}"
 RETROARCH_BUILDS_DIR="${RETROARCH_BUILDS_DIR:-$WORKSPACE_DIR/retroarch-builds}"
 CORES_SPRUCE_DIR="${CORES_SPRUCE_DIR:-$WORKSPACE_DIR/Cores-spruce}"
 LAUNCHER_SWITCHER_DIR="${LAUNCHER_SWITCHER_DIR:-$WORKSPACE_DIR/miniloong-launcher-switcher}"
@@ -47,6 +49,7 @@ MLP1_DRASTIC_PACKAGE="${MLP1_DRASTIC_PACKAGE:-$LEAF_ROOT/build/drastic/mlp1/dras
 MLP1_MUPEN64PLUS_PACKAGE="${MLP1_MUPEN64PLUS_PACKAGE:-$N64_STANDALONE_DIR/output/mlp1/mupen64plus}"
 MLP1_FLYCAST_PACKAGE="${MLP1_FLYCAST_PACKAGE:-$FLYCAST_STANDALONE_DIR/output/mlp1/flycast}"
 MLP1_YABASANSHIRO_PACKAGE="${MLP1_YABASANSHIRO_PACKAGE:-$YABASANSHIRO_STANDALONE_DIR/output/mlp1/yabasanshiro}"
+MLP1_FUN_DRASTIC_PACKAGE="${MLP1_FUN_DRASTIC_PACKAGE:-$FUN_DRASTIC_STANDALONE_DIR/output/mlp1/fun-drastic}"
 # Read the canonical patch set rather than carrying a second copy of it. Two
 # hand-maintained defaults drifted apart twice; the file is the single source.
 MLP1_RETROARCH_PATCH_SET_FILE="${MLP1_RETROARCH_PATCH_SET_FILE:-$LEAF_ROOT/config/mlp1-retroarch-patch-set.txt}"
@@ -67,7 +70,7 @@ Environment:
   REBUILD_CORES=1  explicitly allow missing/stale stock-parity cores to compile
   FORCE_REBUILD_CORES=1  with REBUILD_CORES=1, bypass every valid core cache hit
   STAGE_APPS="ssh-server Thing-File CentralScrutinizer Fugazi joes-calibrage retroarch-builds"
-  STAGE_EMULATORS="ppsspp drastic mupen64plus flycast yabasanshiro"
+  STAGE_EMULATORS="ppsspp drastic mupen64plus flycast yabasanshiro fun-drastic"
 EOF
 }
 
@@ -168,6 +171,12 @@ configure_release_components() {
         *" yabasanshiro "*)
             RELEASE_COMPONENT_ARGS+=(--component "emulator:yabasanshiro=$YABASANSHIRO_STANDALONE_DIR")
             REQUIRED_COMPONENT_ARGS+=(--required-component "emulator:yabasanshiro")
+            ;;
+    esac
+    case " $STAGE_EMULATORS " in
+        *" fun-drastic "*)
+            RELEASE_COMPONENT_ARGS+=(--component "emulator:fun-drastic=$FUN_DRASTIC_STANDALONE_DIR")
+            REQUIRED_COMPONENT_ARGS+=(--required-component "emulator:fun-drastic")
             ;;
     esac
 }
@@ -813,6 +822,18 @@ package_emulator() {
             package_dir="$MLP1_FLYCAST_PACKAGE"
             remote_name="flycast"
             ;;
+        fun-drastic)
+            [ -d "$FUN_DRASTIC_STANDALONE_DIR" ] || die "missing Fun DraStic standalone repo: $FUN_DRASTIC_STANDALONE_DIR"
+            # The archive is authorized material with no public home, so the
+            # product repo needs it named explicitly and refuses to guess.
+            [ -n "$FUN_DRASTIC_ARCHIVE" ] || die "FUN_DRASTIC_ARCHIVE is not set.
+Fun DraStic packages from a reviewed upstream archive that is not published.
+Supply it, or drop fun-drastic from STAGE_EMULATORS for this build."
+            make -C "$FUN_DRASTIC_STANDALONE_DIR" package-mlp1 \
+                FUN_DRASTIC_ARCHIVE="$FUN_DRASTIC_ARCHIVE"
+            package_dir="$MLP1_FUN_DRASTIC_PACKAGE"
+            remote_name="fun-drastic"
+            ;;
         yabasanshiro)
             [ -d "$YABASANSHIRO_STANDALONE_DIR" ] || die "missing YabaSanshiro standalone repo: $YABASANSHIRO_STANDALONE_DIR"
             prepare_yabasanshiro_source
@@ -896,6 +917,29 @@ validate_standalone_flycast_release() {
     python3 "$LEAF_ROOT/scripts/validate-flycast-standalone-release.py" \
         "$platform_dir" ||
         die "Flycast standalone release validation failed"
+}
+
+validate_standalone_fun_drastic_release() {
+    local platform_dir="$RELEASE_ROOT/platforms/mlp1"
+    python3 "$LEAF_ROOT/scripts/validate-fun-drastic-release.py" \
+        "$platform_dir" ||
+        die "Fun DraStic standalone release validation failed"
+}
+
+# Redundant with the Fun DraStic package allowlist on purpose. The allowlist is
+# the thing a future change might loosen; this gate covers the whole assembled
+# payload and, through audit_release_zip, the finished ZIPs.
+validate_no_nintendo_bios() {
+    local scan_root="$1"
+    local label="$2"
+    local found
+    found="$(find "$scan_root" \
+        \( -name 'nds_bios_arm7.bin' -o -name 'nds_bios_arm9.bin' \
+           -o -name 'nds_firmware.bin' \) -print 2>/dev/null)"
+    if [ -n "$found" ]; then
+        printf '%s\n' "$found" >&2
+        die "Nintendo DS BIOS or firmware found in $label; it must never ship"
+    fi
 }
 
 validate_standalone_yabasanshiro_release() {
@@ -986,6 +1030,20 @@ validate_install_stage_clean() {
     fi
 }
 
+# The finished archive, not the staging directory it came from: a packaging
+# change could add a file between the payload gate and the zip.
+audit_zip_no_nintendo_bios() {
+    local zip_path="$1"
+    local found
+    found="$(unzip -Z1 "$zip_path" 2>/dev/null |
+        grep -E '(^|/)(nds_bios_arm7\.bin|nds_bios_arm9\.bin|nds_firmware\.bin)$' ||
+        true)"
+    if [ -n "$found" ]; then
+        printf '%s\n' "$found" >&2
+        die "Nintendo DS BIOS or firmware found in $(basename "$zip_path")"
+    fi
+}
+
 zip_stage() {
     local stage_dir="$1"
     local zip_path="$2"
@@ -995,6 +1053,7 @@ zip_stage() {
         cd "$stage_dir"
         zip -qr "$zip_path" .
     )
+    audit_zip_no_nintendo_bios "$zip_path"
     echo "Wrote $zip_path"
 }
 
@@ -1037,6 +1096,8 @@ build_install_zip() {
     validate_standalone_n64_release
     validate_standalone_flycast_release
     validate_standalone_yabasanshiro_release
+    validate_standalone_fun_drastic_release
+    validate_no_nintendo_bios "$RELEASE_ROOT" "the assembled release payload"
     validate_ppsspp_vulkan_release
 
     cp -R "$LEAF_ROOT/stage/licenses" "$RELEASE_ROOT/licenses"
