@@ -487,6 +487,7 @@ validate_retroarch_contract() {
     local report="$platform_dir/cores/build-report.json"
     [ -f "$report" ] || die "missing MLP1 core build report: $report"
     python3 "$UMRK_WORKSPACE_DIR/scripts/retroarch_validate_package.py" \
+        --umrk-root "$WORKSPACE_DIR" \
         --metadata-dir "$UMRK_WORKSPACE_DIR/plans/retroarch/generated/mlp1" \
         --build-report "$report" \
         --package-root "$platform_dir" \
