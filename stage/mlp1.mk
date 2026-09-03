@@ -24,6 +24,8 @@ MLP1_RETROARCH_BIN ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/bin/retroarch
 MLP1_RETROARCH_MANIFEST ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/build-manifest.json
 MLP1_SHADERS_DIR    ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/shaders
 MLP1_SHADER_TOOL    ?= $(RETROARCH_BUILDS_DIR)/scripts/mlp1_shader_bundle.py
+MLP1_SHADER_COVERAGE_TOOL ?= $(LEAF_ROOT)/scripts/validate-shader-coverage.py
+MLP1_SHADER_COVERAGE_EXCLUSIONS ?= $(LEAF_ROOT)/config/mlp1-shader-coverage-exclusions.json
 MLP1_ASSETS_DIR     ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/assets
 MLP1_ASSET_TOOL     ?= $(RETROARCH_BUILDS_DIR)/scripts/mlp1_asset_bundle.py
 MLP1_CORES_DIR     ?= $(CORES_SPRUCE_DIR)/output/mlp1/cores
@@ -198,6 +200,10 @@ assemble-jawaka: jawaka-build shader-bundle-mlp1
 	@mkdir -p "$(PLATFORM_PAYLOAD_DIR)/shaders"
 	@cp -Rf "$(MLP1_SHADERS_DIR)/." "$(PLATFORM_PAYLOAD_DIR)/shaders/"
 	@python3 "$(MLP1_SHADER_TOOL)" validate --output "$(PLATFORM_PAYLOAD_DIR)/shaders"
+	@python3 "$(MLP1_SHADER_COVERAGE_TOOL)" \
+		--platform-dir "$(PLATFORM_PAYLOAD_DIR)" \
+		--exclusions "$(MLP1_SHADER_COVERAGE_EXCLUSIONS)" \
+		--report-root "$(UMRK_WORKSPACE_DIR)"
 	@# RetroArch menu assets. Ozone reads every icon and font it draws from
 	@# assets_directory, which jawaka-retroarch-runner points here; without this
 	@# tree Ozone has no icons and falls back to a bitmap font that cannot draw CJK.
