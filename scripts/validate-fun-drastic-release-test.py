@@ -72,14 +72,17 @@ def write_manifest(package: Path) -> None:
         "package_schema_version": 1,
         "config_schema_version": 1,
         "source_archive": "drastic.zip",
-        "source_archive_sha256": "6" * 64,
+        "source_funhook_sha256": "6" * 64,
+        "hook_built_from_source": True,
+        "source_repo": "https://github.com/Utility-Muffin-Research-Kitchen/Fun-Drastic-src",
+        "license": "PolyForm-Noncommercial-1.0.0",
         "binary": "bin/drastic64",
         "binary_sha256": sha256(package / "bin/drastic64"),
         "entrypoint": "launch.sh",
         "sdl_video_driver": "wayland",
         "bundled_bios": [f"system/{name}" for name in BUNDLED_BIOS],
         "authorization": "licenses/DISTRIBUTION-BASIS.md",
-        "distribution_status": "proprietary-used-with-permission",
+        "distribution_status": "noncommercial-license",
         "exceptions": [
             {
                 "artifact": "bin/drastic64",
@@ -176,7 +179,12 @@ def fixture(root: Path) -> Path:
     for name, size in BUNDLED_BIOS.items():
         (package / "system" / name).write_bytes(b"\x00" * size)
     (package / "Overlays/960x720/Template/aspect_single.png").write_bytes(b"png\n")
-    for name in ("DISTRIBUTION-BASIS.md", "THIRD-PARTY-NOTICES.txt"):
+    for name in (
+        "DISTRIBUTION-BASIS.md",
+        "THIRD-PARTY-NOTICES.txt",
+        "FUN-DRASTIC-LICENSE.txt",
+        "CREDITS.md",
+    ):
         (package / "licenses" / name).write_text(name + "\n", encoding="utf-8")
 
     os.chmod(package / "bin/drastic64", 0o755)
@@ -313,7 +321,7 @@ def main() -> None:
         "unpinned-archive",
         lambda platform: rewrite_json(
             platform / package_rel / "manifest.json",
-            lambda data: data.update(source_archive_sha256=""),
+            lambda data: data.update(source_funhook_sha256=""),
         ),
         False,
     )

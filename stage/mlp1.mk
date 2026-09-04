@@ -6,12 +6,10 @@ STAGE_APPS ?= ssh-server Thing-File CentralScrutinizer Fugazi joes-calibrage ret
 # fun-drastic joins this list in the same change that flips the catalog entry
 # to "packaged" -- validate_packaged_cores couples the two.
 #
-# Its upstream archive is authorized material with no public home, so a
-# contributor without a copy cannot build it. `make stage-emulators` therefore
-# skips it with an explanatory note when FUN_DRASTIC_ARCHIVE is unset, rather
-# than failing the whole run; asking for it by name still fails loudly, and a
-# release build fails hard, because a release must not silently omit a core the
-# catalog marks packaged.
+# It builds like every other emulator now: tenlevels donated the Fun DraStic
+# source, it is mirrored in the Fun-Drastic-src sibling checkout, and the hook
+# is cross-built from it. There is no unpublished archive to supply and so no
+# special case here any more.
 STAGE_EMULATORS ?= ppsspp drastic mupen64plus flycast yabasanshiro fun-drastic
 PUBLIC_ROOT_DIRS ?= Roms Images Videos Apps BIOS Saves States Cheats
 
@@ -439,7 +437,8 @@ stage-emulator:
 			;; \
 		fun-drastic) \
 			test -d "$(FUN_DRASTIC_STANDALONE_DIR)" || { echo "missing repo: $(FUN_DRASTIC_STANDALONE_DIR)" >&2; exit 1; }; \
-			$(MAKE) -C "$(FUN_DRASTIC_STANDALONE_DIR)" package-mlp1 FUN_DRASTIC_ARCHIVE="$(FUN_DRASTIC_ARCHIVE)"; \
+			test -d "$(FUN_DRASTIC_SRC_DIR)" || { echo "missing repo: $(FUN_DRASTIC_SRC_DIR) (run: make bootstrap)" >&2; exit 1; }; \
+			$(MAKE) -C "$(FUN_DRASTIC_STANDALONE_DIR)" package-mlp1 FUN_DRASTIC_SRC_DIR="$(FUN_DRASTIC_SRC_DIR)"; \
 			package_dir="$(MLP1_FUN_DRASTIC_PACKAGE)"; \
 			remote_name="fun-drastic"; \
 			;; \
@@ -492,13 +491,6 @@ stage-emulators:
 	emulators="$(STAGE_EMULATORS)"; \
 	if [ -n "$$emulators" ]; then \
 		for emulator in $$emulators; do \
-			if [ "$$emulator" = "fun-drastic" ] && [ -z "$(FUN_DRASTIC_ARCHIVE)" ]; then \
-				echo "Skipping fun-drastic: FUN_DRASTIC_ARCHIVE is not set."; \
-				echo "  Fun DraStic packages from a reviewed upstream archive that is not"; \
-				echo "  published. Everything else stages normally. To include it:"; \
-				echo "    make stage-emulators DEVICE=$(DEVICE) FUN_DRASTIC_ARCHIVE=/path/to/drastic.zip"; \
-				continue; \
-			fi; \
 			$(MAKE) stage-emulator EMULATOR="$$emulator" DEVICE="$(DEVICE)"; \
 		done; \
 	fi

@@ -56,7 +56,15 @@ REQUIRED_HOOK_ASSETS = (
     "res/cursor/1.png",
 )
 
-REQUIRED_LICENSES = ("DISTRIBUTION-BASIS.md", "THIRD-PARTY-NOTICES.txt")
+REQUIRED_LICENSES = (
+    "DISTRIBUTION-BASIS.md",
+    "THIRD-PARTY-NOTICES.txt",
+    # tenlevels' own licence and credits, shipped verbatim. The PolyForm
+    # licence carries a required notice, so a release that drops it is not
+    # one we may ship.
+    "FUN-DRASTIC-LICENSE.txt",
+    "CREDITS.md",
+)
 
 FORBIDDEN_TOP_LEVEL = {
     "backup",
@@ -269,12 +277,22 @@ def validate_package(platform_dir: Path) -> tuple[int, str]:
     for key, expected in expected_fields.items():
         if manifest.get(key) != expected:
             fail(f"Fun DraStic manifest {key} must be {expected!r}")
-    if not SHA256_RE.fullmatch(str(manifest.get("source_archive_sha256", ""))):
-        fail("Fun DraStic manifest must pin the source archive SHA-256")
+    # The hook is built from source now, so the release pins the source it came
+    # from rather than a binary archive.
+    if not SHA256_RE.fullmatch(str(manifest.get("source_funhook_sha256", ""))):
+        fail("Fun DraStic manifest must pin the funhook.c it was built from")
+    if manifest.get("hook_built_from_source") is not True:
+        fail("Fun DraStic manifest must record that the hook was built from source")
+    if not str(manifest.get("source_repo", "")).startswith("http"):
+        fail("Fun DraStic manifest must record where the source came from")
     if manifest.get("authorization") != "licenses/DISTRIBUTION-BASIS.md":
         fail("Fun DraStic manifest must reference the recorded distribution basis")
-    if manifest.get("distribution_status") != "proprietary-used-with-permission":
-        fail("Fun DraStic manifest must record its proprietary distribution status")
+    if manifest.get("license") != "PolyForm-Noncommercial-1.0.0":
+        fail("Fun DraStic manifest must record the PolyForm Noncommercial licence")
+    if manifest.get("distribution_status") != "noncommercial-license":
+        fail("Fun DraStic manifest must record its noncommercial distribution status")
+    if str(manifest.get("author", "")).lower() != "tenlevels":
+        fail("Fun DraStic manifest must credit tenlevels as the author")
     exceptions = json.dumps(manifest.get("exceptions") or [])
     if "not built by UMRK" not in exceptions:
         fail("Fun DraStic manifest must record the prebuilt-binary exception")
