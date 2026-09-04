@@ -24,6 +24,7 @@ N64_STANDALONE_DIR     ?= $(WORKSPACE_DIR)/N64-standalone
 FLYCAST_STANDALONE_DIR ?= $(WORKSPACE_DIR)/Flycast-standalone
 YABASANSHIRO_STANDALONE_DIR ?= $(WORKSPACE_DIR)/Yabasanshiro-standalone
 FUN_DRASTIC_STANDALONE_DIR ?= $(WORKSPACE_DIR)/Fun-Drastic-standalone
+FUN_DRASTIC_SRC_DIR        ?= $(WORKSPACE_DIR)/Fun-Drastic-src
 RETROARCH_BUILDS_DIR   ?= $(WORKSPACE_DIR)/retroarch-builds
 CORES_SPRUCE_DIR       ?= $(WORKSPACE_DIR)/Cores-spruce
 TOOLCHAIN_DIR          ?= $(WORKSPACE_DIR)/mlp1-toolchain
@@ -33,7 +34,7 @@ LAUNCHER_SWITCHER_DIR  ?= $(WORKSPACE_DIR)/miniloong-launcher-switcher
 TOOLCHAIN_IMAGE ?= ghcr.io/utility-muffin-research-kitchen/mlp1-toolchain:local
 
 # Public sibling repos required for contributor build/stage workflows.
-REQUIRED_REPOS := Catastrophe Jawaka Thing-File ssh-server CentralScrutinizer Fugazi joes-calibrage PPSSPP-spruce steward-fu-nds N64-standalone Flycast-standalone Yabasanshiro-standalone Fun-Drastic-standalone \
+REQUIRED_REPOS := Catastrophe Jawaka Thing-File ssh-server CentralScrutinizer Fugazi joes-calibrage PPSSPP-spruce steward-fu-nds N64-standalone Flycast-standalone Yabasanshiro-standalone Fun-Drastic-standalone Fun-Drastic-src \
                   retroarch-builds Cores-spruce mlp1-toolchain miniloong-launcher-switcher \
                   miniloong-adb-keeper
 

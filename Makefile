@@ -41,7 +41,7 @@ help:
 	@echo "  make stage-emulator EMULATOR=mupen64plus DEVICE=mlp1 stage standalone N64"
 	@echo "  make stage-emulator EMULATOR=flycast DEVICE=mlp1 stage standalone Dreamcast"
 	@echo "  make stage-emulator EMULATOR=yabasanshiro DEVICE=mlp1 stage standalone Saturn"
-	@echo "  make stage-emulator EMULATOR=fun-drastic DEVICE=mlp1 FUN_DRASTIC_ARCHIVE=... stage Fun DraStic"
+	@echo "  make stage-emulator EMULATOR=fun-drastic DEVICE=mlp1 stage Fun DraStic (built from Fun-Drastic-src)"
 	@echo "  make stage-emulators DEVICE=mlp1          stage standalone emulators"
 	@echo "  make stage-app APP=CentralScrutinizer DEVICE=mlp1 stage a single app repo"
 	@echo "  make stage-app APP=Leaf-Itchio-Pak DEVICE=mlp1 explicitly stage the optional Itch.io app"

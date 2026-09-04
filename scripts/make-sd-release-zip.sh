@@ -23,7 +23,7 @@ N64_STANDALONE_DIR="${N64_STANDALONE_DIR:-$WORKSPACE_DIR/N64-standalone}"
 FLYCAST_STANDALONE_DIR="${FLYCAST_STANDALONE_DIR:-$WORKSPACE_DIR/Flycast-standalone}"
 YABASANSHIRO_STANDALONE_DIR="${YABASANSHIRO_STANDALONE_DIR:-$WORKSPACE_DIR/Yabasanshiro-standalone}"
 FUN_DRASTIC_STANDALONE_DIR="${FUN_DRASTIC_STANDALONE_DIR:-$WORKSPACE_DIR/Fun-Drastic-standalone}"
-FUN_DRASTIC_ARCHIVE="${FUN_DRASTIC_ARCHIVE:-}"
+FUN_DRASTIC_SRC_DIR="${FUN_DRASTIC_SRC_DIR:-$WORKSPACE_DIR/Fun-Drastic-src}"
 RETROARCH_BUILDS_DIR="${RETROARCH_BUILDS_DIR:-$WORKSPACE_DIR/retroarch-builds}"
 CORES_SPRUCE_DIR="${CORES_SPRUCE_DIR:-$WORKSPACE_DIR/Cores-spruce}"
 LAUNCHER_SWITCHER_DIR="${LAUNCHER_SWITCHER_DIR:-$WORKSPACE_DIR/miniloong-launcher-switcher}"
@@ -825,13 +825,13 @@ package_emulator() {
             ;;
         fun-drastic)
             [ -d "$FUN_DRASTIC_STANDALONE_DIR" ] || die "missing Fun DraStic standalone repo: $FUN_DRASTIC_STANDALONE_DIR"
-            # The archive is authorized material with no public home, so the
-            # product repo needs it named explicitly and refuses to guess.
-            [ -n "$FUN_DRASTIC_ARCHIVE" ] || die "FUN_DRASTIC_ARCHIVE is not set.
-Fun DraStic packages from a reviewed upstream archive that is not published.
-Supply it, or drop fun-drastic from STAGE_EMULATORS for this build."
+            # The hook is cross-built from tenlevels' donated source, mirrored
+            # in Fun-Drastic-src; a release must not silently omit a core the
+            # catalog marks packaged, so a missing checkout fails the build.
+            [ -d "$FUN_DRASTIC_SRC_DIR" ] || die "missing Fun DraStic source repo: $FUN_DRASTIC_SRC_DIR
+Clone it (make bootstrap), or drop fun-drastic from STAGE_EMULATORS for this build."
             make -C "$FUN_DRASTIC_STANDALONE_DIR" package-mlp1 \
-                FUN_DRASTIC_ARCHIVE="$FUN_DRASTIC_ARCHIVE"
+                FUN_DRASTIC_SRC_DIR="$FUN_DRASTIC_SRC_DIR"
             package_dir="$MLP1_FUN_DRASTIC_PACKAGE"
             remote_name="fun-drastic"
             ;;

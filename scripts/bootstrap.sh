@@ -23,6 +23,7 @@ url_for() {
         Flycast-standalone)          echo "https://github.com/Utility-Muffin-Research-Kitchen/Flycast-standalone.git" ;;
         Yabasanshiro-standalone)     echo "https://github.com/Utility-Muffin-Research-Kitchen/Yabasanshiro-standalone.git" ;;
         Fun-Drastic-standalone)      echo "https://github.com/Utility-Muffin-Research-Kitchen/Fun-Drastic-standalone.git" ;;
+        Fun-Drastic-src)             echo "https://github.com/Utility-Muffin-Research-Kitchen/Fun-Drastic-src.git" ;;
         retroarch-builds)            echo "https://github.com/Utility-Muffin-Research-Kitchen/retroarch-builds.git" ;;
         Cores-spruce)                echo "https://github.com/Utility-Muffin-Research-Kitchen/Cores-spruce.git" ;;
         mlp1-toolchain)              echo "https://github.com/Utility-Muffin-Research-Kitchen/mlp1-toolchain.git" ;;
