@@ -748,11 +748,23 @@ package_app() {
     printf '%s/%s\n' "$destination_platform" "$package_name" >>"$MANAGED_APPS_FILE"
 }
 
+# The Saturn corresponding source has its own immutable revision tag when the
+# wrapper changes inside an unpublished Leaf release: the old source tag and its
+# assets must never be replaced, and a source-only tag must never become the
+# Leaf release identity. YABASANSHIRO_SOURCE_TAG selects it; unset, this is
+# exactly the old matching-tag behavior. A differing source tag is not
+# permission to build from a differing source commit -- the tag-to-commit,
+# archive and checksum gates below are unchanged.
+# See umrk-workspace/plans/bios-selection-source-release.md.
 prepare_yabasanshiro_source() {
     local source_repo="https://github.com/Utility-Muffin-Research-Kitchen/Yabasanshiro-standalone"
-    local source_tag="$LEAF_RELEASE_TAG"
+    local source_tag="${YABASANSHIRO_SOURCE_TAG:-$LEAF_RELEASE_TAG}"
     local source_archive source_sha source_name source_extra remote_sha local_sha checksum_file
     local YABASANSHIRO_UPSTREAM_VERSION
+
+    case "$source_tag" in
+        */*) die "invalid YABASANSHIRO_SOURCE_TAG: $source_tag" ;;
+    esac
 
     [ -f "$YABASANSHIRO_STANDALONE_DIR/upstream.env" ] || \
         die "missing YabaSanshiro upstream metadata: $YABASANSHIRO_STANDALONE_DIR/upstream.env"
@@ -762,6 +774,8 @@ prepare_yabasanshiro_source() {
 
     YABASANSHIRO_SOURCE_URL="$source_repo"
     YABASANSHIRO_SOURCE_SHA256=""
+    YABASANSHIRO_SOURCE_TAG_RESOLVED=""
+    YABASANSHIRO_SOURCE_COMMIT=""
     [ -n "$LEAF_RELEASE_TAG" ] || return 0
     [ -n "$source_tag" ] || die "tagged Leaf release has no YabaSanshiro source tag"
     command -v curl >/dev/null 2>&1 || die "curl command not found"
@@ -789,6 +803,8 @@ prepare_yabasanshiro_source() {
     [ "$source_name" = "$source_archive" ] && [ -z "${source_extra:-}" ] || \
         die "YabaSanshiro source checksum names an unexpected asset: ${source_name:-<empty>}"
     YABASANSHIRO_SOURCE_SHA256="$source_sha"
+    YABASANSHIRO_SOURCE_TAG_RESOLVED="$source_tag"
+    YABASANSHIRO_SOURCE_COMMIT="$local_sha"
 }
 
 package_emulator() {
@@ -841,7 +857,9 @@ Clone it (make bootstrap), or drop fun-drastic from STAGE_EMULATORS for this bui
             make -C "$YABASANSHIRO_STANDALONE_DIR" package-mlp1 \
                 TOOLCHAIN_IMAGE="$TOOLCHAIN_IMAGE" \
                 YABASANSHIRO_SOURCE_URL="$YABASANSHIRO_SOURCE_URL" \
-                YABASANSHIRO_SOURCE_SHA256="$YABASANSHIRO_SOURCE_SHA256"
+                YABASANSHIRO_SOURCE_SHA256="$YABASANSHIRO_SOURCE_SHA256" \
+                YABASANSHIRO_SOURCE_TAG="$YABASANSHIRO_SOURCE_TAG_RESOLVED" \
+                YABASANSHIRO_SOURCE_COMMIT="$YABASANSHIRO_SOURCE_COMMIT"
             package_dir="$MLP1_YABASANSHIRO_PACKAGE"
             remote_name="yabasanshiro"
             ;;
