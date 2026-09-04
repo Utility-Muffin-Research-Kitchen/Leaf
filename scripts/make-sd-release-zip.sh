@@ -759,7 +759,8 @@ package_app() {
 prepare_yabasanshiro_source() {
     local source_repo="https://github.com/Utility-Muffin-Research-Kitchen/Yabasanshiro-standalone"
     local source_tag="${YABASANSHIRO_SOURCE_TAG:-$LEAF_RELEASE_TAG}"
-    local source_archive source_sha source_name source_extra remote_sha local_sha checksum_file
+    local source_archive source_sha source_name source_extra remote_sha local_sha
+    local checksum_file source_file downloaded_sha
     local YABASANSHIRO_UPSTREAM_VERSION
 
     case "$source_tag" in
@@ -802,6 +803,15 @@ prepare_yabasanshiro_source() {
     [ "${#source_sha}" -eq 64 ] || die "invalid published YabaSanshiro source checksum"
     [ "$source_name" = "$source_archive" ] && [ -z "${source_extra:-}" ] || \
         die "YabaSanshiro source checksum names an unexpected asset: ${source_name:-<empty>}"
+    source_file="$(mktemp "${TMPDIR:-/tmp}/leaf-yabasanshiro-source-archive.XXXXXX")"
+    if ! curl -fsSL "$YABASANSHIRO_SOURCE_URL" -o "$source_file"; then
+        rm -f "$source_file"
+        die "could not download published YabaSanshiro source archive: $YABASANSHIRO_SOURCE_URL"
+    fi
+    downloaded_sha="$(shasum -a 256 "$source_file" | awk '{print $1}')"
+    rm -f "$source_file"
+    [ "$downloaded_sha" = "$source_sha" ] || \
+        die "published YabaSanshiro source archive checksum mismatch: expected $source_sha, found $downloaded_sha"
     YABASANSHIRO_SOURCE_SHA256="$source_sha"
     YABASANSHIRO_SOURCE_TAG_RESOLVED="$source_tag"
     YABASANSHIRO_SOURCE_COMMIT="$local_sha"
