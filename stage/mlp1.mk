@@ -107,6 +107,7 @@ assemble-jawaka: jawaka-build shader-bundle-mlp1
 	@cp -Rf "$(JAWAKA_DIR)/res/themes" "$(PAYLOAD_DIR)/res/"
 	@if [ -d "$(JAWAKA_DIR)/res/system_icons" ]; then cp -Rf "$(JAWAKA_DIR)/res/system_icons" "$(PAYLOAD_DIR)/res/"; fi
 	@if [ -d "$(JAWAKA_DIR)/res/ui" ]; then cp -Rf "$(JAWAKA_DIR)/res/ui" "$(PAYLOAD_DIR)/res/"; fi
+	@if [ -d "$(JAWAKA_DIR)/res/grid_wordmarks" ]; then cp -Rf "$(JAWAKA_DIR)/res/grid_wordmarks" "$(PAYLOAD_DIR)/res/"; fi
 	@if [ -f "$(JAWAKA_DIR)/res/certs/cacert.pem" ]; then mkdir -p "$(PAYLOAD_DIR)/res/certs"; cp -f "$(JAWAKA_DIR)/res/certs/cacert.pem" "$(PAYLOAD_DIR)/res/certs/cacert.pem"; fi
 	@if [ -d "$(JAWAKA_DIR)/res/sounds" ]; then cp -Rf "$(JAWAKA_DIR)/res/sounds" "$(PAYLOAD_DIR)/res/"; fi
 	@cp -Rf "$(CATASTROPHE_DIR)/res/fonts" "$(PAYLOAD_DIR)/res/"
