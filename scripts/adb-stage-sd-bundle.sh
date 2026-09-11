@@ -84,6 +84,26 @@ echo "Deploying bundle to $REMOTE_LAUNCHER_PATH"
 "${ADB[@]}" push "$BUNDLE_DIR/." "$REMOTE_LAUNCHER_PATH/" >/dev/null
 "${ADB[@]}" shell "chmod 755 '$REMOTE_LAUNCHER_PATH/bin/loong_pangu' 2>/dev/null || true"
 
+# Bundled themes live at the card root, outside .system, because that is the only
+# place the launcher scans. Nothing else here walks BUNDLE_ROOT itself, so without
+# this the assembled Themes/ never leaves the build directory.
+#
+# One folder at a time, never the whole directory: Themes/ is also where users keep
+# their own, and a wholesale push would be free to clobber them.
+if [ -d "$BUNDLE_ROOT/Themes" ]; then
+    echo "Deploying bundled themes to $REMOTE_SDCARD_PATH/Themes"
+    shopt -s nullglob
+    for theme in "$BUNDLE_ROOT/Themes"/*; do
+        [ -d "$theme" ] || continue
+        theme_name="$(basename "$theme")"
+        # Replaced, not merged, so the managed installer and this dev path leave the
+        # card in the same state: a file dropped from the theme since the last stage
+        # must not linger and keep rendering.
+        "${ADB[@]}" shell "rm -rf '$REMOTE_SDCARD_PATH/Themes/$theme_name' && mkdir -p '$REMOTE_SDCARD_PATH/Themes/$theme_name'"
+        "${ADB[@]}" push "$theme/." "$REMOTE_SDCARD_PATH/Themes/$theme_name/" >/dev/null
+    done
+fi
+
 if [ -d "$PLATFORM_DIR" ]; then
     echo "Deploying platform payload to $REMOTE_PLATFORM_PATH ($PLATFORM_MODE)"
     "${ADB[@]}" shell "mkdir -p '$REMOTE_PLATFORM_PATH'"
