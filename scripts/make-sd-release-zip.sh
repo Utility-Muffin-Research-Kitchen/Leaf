@@ -9,7 +9,7 @@ WORKSPACE_DIR="${LEAF_WORKSPACE_DIR:-$(cd "$LEAF_ROOT/.." && pwd)}"
 
 DEVICE="${DEVICE:-mlp1}"
 STAGE_APPS="${STAGE_APPS-ssh-server Thing-File CentralScrutinizer Fugazi joes-calibrage retroarch-builds}"
-STAGE_EMULATORS="${STAGE_EMULATORS-ppsspp drastic mupen64plus flycast yabasanshiro}"
+STAGE_EMULATORS="${STAGE_EMULATORS-ppsspp drastic mupen64plus flycast yabasanshiro fun-drastic}"
 PUBLIC_ROOT_DIRS="${PUBLIC_ROOT_DIRS-Roms Images Videos Apps BIOS Saves States Cheats Themes}"
 RELEASE_BUILD="${RELEASE_BUILD:-$LEAF_ROOT/build/release}"
 STAGE_BUILD="${STAGE_BUILD:-$LEAF_ROOT/build/stage/mlp1}"
@@ -22,6 +22,8 @@ STEWARD_NDS_DIR="${STEWARD_NDS_DIR:-$WORKSPACE_DIR/steward-fu-nds}"
 N64_STANDALONE_DIR="${N64_STANDALONE_DIR:-$WORKSPACE_DIR/N64-standalone}"
 FLYCAST_STANDALONE_DIR="${FLYCAST_STANDALONE_DIR:-$WORKSPACE_DIR/Flycast-standalone}"
 YABASANSHIRO_STANDALONE_DIR="${YABASANSHIRO_STANDALONE_DIR:-$WORKSPACE_DIR/Yabasanshiro-standalone}"
+FUN_DRASTIC_STANDALONE_DIR="${FUN_DRASTIC_STANDALONE_DIR:-$WORKSPACE_DIR/Fun-Drastic-standalone}"
+FUN_DRASTIC_SRC_DIR="${FUN_DRASTIC_SRC_DIR:-$WORKSPACE_DIR/Fun-Drastic-src}"
 RETROARCH_BUILDS_DIR="${RETROARCH_BUILDS_DIR:-$WORKSPACE_DIR/retroarch-builds}"
 CORES_SPRUCE_DIR="${CORES_SPRUCE_DIR:-$WORKSPACE_DIR/Cores-spruce}"
 LAUNCHER_SWITCHER_DIR="${LAUNCHER_SWITCHER_DIR:-$WORKSPACE_DIR/miniloong-launcher-switcher}"
@@ -33,6 +35,9 @@ MLP1_RETROARCH_BIN="${MLP1_RETROARCH_BIN:-$RETROARCH_BUILDS_DIR/output/mlp1/bin/
 MLP1_RETROARCH_MANIFEST="${MLP1_RETROARCH_MANIFEST:-$RETROARCH_BUILDS_DIR/output/mlp1/build-manifest.json}"
 MLP1_SHADERS_DIR="${MLP1_SHADERS_DIR:-$RETROARCH_BUILDS_DIR/output/mlp1/shaders}"
 MLP1_SHADER_TOOL="${MLP1_SHADER_TOOL:-$RETROARCH_BUILDS_DIR/scripts/mlp1_shader_bundle.py}"
+MLP1_SHADER_COVERAGE_TOOL="${MLP1_SHADER_COVERAGE_TOOL:-$LEAF_ROOT/scripts/validate-shader-coverage.py}"
+MLP1_SHADER_COVERAGE_EXCLUSIONS="${MLP1_SHADER_COVERAGE_EXCLUSIONS:-$LEAF_ROOT/config/mlp1-shader-coverage-exclusions.json}"
+MLP1_SHADER_GLOBAL_SCOPE_TOOL="${MLP1_SHADER_GLOBAL_SCOPE_TOOL:-$LEAF_ROOT/scripts/validate-shader-global-scope.py}"
 MLP1_ASSETS_DIR="${MLP1_ASSETS_DIR:-$RETROARCH_BUILDS_DIR/output/mlp1/assets}"
 MLP1_ASSET_TOOL="${MLP1_ASSET_TOOL:-$RETROARCH_BUILDS_DIR/scripts/mlp1_asset_bundle.py}"
 MLP1_CORES_DIR="${MLP1_CORES_DIR:-$CORES_SPRUCE_DIR/output/mlp1/cores}"
@@ -44,6 +49,7 @@ MLP1_DRASTIC_PACKAGE="${MLP1_DRASTIC_PACKAGE:-$LEAF_ROOT/build/drastic/mlp1/dras
 MLP1_MUPEN64PLUS_PACKAGE="${MLP1_MUPEN64PLUS_PACKAGE:-$N64_STANDALONE_DIR/output/mlp1/mupen64plus}"
 MLP1_FLYCAST_PACKAGE="${MLP1_FLYCAST_PACKAGE:-$FLYCAST_STANDALONE_DIR/output/mlp1/flycast}"
 MLP1_YABASANSHIRO_PACKAGE="${MLP1_YABASANSHIRO_PACKAGE:-$YABASANSHIRO_STANDALONE_DIR/output/mlp1/yabasanshiro}"
+MLP1_FUN_DRASTIC_PACKAGE="${MLP1_FUN_DRASTIC_PACKAGE:-$FUN_DRASTIC_STANDALONE_DIR/output/mlp1/fun-drastic}"
 # Read the canonical patch set rather than carrying a second copy of it. Two
 # hand-maintained defaults drifted apart twice; the file is the single source.
 MLP1_RETROARCH_PATCH_SET_FILE="${MLP1_RETROARCH_PATCH_SET_FILE:-$LEAF_ROOT/config/mlp1-retroarch-patch-set.txt}"
@@ -64,7 +70,7 @@ Environment:
   REBUILD_CORES=1  explicitly allow missing/stale stock-parity cores to compile
   FORCE_REBUILD_CORES=1  with REBUILD_CORES=1, bypass every valid core cache hit
   STAGE_APPS="ssh-server Thing-File CentralScrutinizer Fugazi joes-calibrage retroarch-builds"
-  STAGE_EMULATORS="ppsspp drastic mupen64plus flycast yabasanshiro"
+  STAGE_EMULATORS="ppsspp drastic mupen64plus flycast yabasanshiro fun-drastic"
 EOF
 }
 
@@ -165,6 +171,12 @@ configure_release_components() {
         *" yabasanshiro "*)
             RELEASE_COMPONENT_ARGS+=(--component "emulator:yabasanshiro=$YABASANSHIRO_STANDALONE_DIR")
             REQUIRED_COMPONENT_ARGS+=(--required-component "emulator:yabasanshiro")
+            ;;
+    esac
+    case " $STAGE_EMULATORS " in
+        *" fun-drastic "*)
+            RELEASE_COMPONENT_ARGS+=(--component "emulator:fun-drastic=$FUN_DRASTIC_STANDALONE_DIR")
+            REQUIRED_COMPONENT_ARGS+=(--required-component "emulator:fun-drastic")
             ;;
     esac
 }
@@ -475,6 +487,7 @@ validate_retroarch_contract() {
     local report="$platform_dir/cores/build-report.json"
     [ -f "$report" ] || die "missing MLP1 core build report: $report"
     python3 "$UMRK_WORKSPACE_DIR/scripts/retroarch_validate_package.py" \
+        --umrk-root "$WORKSPACE_DIR" \
         --metadata-dir "$UMRK_WORKSPACE_DIR/plans/retroarch/generated/mlp1" \
         --build-report "$report" \
         --package-root "$platform_dir" \
@@ -521,8 +534,43 @@ validate_shader_bundle() {
     local license_root="$2"
     python3 "$MLP1_SHADER_TOOL" validate --output "$platform_dir/shaders" ||
         die "MLP1 shader bundle release validation failed"
+    python3 "$MLP1_SHADER_COVERAGE_TOOL" \
+        --platform-dir "$platform_dir" \
+        --exclusions "$MLP1_SHADER_COVERAGE_EXCLUSIONS" \
+        --report-root "$UMRK_WORKSPACE_DIR" ||
+        die "MLP1 shader coverage release validation failed"
     [ -f "$license_root/SHADERS.md" ] ||
         die "missing shader license notice: $license_root/SHADERS.md"
+}
+
+# Jawaka compiles the All RetroArch shader scope in or out and cannot see which
+# Fugazi ships beside it. A global save can replace a preset Fugazi owns, so an
+# enabled scope needs a Fugazi that can resolve the resulting conflict.
+validate_global_shader_scope() {
+    local release_root="$1"
+    local menu_binary="$release_root/platforms/$DEVICE/launcher/bin/jawaka-menu"
+    local source_args=()
+    local paks=()
+
+    [ -f "$menu_binary" ] || die "missing assembled menu binary: $menu_binary"
+    while IFS= read -r pak; do
+        paks+=("$pak")
+    done < <(find "$release_root/Apps" -maxdepth 2 -type d -name 'Fugazi.pak' 2>/dev/null | sort)
+
+    if [ "${#paks[@]}" -eq 0 ]; then
+        echo "global shader scope: no Fugazi in this release; nothing to gate"
+        return 0
+    fi
+    [ "${#paks[@]}" -eq 1 ] || die "release contains more than one Fugazi pak"
+
+    if [ -f "$JAWAKA_DIR/cmd/jawaka-menu/main.c" ]; then
+        source_args=(--jawaka-source "$JAWAKA_DIR/cmd/jawaka-menu/main.c")
+    fi
+    python3 "$MLP1_SHADER_GLOBAL_SCOPE_TOOL" \
+        --menu-binary "$menu_binary" \
+        --fugazi-pak "${paks[0]}" \
+        "${source_args[@]}" ||
+        die "assembled Fugazi does not support the enabled global shader scope"
 }
 
 validate_portmaster_integration() {
@@ -700,11 +748,24 @@ package_app() {
     printf '%s/%s\n' "$destination_platform" "$package_name" >>"$MANAGED_APPS_FILE"
 }
 
+# The Saturn corresponding source has its own immutable revision tag when the
+# wrapper changes inside an unpublished Leaf release: the old source tag and its
+# assets must never be replaced, and a source-only tag must never become the
+# Leaf release identity. YABASANSHIRO_SOURCE_TAG selects it; unset, this is
+# exactly the old matching-tag behavior. A differing source tag is not
+# permission to build from a differing source commit -- the tag-to-commit,
+# archive and checksum gates below are unchanged.
+# See umrk-workspace/plans/bios-selection-source-release.md.
 prepare_yabasanshiro_source() {
     local source_repo="https://github.com/Utility-Muffin-Research-Kitchen/Yabasanshiro-standalone"
-    local source_tag="$LEAF_RELEASE_TAG"
-    local source_archive source_sha source_name source_extra remote_sha local_sha checksum_file
+    local source_tag="${YABASANSHIRO_SOURCE_TAG:-$LEAF_RELEASE_TAG}"
+    local source_archive source_sha source_name source_extra remote_sha local_sha
+    local checksum_file source_file downloaded_sha
     local YABASANSHIRO_UPSTREAM_VERSION
+
+    case "$source_tag" in
+        */*) die "invalid YABASANSHIRO_SOURCE_TAG: $source_tag" ;;
+    esac
 
     [ -f "$YABASANSHIRO_STANDALONE_DIR/upstream.env" ] || \
         die "missing YabaSanshiro upstream metadata: $YABASANSHIRO_STANDALONE_DIR/upstream.env"
@@ -714,6 +775,8 @@ prepare_yabasanshiro_source() {
 
     YABASANSHIRO_SOURCE_URL="$source_repo"
     YABASANSHIRO_SOURCE_SHA256=""
+    YABASANSHIRO_SOURCE_TAG_RESOLVED=""
+    YABASANSHIRO_SOURCE_COMMIT=""
     [ -n "$LEAF_RELEASE_TAG" ] || return 0
     [ -n "$source_tag" ] || die "tagged Leaf release has no YabaSanshiro source tag"
     command -v curl >/dev/null 2>&1 || die "curl command not found"
@@ -740,7 +803,18 @@ prepare_yabasanshiro_source() {
     [ "${#source_sha}" -eq 64 ] || die "invalid published YabaSanshiro source checksum"
     [ "$source_name" = "$source_archive" ] && [ -z "${source_extra:-}" ] || \
         die "YabaSanshiro source checksum names an unexpected asset: ${source_name:-<empty>}"
+    source_file="$(mktemp "${TMPDIR:-/tmp}/leaf-yabasanshiro-source-archive.XXXXXX")"
+    if ! curl -fsSL "$YABASANSHIRO_SOURCE_URL" -o "$source_file"; then
+        rm -f "$source_file"
+        die "could not download published YabaSanshiro source archive: $YABASANSHIRO_SOURCE_URL"
+    fi
+    downloaded_sha="$(shasum -a 256 "$source_file" | awk '{print $1}')"
+    rm -f "$source_file"
+    [ "$downloaded_sha" = "$source_sha" ] || \
+        die "published YabaSanshiro source archive checksum mismatch: expected $source_sha, found $downloaded_sha"
     YABASANSHIRO_SOURCE_SHA256="$source_sha"
+    YABASANSHIRO_SOURCE_TAG_RESOLVED="$source_tag"
+    YABASANSHIRO_SOURCE_COMMIT="$local_sha"
 }
 
 package_emulator() {
@@ -775,13 +849,27 @@ package_emulator() {
             package_dir="$MLP1_FLYCAST_PACKAGE"
             remote_name="flycast"
             ;;
+        fun-drastic)
+            [ -d "$FUN_DRASTIC_STANDALONE_DIR" ] || die "missing Fun DraStic standalone repo: $FUN_DRASTIC_STANDALONE_DIR"
+            # The hook is cross-built from tenlevels' donated source, mirrored
+            # in Fun-Drastic-src; a release must not silently omit a core the
+            # catalog marks packaged, so a missing checkout fails the build.
+            [ -d "$FUN_DRASTIC_SRC_DIR" ] || die "missing Fun DraStic source repo: $FUN_DRASTIC_SRC_DIR
+Clone it (make bootstrap), or drop fun-drastic from STAGE_EMULATORS for this build."
+            make -C "$FUN_DRASTIC_STANDALONE_DIR" package-mlp1 \
+                FUN_DRASTIC_SRC_DIR="$FUN_DRASTIC_SRC_DIR"
+            package_dir="$MLP1_FUN_DRASTIC_PACKAGE"
+            remote_name="fun-drastic"
+            ;;
         yabasanshiro)
             [ -d "$YABASANSHIRO_STANDALONE_DIR" ] || die "missing YabaSanshiro standalone repo: $YABASANSHIRO_STANDALONE_DIR"
             prepare_yabasanshiro_source
             make -C "$YABASANSHIRO_STANDALONE_DIR" package-mlp1 \
                 TOOLCHAIN_IMAGE="$TOOLCHAIN_IMAGE" \
                 YABASANSHIRO_SOURCE_URL="$YABASANSHIRO_SOURCE_URL" \
-                YABASANSHIRO_SOURCE_SHA256="$YABASANSHIRO_SOURCE_SHA256"
+                YABASANSHIRO_SOURCE_SHA256="$YABASANSHIRO_SOURCE_SHA256" \
+                YABASANSHIRO_SOURCE_TAG="$YABASANSHIRO_SOURCE_TAG_RESOLVED" \
+                YABASANSHIRO_SOURCE_COMMIT="$YABASANSHIRO_SOURCE_COMMIT"
             package_dir="$MLP1_YABASANSHIRO_PACKAGE"
             remote_name="yabasanshiro"
             ;;
@@ -858,6 +946,29 @@ validate_standalone_flycast_release() {
     python3 "$LEAF_ROOT/scripts/validate-flycast-standalone-release.py" \
         "$platform_dir" ||
         die "Flycast standalone release validation failed"
+}
+
+validate_standalone_fun_drastic_release() {
+    local platform_dir="$RELEASE_ROOT/platforms/mlp1"
+    python3 "$LEAF_ROOT/scripts/validate-fun-drastic-release.py" \
+        "$platform_dir" ||
+        die "Fun DraStic standalone release validation failed"
+}
+
+# Redundant with the Fun DraStic package allowlist on purpose. The allowlist is
+# the thing a future change might loosen; this gate covers the whole assembled
+# payload and, through audit_release_zip, the finished ZIPs.
+validate_no_nintendo_bios() {
+    local scan_root="$1"
+    local label="$2"
+    local found
+    found="$(find "$scan_root" \
+        \( -name 'nds_bios_arm7.bin' -o -name 'nds_bios_arm9.bin' \
+           -o -name 'nds_firmware.bin' \) -print 2>/dev/null)"
+    if [ -n "$found" ]; then
+        printf '%s\n' "$found" >&2
+        die "Nintendo DS BIOS or firmware found in $label; it must never ship"
+    fi
 }
 
 validate_standalone_yabasanshiro_release() {
@@ -948,6 +1059,20 @@ validate_install_stage_clean() {
     fi
 }
 
+# The finished archive, not the staging directory it came from: a packaging
+# change could add a file between the payload gate and the zip.
+audit_zip_no_nintendo_bios() {
+    local zip_path="$1"
+    local found
+    found="$(unzip -Z1 "$zip_path" 2>/dev/null |
+        grep -E '(^|/)(nds_bios_arm7\.bin|nds_bios_arm9\.bin|nds_firmware\.bin)$' ||
+        true)"
+    if [ -n "$found" ]; then
+        printf '%s\n' "$found" >&2
+        die "Nintendo DS BIOS or firmware found in $(basename "$zip_path")"
+    fi
+}
+
 zip_stage() {
     local stage_dir="$1"
     local zip_path="$2"
@@ -957,6 +1082,7 @@ zip_stage() {
         cd "$stage_dir"
         zip -qr "$zip_path" .
     )
+    audit_zip_no_nintendo_bios "$zip_path"
     echo "Wrote $zip_path"
 }
 
@@ -999,6 +1125,8 @@ build_install_zip() {
     validate_standalone_n64_release
     validate_standalone_flycast_release
     validate_standalone_yabasanshiro_release
+    validate_standalone_fun_drastic_release
+    validate_no_nintendo_bios "$RELEASE_ROOT" "the assembled release payload"
     validate_ppsspp_vulkan_release
 
     cp -R "$LEAF_ROOT/stage/licenses" "$RELEASE_ROOT/licenses"
@@ -1012,6 +1140,7 @@ build_install_zip() {
     done
     sync_platform_managed_apps_manifest "$RELEASE_ROOT/platforms/mlp1/manifest.json" "$MANAGED_APPS_FILE"
     validate_pakrat_owned_apps "$RELEASE_ROOT"
+    validate_global_shader_scope "$RELEASE_ROOT"
     validate_portmaster_integration "$RELEASE_ROOT"
     audit_mlp1_build_tuning "$RELEASE_ROOT"
     finalize_component_provenance

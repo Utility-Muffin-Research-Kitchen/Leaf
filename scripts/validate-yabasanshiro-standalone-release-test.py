@@ -29,7 +29,12 @@ def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def write_manifest(package: Path, published: bool = True) -> None:
+def write_manifest(
+    package: Path,
+    published: bool = True,
+    source_tag: str | None = "v1.0.0",
+    source_commit: str | None = "b" * 40,
+) -> None:
     files = [
         {"path": path.relative_to(package).as_posix(), "sha256": sha256(path)}
         for path in sorted(package.rglob("*"))
@@ -53,6 +58,8 @@ def write_manifest(package: Path, published: bool = True) -> None:
             ),
             "archive": "yabasanshiro-standalone-1.11.beta3-mlp1-source.tar.gz",
             "sha256": "a" * 64 if published else None,
+            "tag": source_tag,
+            "commit": source_commit,
         },
         "files": files,
     }
@@ -152,6 +159,54 @@ def main() -> None:
 
     run_case("missing-source-hash", missing_source_hash, False)
     run_case("development-source", missing_source_hash, True, published=False)
+
+    # The corresponding source may ship under its own revision tag while the
+    # Leaf release identity stays put, so the recorded tag has to agree with the
+    # asset URL and a tagged release has to record both tag and commit.
+    def source_revision_tag(platform: Path) -> None:
+        package = platform / "emulators/yabasanshiro"
+        manifest_path = package / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        source = manifest["corresponding_source"]
+        source["url"] = source["url"].replace(
+            "/download/v1.0.0/", "/download/v1.0.0-source.2/"
+        )
+        source["tag"] = "v1.0.0-source.2"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    def mismatched_source_tag(platform: Path) -> None:
+        package = platform / "emulators/yabasanshiro"
+        write_manifest(package, source_tag="v1.0.0-source.2")
+
+    def missing_source_tag(platform: Path) -> None:
+        package = platform / "emulators/yabasanshiro"
+        write_manifest(package, source_tag=None)
+
+    def missing_source_commit(platform: Path) -> None:
+        package = platform / "emulators/yabasanshiro"
+        write_manifest(package, source_commit=None)
+
+    def malformed_source_commit(platform: Path) -> None:
+        package = platform / "emulators/yabasanshiro"
+        write_manifest(package, source_commit="not-a-commit")
+
+    run_case("source-revision-tag", source_revision_tag, True)
+    run_case("mismatched-source-tag", mismatched_source_tag, False)
+    run_case("missing-source-tag", missing_source_tag, False)
+    run_case("missing-source-commit", missing_source_commit, False)
+    run_case("malformed-source-commit", malformed_source_commit, False)
+    # An untagged development build still needs no source provenance at all.
+    run_case(
+        "development-untagged-source",
+        lambda platform: write_manifest(
+            platform / "emulators/yabasanshiro",
+            published=False,
+            source_tag=None,
+            source_commit=None,
+        ),
+        True,
+        published=False,
+    )
     print("YabaSanshiro standalone release policy checks passed")
 
 

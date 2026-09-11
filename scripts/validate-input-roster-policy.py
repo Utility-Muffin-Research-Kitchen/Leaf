@@ -14,6 +14,8 @@ or hands a player slot to the uncalibrated physical pad:
   ROSTER002  emulator code hardcoding a physical /dev/input/eventN path
   ROSTER003  a configuration enabling more player ports than a roster holds
   ROSTER004  a launch path resolving the Loong pads by display name alone
+  ROSTER005  a /proc/bus/input/devices parser that misreads the handlers line
+             or leaks state between device records
 
 Each of these has already shipped at least once, which is why they are gated
 here rather than left to review.
@@ -51,6 +53,25 @@ GUARD_WINDOW = 12
 MAX_USERS_RE = re.compile(r"input_max_users\s*=\s*\"?(\d+)\"?")
 JOYPAD_INDEX_RE = re.compile(r"input_player(\d+)_joypad_index\s*=\s*\"?(-?\d+)\"?")
 MAPLE_PORT_RE = re.compile(r"maple_sdl_joystick_(\d+)\s*=\s*(-?\d+)")
+
+# ROSTER005. Four wrappers now carry near-identical copies of the same awk
+# resolver, and they have drifted apart in two different ways -- both of which
+# fail silently and one of which returns a real-but-wrong device node.
+#
+#   * "H: Handlers=event6 dmcfreq" glues the first handler to the key, so an
+#     awk field test of /^event[0-9]+$/ never matches a device whose event node
+#     comes first. Strip "Handlers=" from the field before testing.
+#   * Per-record state must be reset on the record header (/^I:/). Resetting on
+#     the blank separator instead leaks the previous device's event node into
+#     the next record, and the result passes the caller's own [ -e ] check.
+#
+# These live in independent product repos on purpose, so the fix is gated here
+# rather than shared through a common file.
+DEVICE_LIST_SCAN = "/proc/bus/input/devices"
+HANDLERS_KEY = "Handlers="
+BARE_EVENT_FIELD_RE = re.compile(r"~\s*/\^event\[0-9\]\+\$/")
+STRIPS_HANDLERS_RE = re.compile(r"sub\(\s*/\^Handlers=/")
+RECORD_RESET_RE = re.compile(r"/\^I:/")
 
 LOONG_NAME = "Loong Gamepad"
 DEVICE_LIST_PATH = "/proc/bus/input/devices"
@@ -250,6 +271,50 @@ def check_direct_fallback(path: Path, text: str, lines: list[str]) -> list[Findi
     return findings
 
 
+def check_device_list_parser(path: Path, text: str, lines: list[str]) -> list[Finding]:
+    """ROSTER005: only fires on a file that actually parses the device list for
+    an event node, so an unrelated mention of /proc/bus/input/devices is not a
+    finding."""
+    findings = []
+    unescaped = text.replace("\\", "")
+    if DEVICE_LIST_SCAN not in unescaped or HANDLERS_KEY not in unescaped:
+        return findings
+
+    if BARE_EVENT_FIELD_RE.search(text) and not STRIPS_HANDLERS_RE.search(text):
+        line = next(
+            (n for n, l in enumerate(lines, 1) if BARE_EVENT_FIELD_RE.search(l)), 0
+        )
+        findings.append(
+            Finding(
+                "ROSTER005",
+                path,
+                line,
+                "matches an event node as a whole awk field; "
+                '"H: Handlers=event6" makes the field "Handlers=event6", so a '
+                "device whose event node comes first is silently skipped -- "
+                "strip Handlers= before testing",
+            )
+        )
+
+    if not RECORD_RESET_RE.search(text):
+        line = next(
+            (n for n, l in enumerate(lines, 1) if DEVICE_LIST_SCAN in l.replace("\\", "")),
+            0,
+        )
+        findings.append(
+            Finding(
+                "ROSTER005",
+                path,
+                line,
+                "parses the device list without resetting per-record state on "
+                "the /^I:/ record header; a blank-line reset leaks the previous "
+                "device's event node into the next record and returns a real "
+                "but wrong node that passes an [ -e ] check",
+            )
+        )
+    return findings
+
+
 def scan(root: Path) -> list[Finding]:
     findings: list[Finding] = []
     for path in iter_files(root):
@@ -270,6 +335,7 @@ def scan(root: Path) -> list[Finding]:
         if shell_like:
             findings.extend(check_roster_overwrite(path, lines))
             findings.extend(check_direct_fallback(path, text, lines))
+            findings.extend(check_device_list_parser(path, text, lines))
         if shell_like or suffix in CONFIG_SUFFIXES:
             findings.extend(check_player_ports(path, lines))
     return findings

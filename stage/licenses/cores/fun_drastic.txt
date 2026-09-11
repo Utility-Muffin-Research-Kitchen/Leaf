@@ -1,0 +1,217 @@
+Fun DraStic
+===========
+
+Fun DraStic is by tenlevels. It is his project: the frontend hook, the menus,
+the themes and the overlays are his work, and Leaf packages it rather than
+authoring it. It is licensed under the PolyForm Noncommercial License 1.0.0 -
+noncommercial use only. It is not open source in the OSI sense; do not treat
+this file as a grant of an open-source licence.
+
+The hook Leaf ships is cross-built from tenlevels' own source, mirrored at
+https://github.com/Utility-Muffin-Research-Kitchen/Fun-Drastic-src.
+
+The package is not a single work. The hook and presentation assets are
+tenlevels'; the emulator binary, the replacement BIOS, the databases, the
+bundled libraries and the fonts each keep their own terms. The PolyForm licence
+is attributed only to the material tenlevels owns or is authorized to
+redistribute.
+
+Any Leaf release that bundles Fun DraStic inherits the noncommercial
+restriction.
+
+The Nintendo DS BIOS and firmware dumps are never shipped in any form.
+
+The full distribution basis and the per-component ownership table follow,
+copied verbatim from the Fun-Drastic-standalone product repository, then the
+third-party notices the bundled libraries and fonts require.
+
+
+--------------------------------------------------------------------------
+DISTRIBUTION BASIS
+--------------------------------------------------------------------------
+
+# Fun DraStic distribution basis
+
+**Fun DraStic is tenlevels' work.** This repository packages it for Leaf on the
+MLP1; it does not author it. The hook, the menus, the themes, the overlays and
+the MLP1 bring-up are his. This file records the terms the package is built and
+shipped under.
+
+## Licence
+
+Fun DraStic's own code and packaging are under the **PolyForm Noncommercial
+License 1.0.0**, with the required notice:
+
+> Copyright (c) 2026 The Fun Drastic authors
+
+The full text ships in the package as `licenses/FUN-DRASTIC-LICENSE.txt`, taken
+verbatim from his source tree. Use, modification and sharing are permitted for
+**noncommercial purposes only**.
+
+That is a change from how this package started. It was first built from a
+binary drop redistributed under written permission given in a private Discord
+message. tenlevels then donated the source under PolyForm Noncommercial, which
+supersedes that arrangement: the basis is now a published licence anyone can
+read and check, rather than a private message only the maintainer holds.
+
+> **Release gate.** Any Leaf release bundling Fun DraStic inherits the
+> noncommercial restriction. Leaf must not be sold, bundled with hardware for
+> sale, or otherwise commercially exploited while this package is in the
+> release list. If that changes, Fun DraStic comes out of the default release
+> list; the packaging still supports a local build for noncommercial use.
+
+## What is built here, and what is not
+
+`lib/libfundrastic.so` is cross-compiled from tenlevels' `src/funhook.c` with
+the MLP1 toolchain — the manifest records the source repository, commit and the
+SHA-256 of the exact `funhook.c` it came from. Building it from source rather
+than shipping his binary is the only reason this repository can claim to know
+what is in it.
+
+Everything else that is not ours is redistributed unmodified and pinned by
+hash in `upstream.env`, because we do not compile it.
+
+## Component ownership
+
+The package is not a single work. Each component keeps its own terms.
+
+| Component | Owner / origin | Terms |
+| --- | --- | --- |
+| `lib/libfundrastic.so` (the Fun DraStic hook) | tenlevels | PolyForm Noncommercial 1.0.0; built here from his source |
+| `Overlays/`, `themes/`, `res/cursor/`, `language/*.txt` (presentation assets) | tenlevels and contributors | PolyForm Noncommercial 1.0.0 |
+| `bin/drastic64` | Exophase / DraStic | Proprietary closed-source emulator; the same prebuilt binary the primary DraStic package ships |
+| `system/drastic_bios_arm7.bin`, `system/drastic_bios_arm9.bin` | DraStic | DraStic's own free replacement BIOS, distributed with DraStic |
+| `game_database.xml` | DraStic distribution | Redistributed as part of the DraStic data set |
+| `config/usrcheat.dat` | the DS cheat scene | Community-maintained cheat database, assembled over many years |
+| `fonts/Nunito-Bold.ttf` | The Nunito Project Authors | SIL Open Font License 1.1 |
+| `fonts/Translate.otf` | Adobe / the Noto Project (this is Noto Sans CJK SC Regular under another filename) | SIL Open Font License 1.1 |
+| `lib/libSDL2-2.0.so.0` | SDL | zlib license |
+| `lib/libasound.so.2` | ALSA project | LGPL-2.1-or-later |
+| `lib/libxkbcommon.so.0` | xkbcommon | MIT |
+| `lib/libwayland-cursor.so.0` | Wayland project | MIT |
+| Packaging code in this repository | UMRK | See `LICENSE` |
+
+The PolyForm licence covers what tenlevels owns. It is not a licence for
+`bin/drastic64`, the DraStic databases, the bundled libraries, or the fonts —
+`licenses/CREDITS.md`, which is his own credits file, is the authoritative list
+of what Fun DraStic is built on.
+
+Fun DraStic is not affiliated with or endorsed by Exophase or Nintendo.
+
+## Nintendo BIOS
+
+The Nintendo DS BIOS and firmware dumps (`nds_bios_arm7.bin`,
+`nds_bios_arm9.bin`, `nds_firmware.bin`) are never shipped, in any form. The
+package gate and the Leaf release gate both reject them.
+
+
+--------------------------------------------------------------------------
+THIRD-PARTY NOTICES
+--------------------------------------------------------------------------
+
+Fun DraStic - third-party notices
+=================================
+
+The Fun DraStic package bundles the components below. Each keeps its own
+terms; see DISTRIBUTION-BASIS.md for the full ownership table and for the
+permission under which the proprietary parts are redistributed.
+
+SDL2 (lib/libSDL2-2.0.so.0)
+---------------------------
+Copyright (C) 1997-2024 Sam Lantinga <slouken@libsdl.org>
+
+This software is provided 'as-is', without any express or implied warranty. In
+no event will the authors be held liable for any damages arising from the use
+of this software.
+
+Permission is granted to anyone to use this software for any purpose,
+including commercial applications, and to alter it and redistribute it freely,
+subject to the following restrictions:
+
+1. The origin of this software must not be misrepresented; you must not claim
+   that you wrote the original software. If you use this software in a
+   product, an acknowledgment in the product documentation would be
+   appreciated but is not required.
+2. Altered source versions must be plainly marked as such, and must not be
+   misrepresented as being the original software.
+3. This notice may not be removed or altered from any source distribution.
+
+ALSA library (lib/libasound.so.2)
+---------------------------------
+Copyright (c) the ALSA project.
+
+Licensed under the GNU Lesser General Public License, version 2.1 or (at your
+option) any later version. A copy of the LGPL-2.1 is available at
+https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html and the corresponding
+source is available from https://www.alsa-project.org/.
+
+libxkbcommon (lib/libxkbcommon.so.0)
+------------------------------------
+Copyright (c) 2008, 2009, 2012 Dan Nicholson, Ran Benita and contributors.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY.
+
+wayland-cursor (lib/libwayland-cursor.so.0)
+-------------------------------------------
+Copyright (c) the Wayland project contributors.
+
+Released under the MIT license, on the same terms as the libxkbcommon notice
+above.
+
+Nunito (fonts/Nunito-Bold.ttf)
+------------------------------
+Copyright (c) The Nunito Project Authors (https://github.com/googlefonts/nunito).
+
+Licensed under the SIL Open Font License, Version 1.1. The full license text is
+available at https://openfontlicense.org/. Nunito is a Reserved Font Name; a
+modified copy may not be distributed under that name.
+
+Noto Sans CJK SC (fonts/Translate.otf)
+--------------------------------------
+Copyright (c) 2014-2021 Adobe (http://www.adobe.com/).
+
+Shipped under the filename Translate.otf; the font itself is Noto Sans CJK SC
+Regular, version 2.004, unmodified. Its own name table carries the notice
+below. Renaming the file does not rename the font: the internal family name is
+still "Noto Sans CJK SC", which is what the OFL's Reserved Font Name clause
+governs.
+
+  This Font Software is licensed under the SIL Open Font License, Version 1.1.
+  This Font Software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+  CONDITIONS OF ANY KIND, either express or implied. See the SIL Open Font
+  License for the specific language, permissions and limitations governing your
+  use of this Font Software.
+
+The full license text is available at https://openfontlicense.org/ and at
+http://scripts.sil.org/OFL.
+
+DraStic (bin/drastic64, system/drastic_bios_*.bin, game_database.xml,
+config/usrcheat.dat)
+--------------------------------------------------------------------
+DraStic is a proprietary closed-source Nintendo DS emulator. The binary here is
+byte-identical to the one the primary DraStic package ships. The two
+system/drastic_bios_*.bin files are DraStic's own free replacement BIOS, not
+Nintendo material.
+
+Fun DraStic (lib/libfundrastic.so and the presentation assets)
+--------------------------------------------------------------
+Copyright (c) 2026 The Fun Drastic authors.
+
+Fun DraStic is tenlevels' work, licensed under the PolyForm Noncommercial
+License 1.0.0 - noncommercial use only. The hook shipped here is cross-built
+from his own source; the full licence text is in FUN-DRASTIC-LICENSE.txt and
+his credits file in CREDITS.md, both verbatim from his source tree. See
+DISTRIBUTION-BASIS.md.

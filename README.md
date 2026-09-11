@@ -206,12 +206,18 @@ Each derives the complete identity from the tag and verifies the built artifact
 afterwards.
 
 Before building a tagged release, run the `Publish corresponding source`
-workflow in `Yabasanshiro-standalone` with the same Leaf tag. The workflow
-publishes the exact GPL source archive and checksum, but no emulator binary.
-Leaf then packages the runtime and records a direct link to that source asset.
-Tagged Leaf builds fail closed if the source tag is missing, points at a
-different standalone commit, or lacks its checksum sidecar. Untagged development
-builds record the public source repository without requiring a release asset.
+workflow in `Yabasanshiro-standalone`. Normally, use the same tag as Leaf. If
+you revise the standalone source while that Leaf release is still unpublished,
+publish an immutable source revision tag and pass it to the Leaf build as
+`YABASANSHIRO_SOURCE_TAG`. The source tag identifies corresponding source only;
+it does not change the Leaf release identity. The workflow publishes the exact
+GPL source archive and checksum, but no emulator binary. Leaf downloads and
+hashes that archive, packages the runtime, and records its tag, commit, direct
+asset URL, and SHA-256. Tagged Leaf builds fail closed if the source tag is
+missing, points at a different standalone commit, lacks its checksum sidecar,
+or serves an archive that does not match the published checksum. Untagged
+development builds record the public source repository without requiring a
+release asset.
 
 Both build the install and recovery ZIPs and verify the embedded provenance plus
 `leaf-update.json`. Release-candidate tags
@@ -320,6 +326,7 @@ Apps/
   mlp1/<Name>.pak/
   shared/<Name>.pak/
 BIOS/
+  SATURN/            # Saturn firmware for RetroArch and standalone selection
 Saves/
 States/
 Cheats/

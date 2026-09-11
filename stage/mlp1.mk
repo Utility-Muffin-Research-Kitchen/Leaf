@@ -3,7 +3,14 @@
 
 # Apps staged by `make stage`.
 STAGE_APPS ?= ssh-server Thing-File CentralScrutinizer Fugazi joes-calibrage retroarch-builds
-STAGE_EMULATORS ?= ppsspp drastic mupen64plus flycast yabasanshiro
+# fun-drastic joins this list in the same change that flips the catalog entry
+# to "packaged" -- validate_packaged_cores couples the two.
+#
+# It builds like every other emulator now: tenlevels donated the Fun DraStic
+# source, it is mirrored in the Fun-Drastic-src sibling checkout, and the hook
+# is cross-built from it. There is no unpublished archive to supply and so no
+# special case here any more.
+STAGE_EMULATORS ?= ppsspp drastic mupen64plus flycast yabasanshiro fun-drastic
 PUBLIC_ROOT_DIRS ?= Roms Images Videos Apps BIOS Saves States Cheats Themes
 
 # --- Launcher payload assembly inputs --------------------------------------
@@ -15,6 +22,8 @@ MLP1_RETROARCH_BIN ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/bin/retroarch
 MLP1_RETROARCH_MANIFEST ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/build-manifest.json
 MLP1_SHADERS_DIR    ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/shaders
 MLP1_SHADER_TOOL    ?= $(RETROARCH_BUILDS_DIR)/scripts/mlp1_shader_bundle.py
+MLP1_SHADER_COVERAGE_TOOL ?= $(LEAF_ROOT)/scripts/validate-shader-coverage.py
+MLP1_SHADER_COVERAGE_EXCLUSIONS ?= $(LEAF_ROOT)/config/mlp1-shader-coverage-exclusions.json
 MLP1_ASSETS_DIR     ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/assets
 MLP1_ASSET_TOOL     ?= $(RETROARCH_BUILDS_DIR)/scripts/mlp1_asset_bundle.py
 MLP1_CORES_DIR     ?= $(CORES_SPRUCE_DIR)/output/mlp1/cores
@@ -31,6 +40,7 @@ MLP1_DRASTIC_PACKAGE ?= $(LEAF_ROOT)/build/drastic/mlp1/drastic
 MLP1_MUPEN64PLUS_PACKAGE ?= $(N64_STANDALONE_DIR)/output/mlp1/mupen64plus
 MLP1_FLYCAST_PACKAGE ?= $(FLYCAST_STANDALONE_DIR)/output/mlp1/flycast
 MLP1_YABASANSHIRO_PACKAGE ?= $(YABASANSHIRO_STANDALONE_DIR)/output/mlp1/yabasanshiro
+MLP1_FUN_DRASTIC_PACKAGE ?= $(FUN_DRASTIC_STANDALONE_DIR)/output/mlp1/fun-drastic
 MLP1_FFMPEG_BIN    ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/ffmpeg/bin/ffmpeg
 MLP1_FFMPEG_LIBS   ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/ffmpeg/flat
 MLP1_RECORD_CONVERT ?= $(RETROARCH_BUILDS_DIR)/config/mlp1/leaf-record-convert.sh
@@ -189,6 +199,10 @@ assemble-jawaka: jawaka-build shader-bundle-mlp1
 	@mkdir -p "$(PLATFORM_PAYLOAD_DIR)/shaders"
 	@cp -Rf "$(MLP1_SHADERS_DIR)/." "$(PLATFORM_PAYLOAD_DIR)/shaders/"
 	@python3 "$(MLP1_SHADER_TOOL)" validate --output "$(PLATFORM_PAYLOAD_DIR)/shaders"
+	@python3 "$(MLP1_SHADER_COVERAGE_TOOL)" \
+		--platform-dir "$(PLATFORM_PAYLOAD_DIR)" \
+		--exclusions "$(MLP1_SHADER_COVERAGE_EXCLUSIONS)" \
+		--report-root "$(UMRK_WORKSPACE_DIR)"
 	@# RetroArch menu assets. Ozone reads every icon and font it draws from
 	@# assets_directory, which jawaka-retroarch-runner points here; without this
 	@# tree Ozone has no icons and falls back to a bitmap font that cannot draw CJK.
@@ -422,6 +436,13 @@ stage-emulator:
 			package_dir="$(MLP1_YABASANSHIRO_PACKAGE)"; \
 			remote_name="yabasanshiro"; \
 			;; \
+		fun-drastic) \
+			test -d "$(FUN_DRASTIC_STANDALONE_DIR)" || { echo "missing repo: $(FUN_DRASTIC_STANDALONE_DIR)" >&2; exit 1; }; \
+			test -d "$(FUN_DRASTIC_SRC_DIR)" || { echo "missing repo: $(FUN_DRASTIC_SRC_DIR) (run: make bootstrap)" >&2; exit 1; }; \
+			$(MAKE) -C "$(FUN_DRASTIC_STANDALONE_DIR)" package-mlp1 FUN_DRASTIC_SRC_DIR="$(FUN_DRASTIC_SRC_DIR)"; \
+			package_dir="$(MLP1_FUN_DRASTIC_PACKAGE)"; \
+			remote_name="fun-drastic"; \
+			;; \
 		*) \
 			echo "unsupported emulator policy: $(EMULATOR) for DEVICE=$(DEVICE)" >&2; \
 			exit 1; \
@@ -547,6 +568,8 @@ release-zips:
 	N64_STANDALONE_DIR="$(N64_STANDALONE_DIR)" \
 	FLYCAST_STANDALONE_DIR="$(FLYCAST_STANDALONE_DIR)" \
 	YABASANSHIRO_STANDALONE_DIR="$(YABASANSHIRO_STANDALONE_DIR)" \
+	FUN_DRASTIC_STANDALONE_DIR="$(FUN_DRASTIC_STANDALONE_DIR)" \
+	FUN_DRASTIC_SRC_DIR="$(FUN_DRASTIC_SRC_DIR)" \
 	RETROARCH_BUILDS_DIR="$(RETROARCH_BUILDS_DIR)" \
 	CORES_SPRUCE_DIR="$(CORES_SPRUCE_DIR)" \
 	LAUNCHER_SWITCHER_DIR="$(LAUNCHER_SWITCHER_DIR)" \
@@ -564,6 +587,7 @@ release-zips:
 	MLP1_MUPEN64PLUS_PACKAGE="$(MLP1_MUPEN64PLUS_PACKAGE)" \
 	MLP1_FLYCAST_PACKAGE="$(MLP1_FLYCAST_PACKAGE)" \
 	MLP1_YABASANSHIRO_PACKAGE="$(MLP1_YABASANSHIRO_PACKAGE)" \
+	MLP1_FUN_DRASTIC_PACKAGE="$(MLP1_FUN_DRASTIC_PACKAGE)" \
 	MLP1_RETROARCH_PATCH_SET="$(MLP1_RETROARCH_PATCH_SET)" \
 	"$(LEAF_ROOT)/scripts/make-sd-release-zip.sh" both
 
@@ -586,6 +610,8 @@ release-sd-zip:
 	N64_STANDALONE_DIR="$(N64_STANDALONE_DIR)" \
 	FLYCAST_STANDALONE_DIR="$(FLYCAST_STANDALONE_DIR)" \
 	YABASANSHIRO_STANDALONE_DIR="$(YABASANSHIRO_STANDALONE_DIR)" \
+	FUN_DRASTIC_STANDALONE_DIR="$(FUN_DRASTIC_STANDALONE_DIR)" \
+	FUN_DRASTIC_SRC_DIR="$(FUN_DRASTIC_SRC_DIR)" \
 	RETROARCH_BUILDS_DIR="$(RETROARCH_BUILDS_DIR)" \
 	CORES_SPRUCE_DIR="$(CORES_SPRUCE_DIR)" \
 	LAUNCHER_SWITCHER_DIR="$(LAUNCHER_SWITCHER_DIR)" \
@@ -603,6 +629,7 @@ release-sd-zip:
 	MLP1_MUPEN64PLUS_PACKAGE="$(MLP1_MUPEN64PLUS_PACKAGE)" \
 	MLP1_FLYCAST_PACKAGE="$(MLP1_FLYCAST_PACKAGE)" \
 	MLP1_YABASANSHIRO_PACKAGE="$(MLP1_YABASANSHIRO_PACKAGE)" \
+	MLP1_FUN_DRASTIC_PACKAGE="$(MLP1_FUN_DRASTIC_PACKAGE)" \
 	MLP1_RETROARCH_PATCH_SET="$(MLP1_RETROARCH_PATCH_SET)" \
 	"$(LEAF_ROOT)/scripts/make-sd-release-zip.sh" install
 

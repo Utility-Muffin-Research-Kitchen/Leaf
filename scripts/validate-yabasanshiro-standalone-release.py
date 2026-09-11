@@ -20,6 +20,7 @@ SOURCE_URL_RE = re.compile(
     rf"Yabasanshiro-standalone/releases/download/[^/]+/{re.escape(ARCHIVE)}$"
 )
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 REQUIRED_LICENSES = {
     "DISTRIBUTION-BASIS.md",
     "NanoGUI-BSD-3-Clause.txt",
@@ -178,6 +179,32 @@ def validate(platform_dir: Path, require_published_source: bool) -> None:
         or not SHA256_RE.fullmatch(source_sha)
     ):
         fail("tagged release must link a checksummed UMRK source release asset")
+
+    # The corresponding source may be published under its own revision tag when
+    # the wrapper changes inside an unpublished Leaf release, so the tag and the
+    # commit are recorded explicitly rather than inferred from the URL. A tagged
+    # release must carry both and they must agree with the asset URL.
+    source_tag = source.get("tag")
+    source_commit = source.get("commit")
+    if source_tag is not None and (
+        not isinstance(source_tag, str) or not source_tag or "/" in source_tag
+    ):
+        fail("YabaSanshiro corresponding source tag is invalid")
+    if source_commit is not None and (
+        not isinstance(source_commit, str) or not COMMIT_RE.fullmatch(source_commit)
+    ):
+        fail("YabaSanshiro corresponding source commit is invalid")
+    if isinstance(source_tag, str) and SOURCE_URL_RE.fullmatch(source_url):
+        url_tag = source_url.rsplit("/", 2)[-2]
+        if url_tag != source_tag:
+            fail(
+                "YabaSanshiro corresponding source tag does not match its asset "
+                f"URL: {source_tag!r} vs {url_tag!r}"
+            )
+    if require_published_source and not (
+        isinstance(source_tag, str) and isinstance(source_commit, str)
+    ):
+        fail("tagged release must record the source release tag and commit")
 
     file_rows = manifest.get("files")
     if not isinstance(file_rows, list) or not file_rows:
