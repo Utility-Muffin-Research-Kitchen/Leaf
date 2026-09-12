@@ -11,7 +11,7 @@ STAGE_APPS ?= ssh-server Thing-File CentralScrutinizer Fugazi joes-calibrage ret
 # is cross-built from it. There is no unpublished archive to supply and so no
 # special case here any more.
 STAGE_EMULATORS ?= ppsspp drastic mupen64plus flycast yabasanshiro fun-drastic
-PUBLIC_ROOT_DIRS ?= Roms Images Videos Apps BIOS Saves States Cheats
+PUBLIC_ROOT_DIRS ?= Roms Images Videos Apps BIOS Saves States Cheats Themes
 
 # --- Launcher payload assembly inputs --------------------------------------
 JAWAKA_BUILD_DIR ?= $(JAWAKA_DIR)/build/mlp1
@@ -116,6 +116,11 @@ assemble-jawaka: jawaka-build shader-bundle-mlp1
 	@chmod 644 "$(PAYLOAD_DIR)/env.sh"
 	@cp -Rf "$(JAWAKA_DIR)/res/themes" "$(PAYLOAD_DIR)/res/"
 	@if [ -d "$(JAWAKA_DIR)/res/system_icons" ]; then cp -Rf "$(JAWAKA_DIR)/res/system_icons" "$(PAYLOAD_DIR)/res/"; fi
+	@if [ -d "$(JAWAKA_DIR)/res/ui" ]; then cp -Rf "$(JAWAKA_DIR)/res/ui" "$(PAYLOAD_DIR)/res/"; fi
+	@if [ -d "$(JAWAKA_DIR)/res/grid_wordmarks" ]; then cp -Rf "$(JAWAKA_DIR)/res/grid_wordmarks" "$(PAYLOAD_DIR)/res/"; fi
+# Bundled user themes land at the card root, not under .system: Themes/ is the
+# folder users add their own to, and the launcher only scans there.
+	@if [ -d "$(JAWAKA_DIR)/res/user_themes" ]; then mkdir -p "$(PAYLOAD_ROOT)/Themes"; cp -Rf "$(JAWAKA_DIR)/res/user_themes/." "$(PAYLOAD_ROOT)/Themes/"; fi
 	@if [ -f "$(JAWAKA_DIR)/res/certs/cacert.pem" ]; then mkdir -p "$(PAYLOAD_DIR)/res/certs"; cp -f "$(JAWAKA_DIR)/res/certs/cacert.pem" "$(PAYLOAD_DIR)/res/certs/cacert.pem"; fi
 	@if [ -d "$(JAWAKA_DIR)/res/sounds" ]; then cp -Rf "$(JAWAKA_DIR)/res/sounds" "$(PAYLOAD_DIR)/res/"; fi
 	@cp -Rf "$(CATASTROPHE_DIR)/res/fonts" "$(PAYLOAD_DIR)/res/"

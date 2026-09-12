@@ -10,7 +10,7 @@ WORKSPACE_DIR="${LEAF_WORKSPACE_DIR:-$(cd "$LEAF_ROOT/.." && pwd)}"
 DEVICE="${DEVICE:-mlp1}"
 STAGE_APPS="${STAGE_APPS-ssh-server Thing-File CentralScrutinizer Fugazi joes-calibrage retroarch-builds}"
 STAGE_EMULATORS="${STAGE_EMULATORS-ppsspp drastic mupen64plus flycast yabasanshiro fun-drastic}"
-PUBLIC_ROOT_DIRS="${PUBLIC_ROOT_DIRS-Roms Images Videos Apps BIOS Saves States Cheats}"
+PUBLIC_ROOT_DIRS="${PUBLIC_ROOT_DIRS-Roms Images Videos Apps BIOS Saves States Cheats Themes}"
 RELEASE_BUILD="${RELEASE_BUILD:-$LEAF_ROOT/build/release}"
 STAGE_BUILD="${STAGE_BUILD:-$LEAF_ROOT/build/stage/mlp1}"
 PAYLOAD_ROOT="${PAYLOAD_ROOT:-$STAGE_BUILD/package}"
@@ -1112,11 +1112,30 @@ build_install_zip() {
     RELEASE_ROOT="$INSTALL_STAGE/.system/leaf/releases/$RELEASE_ID"
     RELEASE_APPS_DIR="$RELEASE_ROOT/Apps"
     MANAGED_APPS_FILE="$RELEASE_ROOT/managed-apps.txt"
+    RELEASE_THEMES_DIR="$RELEASE_ROOT/Themes"
+    BUNDLED_THEMES_FILE="$RELEASE_ROOT/bundled-themes.txt"
     : >"$MANAGED_APPS_FILE"
     # Public content roots the installer creates if missing (one per line).
     printf '%s\n' $PUBLIC_ROOT_DIRS > "$RELEASE_ROOT/public-dirs.txt"
 
     cp -R "$PAYLOAD_ROOT/.system/leaf/platforms/mlp1" "$RELEASE_ROOT/platforms/mlp1"
+
+    # Themes assembled at the payload ROOT (not under .system) ride along in the
+    # release and are promoted to the card's Themes/ by the installer. Only the
+    # names listed here are touched on the card; any theme the user added stays.
+    : >"$BUNDLED_THEMES_FILE"
+    if [ -d "$PAYLOAD_ROOT/Themes" ]; then
+        for theme_dir in "$PAYLOAD_ROOT/Themes"/*; do
+            [ -d "$theme_dir" ] || continue
+            theme_name="$(basename "$theme_dir")"
+            case "$theme_name" in
+                .*|*/*) die "unsafe bundled theme name: $theme_name" ;;
+            esac
+            mkdir -p "$RELEASE_THEMES_DIR"
+            cp -R "$theme_dir" "$RELEASE_THEMES_DIR/$theme_name"
+            printf '%s\n' "$theme_name" >> "$BUNDLED_THEMES_FILE"
+        done
+    fi
 
     package_graphics_runtime
     for emulator in $STAGE_EMULATORS; do
