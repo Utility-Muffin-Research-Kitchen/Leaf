@@ -1,0 +1,19 @@
+#!/bin/sh
+# Private spike adapter for the two wget forms used by PICO-8 0.2.7.
+set -eu
+url= output= post=
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -q) ;;
+        -O) shift; output=${1:?missing output} ;;
+        --post-file=*) post=${1#*=} ;;
+        http://*|https://*) [ -z "$url" ]; url=$1 ;;
+        *) echo "unsupported PICO-8 wget argument" >&2; exit 2 ;;
+    esac
+    shift
+done
+[ -n "$url" ] && [ -n "$output" ] || exit 2
+spike="${UMRK_RUNTIME_PATH:?}/pico8-spike"
+set -- --fail --location --silent --show-error --connect-timeout 10 --max-time 30 --proto '=http,https' --proto-redir '=https' --cacert /etc/ssl/certs/ca-certificates.crt --output "$output"
+[ -z "$post" ] || set -- "$@" --data-binary "@$post"
+LD_LIBRARY_PATH="$spike/lib" exec "$spike/curl" "$@" -- "$url"
