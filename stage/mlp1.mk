@@ -222,6 +222,11 @@ assemble-jawaka: jawaka-build shader-bundle-mlp1
 	@# pad -- so it is gated here instead.
 	@python3 "$(LEAF_ROOT)/scripts/validate-input-roster-policy.py" \
 		"$(PLATFORM_PAYLOAD_DIR)"
+	@# Every emulator wrapper writes to the session log on the FAT card. A
+	@# wrapper that can be killed by its own log write fails as a black flash
+	@# with no user-visible reason, so it is gated here instead.
+	@python3 "$(LEAF_ROOT)/scripts/validate-logsafe-wrappers.py" \
+		"$(PLATFORM_PAYLOAD_DIR)"
 	@printf 'Jawaka MLP1 launcher bundle\n' > "$(PAYLOAD_DIR)/README.txt"
 	@echo "Assembled payload at $(PAYLOAD_ROOT)"
 	@find "$(PAYLOAD_ROOT)" -type f | sort
@@ -473,6 +478,7 @@ stage-emulator:
 		"$${ADB[@]}" push "$$vulkan_runtime/." "$$remote_vulkan/" >/dev/null; \
 	fi; \
 	python3 "$(LEAF_ROOT)/scripts/validate-input-roster-policy.py" "$$package_dir"; \
+	python3 "$(LEAF_ROOT)/scripts/validate-logsafe-wrappers.py" "$$package_dir"; \
 	remote_dir="$$remote_platform/emulators/$$remote_name"; \
 	echo "Deploying $(EMULATOR) emulator to $$remote_dir"; \
 	"$${ADB[@]}" shell "rm -rf \"$$remote_dir\" && mkdir -p \"$$remote_dir\""; \

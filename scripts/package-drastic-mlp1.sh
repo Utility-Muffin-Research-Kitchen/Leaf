@@ -51,6 +51,28 @@ write_launch_script() {
     cat >"$path" <<'EOF'
 #!/bin/sh
 set -eu
+# LOG-SAFE-1. The session log lives on a FAT card and can go unwritable (a bad
+# cluster chain, a full card, or the FAT32 4 GiB per-file ceiling). stdout and
+# stderr here are inherited from the launcher and point at that file. Under
+# set -e a failed echo would abort this script and the game would never start,
+# so probe both once and fall back to /dev/null, then never let a log write
+# decide whether a game launches.
+leaf_log_probe() {
+    # A real byte, not a zero-length write: a 0-byte write can succeed without
+    # touching the device and would not detect EIO/EFBIG. The subshell ignores
+    # SIGXFSZ: at the FAT32 ceiling the kernel raises it and its default action
+    # would kill this shell before the write could fail with EFBIG.
+    ( trap '' XFSZ; printf '\n' ) 2>/dev/null
+}
+leaf_log_probe >/dev/null 2>&1 || true
+if ! leaf_log_probe; then
+    exec >/dev/null
+fi
+if ! leaf_log_probe >&2; then
+    exec 2>/dev/null
+fi
+
+log() { ( trap '' XFSZ; printf '%s\n' "$*" ) 2>/dev/null || true; }
 
 SELF_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 
@@ -61,7 +83,7 @@ elif [ -n "${UMRK_ENV_FILE:-}" ] && [ -f "$UMRK_ENV_FILE" ]; then
 fi
 
 if [ "$#" -lt 1 ]; then
-    echo "usage: launch.sh <rom-path>" >&2
+    log "usage: launch.sh <rom-path>"
     exit 64
 fi
 
@@ -126,7 +148,15 @@ export LD_LIBRARY_PATH="$SELF_DIR/lib"
 DRASTIC_BIN="$SELF_DIR/bin/drastic64"
 
 cd "$STATE_ROOT"
-exec "$DRASTIC_BIN" "$ROM_PATH" >>"$LOG_ROOT/drastic.log" 2>&1
+# LOG-SAFE-1. The DraStic log lives on the same FAT card as the session log, so
+# this redirect gets the same treatment: prove the file can take a real byte,
+# then either log there or log nowhere, but never fail the launch on it.
+if printf '\n' >>"$LOG_ROOT/drastic.log" 2>/dev/null; then
+    exec >>"$LOG_ROOT/drastic.log" 2>&1
+else
+    exec >/dev/null 2>&1
+fi
+exec "$DRASTIC_BIN" "$ROM_PATH"
 EOF
     chmod 755 "$path"
 }
