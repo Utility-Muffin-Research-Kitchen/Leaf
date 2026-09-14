@@ -60,8 +60,8 @@ set -eu
 leaf_log_probe() {
     # A real byte, not a zero-length write: a 0-byte write can succeed without
     # touching the device and would not detect EIO/EFBIG. The subshell ignores
-    # SIGXFSZ: at the FAT32 ceiling the kernel raises it and its default action
-    # would kill this shell before the write could fail with EFBIG.
+    # SIGXFSZ: past a file-size rlimit the kernel raises it, and its default
+    # action would kill this shell before the write could fail with EFBIG.
     ( trap '' XFSZ; printf '\n' ) 2>/dev/null
 }
 leaf_log_probe >/dev/null 2>&1 || true
