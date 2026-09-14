@@ -1161,6 +1161,8 @@ build_install_zip() {
     validate_pakrat_owned_apps "$RELEASE_ROOT"
     validate_global_shader_scope "$RELEASE_ROOT"
     validate_portmaster_integration "$RELEASE_ROOT"
+    python3 "$LEAF_ROOT/scripts/validate-logsafe-wrappers.py" \
+        "$RELEASE_ROOT/platforms/mlp1"
     audit_mlp1_build_tuning "$RELEASE_ROOT"
     finalize_component_provenance
 
