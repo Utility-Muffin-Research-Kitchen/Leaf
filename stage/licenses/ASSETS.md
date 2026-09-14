@@ -9,6 +9,8 @@ https://leaf.game/credits.
 |---|---|---|
 | Cover Flow console art (icons in the `Jawaka-Coverflow` theme) | Evan Amos - Vanamo Online Game Museum / Wikimedia Commons | Public Domain |
 | Default system icons (libretro Systematic pack) | libretro team and contributors | CC BY-SA 4.0 |
+| Grid View system wordmarks (`res/grid_wordmarks/`) | System makers' logos, redrawn or adapted by UMRK; EasyRPG Team | Per file: Public Domain (PD-textlogo), CC0 1.0, CC BY-SA 4.0 (EasyRPG), SIL OFL 1.1 (Lexend glyphs); see below |
+| Sample theme system logo cards (`Themes/Sample/grid/icons/`) | System makers' logos on white cards by UMRK; Jean Marc Gimenez (ScummVM); EasyRPG Team | Per file: Public Domain (PD-textlogo), CC0 1.0, CC BY-SA 3.0 (ScummVM), CC BY-SA 4.0 (EasyRPG), SIL OFL 1.1 (Lexend glyphs); see below |
 | UI fonts (Space Grotesk, Inter, Rounded M+, Nunito, Baloo 2, Fredoka, Lexend, IBM Plex Sans, Noto Sans, Source Han Sans) | respective type designers | SIL OFL 1.1 |
 | Keyboard glyph icons (Nerd Fonts) | Nerd Fonts contributors | MIT |
 | RetroArch menu artwork (`platforms/mlp1/assets/`, Ozone and XMB Monochrome) | libretro team and contributors | CC BY 4.0 |
@@ -28,6 +30,45 @@ short codes for the theme; full-resolution originals are kept in the UMRK
 **Default system icons** - from the libretro Systematic asset pack
 (https://github.com/libretro/retroarch-assets, `xmb/systematic/png/`), CC BY-SA
 4.0. Per-file note ships in `res/system_icons/LICENSE-ASSETS.md`.
+
+**Grid View system wordmarks** - white system logos for the Grid games view,
+tinted to the theme's text color. The 24 added in September 2026 are documented
+per file in `res/grid_wordmarks/INVENTORY-SOURCE.md` (sources, changes, export
+SHA-256), with exact download records in `SOURCE-RECORDS.json`; PC98 is
+documented in `res/grid_wordmarks/WORDMARK-SOURCE.md`. 32X, MD32X, ATOMISWAVE,
+FDS and PC98 derive from Wikimedia Commons vectors designated PD-textlogo, and
+AMIGA, COLECO, GW, VB and VECTREX reuse the Commons sources recorded for the
+Sample theme cards. EASYRPG adapts the EasyRPG Team's official vector under its
+CC BY-SA 4.0 branding license (https://blog.easyrpg.org/2023/04/); the
+adaptation is also CC BY-SA 4.0. ARCADE and PORTS are original UMRK lettering
+dedicated to CC0 1.0, drawn from outlined Lexend Bold glyphs (SIL OFL 1.1,
+license shipped as `res/grid_wordmarks/Lexend-OFL.txt`); the MAME year labels
+and the Atomiswave TM suffix use the same glyphs. DOS, LYNX, NEOGEO, NGP, NGPC,
+PCECD, SATURN, WS, WSC and the MAME letterform come from Dan Patrick's console
+logo collection (mirrored at https://github.com/PRO100BYTE/console-logos),
+which attributes the logos to their makers and grants no license over them;
+its README ships unmodified as `console-logo-mirror-README.md`. NAOMI comes
+from a Worldvectorlogo vector. The original 18 wordmarks (ATARI2600, DC, FC,
+GB, GBA, GBC, GG, MAME, MD, MS, N64, NDS, PCE, PS, PSP, SEGACD,
+SEVENTYEIGHTHUNDRED, SFC) have no per-file source note yet. System names and
+logos remain their owners' trademarks and identify the systems; no rights are
+claimed in them and no endorsement is implied.
+
+**Sample theme system logo cards** - 512x512 logo cards on a white field for
+the bundled Sample Grid theme (Jawaka `res/user_themes/Sample/`, staged to
+`Themes/Sample/`). Per-file note ships in
+`Themes/Sample/grid/icons/GRID-ICON-SOURCE.md`, with Commons revision records
+in `commons.json` beside it. It covers eleven added cards (AMIGA, ARCADE,
+COLECO, EASYRPG, GW, PC98, PICO8, PORTS, SCUMMVM, VB, VECTREX) and eight
+corrected ones (32X, MD32X, ATOMISWAVE, NAOMI, FDS, PCECD, MAME2003, MAME2010)
+that share the wordmark sources above. SCUMMVM adapts the ScummVM logo,
+Copyright (c) 2004, 2009 Jean Marc Gimenez (`originals/scummvm_logo.svg` in
+https://github.com/scummvm/scummvm-media, revision
+`3685fcd62e09277e114eb0ef99091a9c55335f00`), under its CC BY-SA 3.0 branding
+license; the card is also CC BY-SA 3.0. EASYRPG adapts the EasyRPG Team's
+official logo, CC BY-SA 4.0, and the card is also CC BY-SA 4.0. PICO8 is
+original UMRK lettering, CC0 1.0; PICO-8 is Lexaloffle's name. The other 26
+system cards and `_apps.png` (the Leaf mark) have no per-file source note yet.
 
 **RetroArch menu assets** - RetroArch resolves every icon and font its menu
 drivers draw under a single assets directory. Leaf assembles that tree directly
