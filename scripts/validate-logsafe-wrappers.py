@@ -17,10 +17,9 @@ rather than left to review.
   LOGSAFE002  a wrapper that sets errexit and does not carry the LOG-SAFE-1
               preamble byte-for-byte
 
-Point this at an assembled MLP1 payload (or any tree holding
-emulators/*/launch.sh wrappers). Only emulators/ launchers are checked: those
-are the processes whose death is invisible -- a black flash and a return to
-the menu.
+Point this at an assembled MLP1 payload, an emulator package directory, or a
+wrapper file. In a tree, emulators/ launchers and launch*.sh files directly
+inside the supplied directory are checked.
 """
 
 from __future__ import annotations
@@ -414,7 +413,7 @@ def iter_wrappers(root: Path):
             continue
         if any(part in SKIP_DIR_NAMES for part in path.parts):
             continue
-        if "emulators" not in path.parts:
+        if path.parent != root and "emulators" not in path.parts:
             continue
         yield path
 
@@ -436,7 +435,7 @@ def main() -> int:
         "paths",
         nargs="+",
         type=Path,
-        help="assembled payload(s) or wrapper tree(s) to check",
+        help="assembled payload(s), emulator package directory(s), or wrapper file(s) to check",
     )
     args = parser.parse_args()
 

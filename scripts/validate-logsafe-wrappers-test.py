@@ -9,6 +9,7 @@ drift that would quietly reintroduce it.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -202,6 +203,20 @@ expect_accept("non-emulator shell scripts are out of scope", {
     "scripts/somewhere/launch.sh": "#!/bin/sh\nset -eu\necho not an emulator wrapper\n",
 })
 
+expect_reject("package root without an emulators path component", "LOGSAFE002", {
+    "launch.sh": "#!/bin/sh\nset -eu\necho unsafe\n",
+})
+
+expect_reject("alternate launcher at a package root", "LOGSAFE001", {
+    "launch.sh": wrapper("log ok\n"),
+    "launch-gles.sh": wrapper("echo unsafe\n"),
+})
+
+expect_accept("safe launchers at a package root", {
+    "launch.sh": wrapper("log ok\n"),
+    "launch-gles.sh": wrapper("log ok\n"),
+})
+
 expect_accept("stderr redirect to a file is not an inherited write", {
     "emulators/ports/launch.sh": wrapper(
         "printf 'x' >>\"$RUN_LOG\" 2>&1\n"
@@ -304,6 +319,30 @@ expect_reject("quotes nested in a parameter expansion do not hide later writes",
         'echo "after the case"\n'
     ),
 })
+
+# Execute the release's final platform-validation block against a completed
+# fixture. This catches a missing gate after the emulator/app packaging steps,
+# even when the earlier launcher-only assembly gate passes.
+release_script = (LEAF_ROOT / "scripts/make-sd-release-zip.sh").read_text()
+final_checks = release_script.split('    validate_portmaster_integration "$RELEASE_ROOT"\n', 1)[1]
+final_checks = final_checks.split('    audit_mlp1_build_tuning "$RELEASE_ROOT"', 1)[0]
+for name, body, expected in (
+    ("safe", wrapper("log ok\n"), None),
+    ("missing preamble", "#!/bin/sh\nset -eu\n", "LOGSAFE002"),
+    ("unsafe write", wrapper("echo unsafe\n"), "LOGSAFE001"),
+):
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        package = root / "platforms/mlp1/emulators/ppsspp"
+        package.mkdir(parents=True)
+        (package / "launch.sh").write_text(body)
+        result = subprocess.run(
+            ["bash", "-eu", "-c", final_checks], capture_output=True, text=True,
+            env=dict(os.environ, LEAF_ROOT=str(LEAF_ROOT), RELEASE_ROOT=str(root)))
+        if expected is None and result.returncode != 0:
+            FAILURES.append(f"final release gate ({name}): {result.stderr}")
+        elif expected and (result.returncode == 0 or expected not in result.stderr):
+            FAILURES.append(f"final release gate ({name}): expected {expected} rejection")
 
 if FAILURES:
     for failure in FAILURES:
