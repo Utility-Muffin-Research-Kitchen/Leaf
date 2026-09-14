@@ -108,7 +108,7 @@ if [ -d "$PLATFORM_DIR" ]; then
     echo "Deploying platform payload to $REMOTE_PLATFORM_PATH ($PLATFORM_MODE)"
     "${ADB[@]}" shell "mkdir -p '$REMOTE_PLATFORM_PATH'"
     if [ "$PLATFORM_MODE" = "replace" ]; then
-        for name in bin cores info defaults platform.d autoconfig boot-animation shaders assets manifest.json; do
+        for name in bin cores info defaults platform.d autoconfig boot-animation storage-recovery shaders assets manifest.json; do
             "${ADB[@]}" shell "rm -rf '$REMOTE_PLATFORM_PATH/$name'"
         done
     fi
