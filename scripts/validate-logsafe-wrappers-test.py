@@ -208,6 +208,103 @@ expect_accept("stderr redirect to a file is not an inherited write", {
     ),
 })
 
+# Shapes the first gate missed: a write anywhere but the start of a line, and
+# a write whose arguments merely contain a command substitution.
+expect_reject("printf as the last command of an && list", "LOGSAFE001", {
+    "emulators/ports/launch.sh": wrapper(
+        '[ -x "$prepare" ] && printf \'%s\\n\' "$prepare"\n'
+    ),
+})
+
+expect_reject("echo inside a one-line then branch", "LOGSAFE001", {
+    "emulators/ports/launch.sh": wrapper(
+        'if [ -n "$x" ]; then echo "x is set"; fi\n'
+    ),
+})
+
+expect_reject("echo whose argument holds a command substitution", "LOGSAFE001", {
+    "emulators/ports/launch.sh": wrapper(
+        'echo "found $(basename "$port_script")"\n'
+    ),
+})
+
+expect_reject("echo after a case pattern", "LOGSAFE001", {
+    "emulators/ports/launch.sh": wrapper(
+        'case "$x" in\n'
+        '    *) echo "unsupported: $x" ;;\n'
+        'esac\n'
+    ),
+})
+
+expect_reject("stderr-only redirect still writes the inherited stdout", "LOGSAFE001", {
+    "emulators/ports/launch.sh": wrapper(
+        "printf 'x\\n' 2>/dev/null\n"
+    ),
+})
+
+expect_reject("unguarded subshell group", "LOGSAFE001", {
+    "emulators/ports/launch.sh": wrapper(
+        '( echo "in a subshell" )\n'
+    ),
+})
+
+expect_reject("echo after a multi-line command substitution closes", "LOGSAFE001", {
+    "emulators/ports/launch.sh": wrapper(
+        'value="$(\n'
+        '    printf \'%s\\n\' candidate\n'
+        ')"\n'
+        'echo "value=$value"\n'
+    ),
+})
+
+expect_accept("printf into a pipeline", {
+    "emulators/ports/launch.sh": wrapper(
+        'printf \'%s\\n\' "$x" | grep -q y\n'
+    ),
+})
+
+expect_accept("echo in an if condition", {
+    "emulators/ports/launch.sh": wrapper(
+        'if ! echo probe; then log "no stdout"; fi\n'
+    ),
+})
+
+expect_accept("subshell group redirected to a file", {
+    "emulators/ports/launch.sh": wrapper(
+        '( printf a; printf b ) >"$f"\n'
+    ),
+})
+
+expect_accept("one-line brace group redirected to a file", {
+    "emulators/ports/launch.sh": wrapper(
+        '{ echo a; echo b; } >>"$f"\n'
+    ),
+})
+
+expect_accept("both streams redirected with &>", {
+    "emulators/ports/launch.sh": wrapper(
+        'echo x &>"$f"\n'
+    ),
+})
+
+expect_accept("printf inside a one-line command substitution guarded with ||", {
+    "emulators/ports/launch.sh": wrapper(
+        '[ -f "$font" ] && FONT="$(printf \'%s\' "$font")" || true\n'
+    ),
+})
+
+expect_reject("quotes nested in a parameter expansion do not hide later writes", "LOGSAFE001", {
+    "emulators/fun-drastic/launch.sh": wrapper(
+        'save_name() {\n'
+        '    case "$1" in\n'
+        '        *") ("*) printf \'%s\' "${1%%") ("*}" 2>/dev/null || true ;;\n'
+        '        *) printf \'%s\' "$1" 2>/dev/null || true ;;\n'
+        '    esac\n'
+        '}\n'
+        'echo "after the case"\n'
+    ),
+})
+
 if FAILURES:
     for failure in FAILURES:
         print(failure, flush=True)

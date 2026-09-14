@@ -36,8 +36,9 @@ SKIP_DIR_NAMES = {".git", "node_modules", "__pycache__"}
 # The canonical LOG-SAFE-1 preamble. Byte-identical across every wrapper, so a
 # wrapper whose copy has drifted (in either direction) fails LOGSAFE002. The
 # probe deliberately writes a real byte with SIGXFSZ ignored inside a subshell:
-# at the FAT32 ceiling the kernel raises SIGXFSZ and its default action would
-# kill the probe shell before the write could fail with EFBIG.
+# past a file-size rlimit the kernel raises SIGXFSZ, whose default action would
+# kill the probe shell before the write could fail with EFBIG. (The FAT32
+# per-file ceiling itself fails the write with EFBIG and no signal.)
 LOGSAFE1_PREAMBLE = r'''# LOG-SAFE-1. The session log lives on a FAT card and can go unwritable (a bad
 # cluster chain, a full card, or the FAT32 4 GiB per-file ceiling). stdout and
 # stderr here are inherited from the launcher and point at that file. Under
@@ -47,8 +48,8 @@ LOGSAFE1_PREAMBLE = r'''# LOG-SAFE-1. The session log lives on a FAT card and ca
 leaf_log_probe() {
     # A real byte, not a zero-length write: a 0-byte write can succeed without
     # touching the device and would not detect EIO/EFBIG. The subshell ignores
-    # SIGXFSZ: at the FAT32 ceiling the kernel raises it and its default action
-    # would kill this shell before the write could fail with EFBIG.
+    # SIGXFSZ: past a file-size rlimit the kernel raises it, and its default
+    # action would kill this shell before the write could fail with EFBIG.
     ( trap '' XFSZ; printf '\n' ) 2>/dev/null
 }
 leaf_log_probe >/dev/null 2>&1 || true
@@ -64,8 +65,16 @@ log() { ( trap '' XFSZ; printf '%s\n' "$*" ) 2>/dev/null || true; }
 
 HEREDOC_START_RE = re.compile(r"<<-?\s*['\"]?([A-Za-z_][A-Za-z0-9_]*)['\"]?")
 ERREXIT_RE = re.compile(r"^\s*set\s+(?:-[A-Za-z]*e[A-Za-z]*\s+)+|^\s*set\s+-[A-Za-z]*e[A-Za-z]*$|^\s*set\s+-o\s+errexit\b")
-PRINTF_TO_STDOUT_RE = re.compile(r"^\s*(?:\w+=\S+\s+)*(?:echo|printf)\s")
-LOG_CALL_RE = re.compile(r"^\s*log\s")
+ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+# A redirection on a masked segment: optional fd, operator, optional dup '&'.
+REDIRECT_RE = re.compile(r"(?<![\w<>&])(\d*)(&>>?|>>?)\s*(&?)")
+
+# Operators after which a failed echo/printf cannot trip errexit: the left side
+# of || and &&, a pipeline stage that writes into a pipe, a background job.
+NON_FATAL_NEXT_OPS = {"||", "&&", "|", "&"}
+CONDITION_KEYWORDS = {"if", "elif", "while", "until"}
+BODY_KEYWORDS = {"then", "do"}
+OTHER_KEYWORDS = {"else", "time"}
 
 
 class Finding:
@@ -109,26 +118,6 @@ def strip_quoted(line: str) -> str:
     return "".join(out)
 
 
-def strip_single_quoted(line: str) -> str:
-    """Remove only single-quoted spans. Command substitution and parentheses
-    inside double quotes still execute, so they must keep counting toward
-    the $( depth."""
-    out = []
-    quote = None
-    for ch in line:
-        if quote:
-            if ch == quote:
-                quote = None
-            out.append(" " if ch != "\t" else "\t")
-            continue
-        if ch == "'":
-            quote = ch
-            out.append(" ")
-            continue
-        out.append(ch)
-    return "".join(out)
-
-
 def logical_lines(text: str) -> list[tuple[int, str]]:
     """Join backslash continuations into logical lines, dropping comments and
     heredoc bodies. Returns (first_physical_line, logical_text)."""
@@ -162,41 +151,180 @@ def logical_lines(text: str) -> list[tuple[int, str]]:
     return result
 
 
-def command_sub_depth(line: str, depth: int) -> int:
-    """Track command-substitution depth across logical lines. Single-quoted
-    spans cannot hold a substitution; double-quoted ones can, so their parens
-    still count. Plain parens (function definitions, subshell groups) pair up
-    and cancel, so only genuinely unbalanced ones move the depth."""
-    stripped = strip_single_quoted(line)
-    depth += stripped.count("(") - stripped.count(")")
-    return max(depth, 0)
+class Segment:
+    """One simple command at the top level of the script: outside quotes and
+    command substitutions. `masked` blanks every quoted or substituted span to
+    'Q' so keyword and redirect spotting only ever sees shell syntax."""
+
+    __slots__ = ("line", "text", "masked", "prev_op", "next_op")
+
+    def __init__(self, line: int, text: str, masked: str, prev_op: str, next_op: str) -> None:
+        self.line = line
+        self.text = text
+        self.masked = masked
+        self.prev_op = prev_op
+        self.next_op = next_op
 
 
-def group_redirect_spans(lines: list[tuple[int, str]]) -> list[tuple[int, int]]:
-    """Line-index spans of brace groups whose closing brace carries a file
-    redirect: `{ printf ...; } >"$tmp_config"`. Statements inside such a group
-    write to the group's target, not to inherited stdout."""
-    spans: list[tuple[int, int]] = []
-    open_index: int | None = None
-    for index, (_, logical) in enumerate(lines):
-        unquoted = strip_quoted(logical).strip()
-        if open_index is None and (unquoted == "{" or unquoted.endswith(" {")):
-            open_index = index
-            continue
-        if open_index is not None and unquoted.startswith("}"):
-            # `} >file` redirects the whole group at a file; `} || true` means
-            # a failed statement inside the group cannot abort the script.
-            if re.search(r"}\s*>>?", unquoted) or re.match(r"}\s*\|\|", unquoted):
-                spans.append((open_index, index))
-            open_index = None
-    return spans
+class Scanner:
+    """Split logical lines into top-level command segments. Quote and
+    substitution state carries across lines, so a multi-line "$( ... )" or a
+    multi-line double-quoted string is never mistaken for top-level code."""
+
+    def __init__(self) -> None:
+        self.stack: list[str] = []
+        self.prev_op = "\n"
+
+    def segments(self, number: int, logical: str) -> list[Segment]:
+        out: list[Segment] = []
+        buf: list[str] = []
+        mbuf: list[str] = []
+        s = logical
+        n = len(s)
+        i = 0
+
+        def emit(chunk: str, top: bool) -> None:
+            buf.append(chunk)
+            mbuf.append(chunk if top else "Q" * len(chunk))
+
+        def flush(op: str) -> None:
+            out.append(Segment(number, "".join(buf), "".join(mbuf), self.prev_op, op))
+            buf.clear()
+            mbuf.clear()
+            self.prev_op = op
+
+        while i < n:
+            ch = s[i]
+            top = self.stack[-1] if self.stack else None
+            if top == "'":
+                emit(ch, False)
+                if ch == "'":
+                    self.stack.pop()
+                i += 1
+                continue
+            if ch == "\\" and i + 1 < n:
+                emit(s[i:i + 2], False)
+                i += 2
+                continue
+            if top == "${":
+                # Parameter expansion: quotes inside nest ("${x%%") ("*}"),
+                # and only the matching brace ends it.
+                if ch == "}":
+                    self.stack.pop()
+                elif ch in "'\"":
+                    self.stack.append(ch)
+                elif s.startswith("${", i) or s.startswith("$(", i):
+                    self.stack.append(s[i:i + 2])
+                    emit(s[i:i + 2], False)
+                    i += 2
+                    continue
+                emit(ch, False)
+                i += 1
+                continue
+            if top == '"':
+                if ch == '"':
+                    self.stack.pop()
+                    emit(ch, False)
+                    i += 1
+                elif s.startswith("${", i):
+                    self.stack.append("${")
+                    emit("${", False)
+                    i += 2
+                elif s.startswith("$(", i):
+                    self.stack.append("$(")
+                    emit("$(", False)
+                    i += 2
+                elif ch == "`":
+                    self.stack.append("`")
+                    emit(ch, False)
+                    i += 1
+                else:
+                    emit(ch, False)
+                    i += 1
+                continue
+            # Code: the top level, or inside $( ), ( ) within one, or backticks.
+            if ch in "'\"":
+                self.stack.append(ch)
+                emit(ch, False)
+                i += 1
+                continue
+            if s.startswith("${", i):
+                self.stack.append("${")
+                emit("${", False)
+                i += 2
+                continue
+            if s.startswith("$(", i):
+                self.stack.append("$(")
+                emit("$(", False)
+                i += 2
+                continue
+            if ch == "`":
+                if top == "`":
+                    self.stack.pop()
+                else:
+                    self.stack.append("`")
+                emit(ch, False)
+                i += 1
+                continue
+            if top is not None:
+                if ch == "(":
+                    self.stack.append("(")
+                elif ch == ")":
+                    self.stack.pop()
+                emit(ch, False)
+                i += 1
+                continue
+            two = s[i:i + 2]
+            if ch == "\n":
+                flush("\n")
+                i += 1
+            elif two in ("&&", "||", ";;"):
+                flush(two)
+                i += 2
+            elif ch == ";":
+                flush(";")
+                i += 1
+            elif ch == "|" and not (i > 0 and s[i - 1] == ">"):
+                flush("|")
+                i += 1
+            elif ch == "&" and not ((i > 0 and s[i - 1] in "<>") or s[i + 1:i + 2] == ">"):
+                flush("&")
+                i += 1
+            elif ch in "()":
+                # Subshell group, function-definition parens, or a case pattern
+                # terminator; scan_wrapper pairs them.
+                flush(ch)
+                i += 1
+            else:
+                emit(ch, True)
+                i += 1
+        if buf or self.prev_op not in ("\n",):
+            flush("\n")
+        return out
+
+
+def stdout_goes_to_file(masked: str) -> bool:
+    """True when the segment's own redirections send stdout to a file (or
+    /dev/null) rather than to an inherited descriptor."""
+    target = "inherited"
+    for match in REDIRECT_RE.finditer(masked):
+        fd, op, dup = match.groups()
+        if op.startswith("&>"):
+            target = "file"
+        elif fd in ("", "1"):
+            target = "inherited" if dup else "file"
+    return target == "file"
+
+
+def tail_guards(segment: Segment, masked_tail: str) -> bool:
+    return segment.next_op in NON_FATAL_NEXT_OPS or stdout_goes_to_file(masked_tail)
 
 
 def scan_wrapper(path: Path, text: str) -> list[Finding]:
     findings: list[Finding] = []
-    lines = logical_lines(text)
-    sets_errexit = any(ERREXIT_RE.match(logical) for _, logical in lines)
-    if sets_errexit and LOGSAFE1_PREAMBLE not in text:
+    sets_errexit = any(ERREXIT_RE.match(logical) for _, logical in logical_lines(text))
+    has_preamble = LOGSAFE1_PREAMBLE in text
+    if sets_errexit and not has_preamble:
         findings.append(
             Finding(
                 "LOGSAFE002",
@@ -210,48 +338,68 @@ def scan_wrapper(path: Path, text: str) -> list[Finding]:
     if not sets_errexit:
         return findings
 
-    redirected_groups = group_redirect_spans(lines)
-    depth = 0
-    for index, (number, logical) in enumerate(lines):
-        inside_substitution = depth > 0
-        depth = command_sub_depth(logical, depth)
-        if inside_substitution or depth > 0:
+    # The preamble is gated byte-for-byte above, and its own writes are the
+    # guarded probe and log(); blank it (keeping line numbers) before scanning.
+    body = text.replace(LOGSAFE1_PREAMBLE, "\n" * LOGSAFE1_PREAMBLE.count("\n"), 1)
+    scanner = Scanner()
+    segments: list[Segment] = []
+    for number, logical in logical_lines(body):
+        segments.extend(scanner.segments(number, logical))
+
+    guarded = [False] * len(segments)
+    candidates: list[tuple[int, bool]] = []
+    groups: list[tuple[str, int]] = []
+    in_condition = False
+
+    for index, segment in enumerate(segments):
+        if segment.prev_op == "(":
+            groups.append(("(", index))
+        elif segment.prev_op == ")" and groups and groups[-1][0] == "(":
+            _, start = groups.pop()
+            # `( ... ) >file` or `( ... ) || true`: this segment is the tail.
+            if tail_guards(segment, segment.masked):
+                for inner in range(start, index):
+                    guarded[inner] = True
+
+        words = segment.masked.split()
+        negated = False
+        while words:
+            word = words[0]
+            if word == "{":
+                groups.append(("{", index))
+            elif word == "}":
+                if groups and groups[-1][0] == "{":
+                    _, start = groups.pop()
+                    tail = segment.masked.split("}", 1)[1]
+                    if tail_guards(segment, tail):
+                        for inner in range(start, index):
+                            guarded[inner] = True
+            elif word in CONDITION_KEYWORDS:
+                in_condition = True
+            elif word in BODY_KEYWORDS:
+                in_condition = False
+            elif word == "!":
+                negated = True
+            elif word not in OTHER_KEYWORDS and not ASSIGNMENT_RE.match(word):
+                break
+            words.pop(0)
+        if words and words[0] in ("echo", "printf"):
+            candidates.append((index, in_condition or negated))
+
+    for index, exempt in candidates:
+        segment = segments[index]
+        if exempt or guarded[index]:
             continue
-        if any(open_ <= index <= close for open_, close in redirected_groups):
-            continue
-        if LOG_CALL_RE.match(logical):
-            continue
-        if not PRINTF_TO_STDOUT_RE.match(logical):
-            continue
-        unquoted = strip_quoted(logical)
-        if "||" in unquoted:
-            continue
-        if re.search(r">>?\s*(?!&)", unquoted) or "2>>" in unquoted:
-            # Redirect to a path: a file write, not an inherited-fd write.
-            # (2>&1 alongside a file redirect still ends at that file.)
-            continue
-        if re.search(r"(?:^|\s)\d*>\s*&\s*\d", unquoted):
-            findings.append(
-                Finding(
-                    "LOGSAFE001",
-                    path,
-                    number,
-                    "bare echo/printf to an inherited descriptor under errexit; "
-                    "route it through log() or guard it, or the launch dies "
-                    "when the session log is unwritable",
-                )
-            )
-            continue
-        if "$(" in strip_single_quoted(logical) or "`" in strip_single_quoted(logical):
+        if segment.next_op in NON_FATAL_NEXT_OPS or stdout_goes_to_file(segment.masked):
             continue
         findings.append(
             Finding(
                 "LOGSAFE001",
                 path,
-                number,
-                "bare echo/printf to stdout under errexit; route it through "
-                "log() or guard it, or the launch dies when the session log "
-                "is unwritable",
+                segment.line,
+                "bare echo/printf to an inherited stdout under errexit; route "
+                "it through log() or guard it, or the launch dies when the "
+                "session log is unwritable",
             )
         )
     return findings
