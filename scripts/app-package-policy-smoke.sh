@@ -32,6 +32,7 @@ assert_policy VideoFromHell VideoFromHell.pak pakrat
 assert_policy Nimbus Nimbus.pak pakrat
 assert_policy PortMaster-mlp1 PortMaster.pak pakrat
 assert_policy ScummVM-pak ScummVM.pak pakrat
+assert_policy DSperate-pak DSperate.pak pakrat
 assert_policy ssh-server SSHServer.pak release
 
 # The audits below derive their patterns from leaf_pakrat_owned_repos, so this
