@@ -9,6 +9,12 @@
   <img alt="last commit" src="https://img.shields.io/github/last-commit/Utility-Muffin-Research-Kitchen/Leaf?color=7FB069&labelColor=0F160E&cacheSeconds=3600">
 </p>
 
+<hr>
+
+<p align="center">
+  <b>Translated</b>
+</p>
+
 <p align="center">
   <a href="https://leaf.game/guide/translating/"><img alt="中文 translation coverage" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FUtility-Muffin-Research-Kitchen%2FJawaka%2Fmain%2Fi18n%2Fcoverage.json&query=%24.languages.zh_CN.percent&suffix=%25&label=%E4%B8%AD%E6%96%87&color=7FB069&labelColor=0F160E&cacheSeconds=300"></a>
   <a href="https://leaf.game/guide/translating/"><img alt="Français translation coverage" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FUtility-Muffin-Research-Kitchen%2FJawaka%2Fmain%2Fi18n%2Fcoverage.json&query=%24.languages.fr_FR.percent&suffix=%25&label=Fran%C3%A7ais&color=7FB069&labelColor=0F160E&cacheSeconds=300"></a>
