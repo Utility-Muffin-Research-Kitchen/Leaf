@@ -22,9 +22,7 @@
 </p>
 
 <p align="center">
-  <sub>Leaf is written in English and translated by the people who use it, so the
-  percentages are how much of the interface each language covers.
-  <a href="https://leaf.game/guide/translating/">Help translate Leaf</a>, or finish a language someone started.</sub>
+  <sub>Translated by the Leaf community. <a href="https://leaf.game/guide/translating/">Help translate Leaf</a>.</sub>
 </p>
 
 Leaf is the developer command surface for the UMRK launcher workspace. It owns
