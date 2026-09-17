@@ -15,6 +15,11 @@
   <a href="https://leaf.game/guide/translating/"><img alt="Español translation coverage" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FUtility-Muffin-Research-Kitchen%2FJawaka%2Fmain%2Fi18n%2Fcoverage.json&query=%24.languages.es_MX.percent&suffix=%25&label=Espa%C3%B1ol&color=7FB069&labelColor=0F160E&cacheSeconds=300"></a>
 </p>
 
+<p align="center">
+  <sub>Leaf is translated by the people who use it.
+  <a href="https://leaf.game/guide/translating/">Help translate Leaf</a>, or finish a language someone started.</sub>
+</p>
+
 Leaf is the developer command surface for the UMRK launcher workspace. It owns
 workspace bootstrap, cross-repo status/preflight, payload assembly, and SD-card
 deployment. Product repos remain independent siblings and keep their own build
