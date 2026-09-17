@@ -37,8 +37,10 @@ leaf_pakrat_owned_repos() {
         "Nimbus" \
         "PortMaster-mlp1" \
         "Leaf-Syncthing-Pak" \
-        "Leaf-RAOfflineProxy-Pak"
+        "Leaf-RAOfflineProxy-Pak" \
+        "DSperate-pak"
 }
+
 
 leaf_pakrat_owned_package_names() {
     printf '%s\n' \
@@ -48,7 +50,8 @@ leaf_pakrat_owned_package_names() {
         "Nimbus.pak" \
         "PortMaster.pak" \
         "Syncthing.pak" \
-        "RAOfflineProxy.pak"
+        "RAOfflineProxy.pak" \
+        "DSperate.pak"
 }
 
 leaf_app_policy() {
@@ -132,6 +135,14 @@ leaf_app_policy() {
             package_target="package-mlp1"
             package_dir="$workspace_dir/ScummVM-pak/build/package/ScummVM.pak"
             package_name="ScummVM.pak"
+            destination_platform="mlp1"
+            supported_devices="mlp1"
+            distribution="pakrat"
+            ;;
+        DSperate-pak)
+            package_target="package-mlp1"
+            package_dir="$workspace_dir/DSperate-pak/build/package/DSperate.pak"
+            package_name="DSperate.pak"
             destination_platform="mlp1"
             supported_devices="mlp1"
             distribution="pakrat"
