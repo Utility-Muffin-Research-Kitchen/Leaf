@@ -477,9 +477,27 @@ def validate_candidate(args: argparse.Namespace) -> None:
         'verify_closed()',
         'origin=automatic-check',
         'last-results/$r_uuid',
+        'prepare_loong_power_handoff()',
     ):
         if expected not in installer_text:
             raise PolicyError(f"managed installer is missing SD safety support: {expected}")
+
+    # Stock loong_daemon runs otaCommand behind a pipe and kills what is left
+    # once it closes; stock loong_service keeps /oem writable. A completion that
+    # drops the pipe or skips stopping the stock stack returns the user to
+    # stock without the storage barrier ever running.
+    trigger = args.install_stage.resolve() / "loong_upgrade"
+    require_file(trigger, "stock update trigger")
+    try:
+        command = json.loads(trigger.read_text(encoding="utf-8"))["otaCommand"]
+    except (ValueError, KeyError, TypeError) as exc:
+        raise PolicyError(f"stock update trigger has no otaCommand: {exc}") from exc
+    for expected in ("umrk-power-transition reboot", "3>&1", "killall -9 $stock", "loong_service"):
+        if expected not in command:
+            raise PolicyError(f"install completion cannot finish the power barrier: {expected}")
+    for forbidden in ("reboot -f", "/dev/console"):
+        if forbidden in command:
+            raise PolicyError(f"install completion bypasses or loses the power barrier: {forbidden}")
 
 
 def make_parser() -> argparse.ArgumentParser:

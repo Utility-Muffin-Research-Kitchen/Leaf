@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Power-cycle a backed-up MLP1 through menu IPC, checking both cards after each boot.
+"""Power-cycle a backed-up MLP1 through menu IPC, checking its cards after each boot.
 
 Writes only .userdata/mlp1/sd-safety-test/canary.bin on each mounted card.
 Requires --execute. Stops on a refused reboot, build change, missing/read-only
 card, kernel filesystem error, or changed test data. It never forces a reboot.
 Offline fsck and save hashes before/after the run remain separate checks.
 With --action poweroff, an operator must turn the handheld on after each shutdown.
+--cards 1 qualifies the single-card layout and fails if a second card is mounted.
 """
 import argparse
 import hashlib
@@ -20,6 +21,7 @@ import time
 LEAF = Path(__file__).resolve().parents[2]
 SOCKET = '/tmp/jawaka-runtime/jawakad.sock'
 CANARY = '.userdata/mlp1/sd-safety-test/canary.bin'
+MLP1_MODEL = 'RK3566 RK817 MANGMI'
 ERROR = re.compile(r'FAT-fs .*?(?:error|not properly unmounted|read-only)|I/O error|Buffer I/O', re.I)
 
 
@@ -28,17 +30,28 @@ def main():
     parser.add_argument('--execute', action='store_true', help='authorize writes and menu-path reboots on backed-up cards')
     parser.add_argument('--cycles', type=int, default=1)
     parser.add_argument('--action', choices=('reboot', 'poweroff'), default='reboot')
+    parser.add_argument('--cards', type=int, choices=(1, 2), default=2,
+                        help='expected card layout; 1 requires the secondary slot to be empty')
     parser.add_argument('--serial', default=os.environ.get('ADB_SERIAL'))
     parser.add_argument('--out', type=Path, required=True)
     args = parser.parse_args()
     if not args.execute or not 1 <= args.cycles <= 100:
         parser.error('--execute and 1..100 cycles are required')
+    def model(serial):
+        result = subprocess.run(['adb', '-s', serial, 'shell', 'cat /proc/device-tree/model'],
+                                capture_output=True, text=True, timeout=10)
+        return result.stdout if result.returncode == 0 else ''
+
+    # Serials do not identify an MLP1 and other devices share the hub.
     if not args.serial:
         listing = subprocess.check_output(['adb', 'devices'], text=True)
         args.serial = next((row.split()[0] for row in listing.splitlines()[1:]
-                            if len(row.split()) == 2 and row.split()[1] == 'device'), None)
+                            if len(row.split()) == 2 and row.split()[1] == 'device'
+                            and MLP1_MODEL in model(row.split()[0])), None)
     if not args.serial:
-        parser.error('no online ADB device')
+        parser.error('no online MLP1 over ADB')
+    if MLP1_MODEL not in model(args.serial):
+        parser.error(f'{args.serial} is not an MLP1')
     adb = ['adb', '-s', args.serial]
     args.out.mkdir(parents=True, exist_ok=True)
 
@@ -60,11 +73,15 @@ def main():
         prefix = shlex.quote(ctl) + ' --socket ' + SOCKET + ' request '
         cards = [json.loads(shell(prefix + shlex.quote(json.dumps({'type': 'storage-status', 'source': source}))))
                  for source in ('launcher_sd', 'secondary_sd')]
+        if args.cards == 1:
+            if cards[1].get('mounted'):
+                raise RuntimeError('single-card run, but a secondary card is mounted: ' + json.dumps(cards[1]))
+            cards = cards[:1]
         for card in cards:
             if not card.get('mounted') or card.get('access') != 'read-write' or card.get('repair') != 'none':
                 raise RuntimeError('card is not safely writable: ' + json.dumps(card))
-        if len({c.get('uuid') for c in cards}) != 2 or any(not c.get('uuid') for c in cards):
-            raise RuntimeError('two distinct card UUIDs are required')
+        if len({c.get('uuid') for c in cards}) != args.cards or any(not c.get('uuid') for c in cards):
+            raise RuntimeError(f'{args.cards} distinct card UUID(s) are required')
         # Mount roots come from the daemon's source status, not a remembered slot.
         roots = [card['mount_path'] for card in cards]
         digest = shell('sha256sum ' + shlex.quote(root + '/.system/leaf/platforms/mlp1/launcher/bin/loong_pangu') +
@@ -121,7 +138,7 @@ def main():
         (args.out / f'cycle-{cycle:03d}.json').write_text(json.dumps(record, indent=2) + '\n')
         if errors:
             raise RuntimeError('kernel storage errors: ' + '\n'.join(errors))
-        print(f"PASS {cycle}/{args.cycles}: {record['elapsed_s']}s; both UUIDs writable, test data intact", flush=True)
+        print(f"PASS {cycle}/{args.cycles}: {record['elapsed_s']}s; {args.cards} card(s) writable, test data intact", flush=True)
         current = next_state
     print('Power cycles passed. Run offline checks and compare save hashes before removing the dedicated test files.', flush=True)
 
