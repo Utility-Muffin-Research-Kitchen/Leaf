@@ -385,6 +385,8 @@ def validate_candidate(args: argparse.Namespace) -> None:
 
     if b"UMRK_POWER_REQUEST_DIR" not in daemon.read_bytes():
         raise PolicyError("launcher daemon does not support the rootfs power handoff")
+    if b"UMRK_LOONG_POWER_HANDOFF_DIR" not in daemon.read_bytes():
+        raise PolicyError("launcher daemon drops the low-battery power handoff on loong_power restart")
 
     environment = read_staged_environment(env_path)
     if environment.get("UMRK_ENV_VERSION") != "2":
