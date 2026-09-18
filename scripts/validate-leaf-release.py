@@ -383,6 +383,9 @@ def validate_candidate(args: argparse.Namespace) -> None:
     if b"source-paths-v2" not in daemon.read_bytes():
         raise PolicyError("launcher daemon does not advertise source-paths-v2")
 
+    if b"UMRK_POWER_REQUEST_DIR" not in daemon.read_bytes():
+        raise PolicyError("launcher daemon does not support the rootfs power handoff")
+
     environment = read_staged_environment(env_path)
     if environment.get("UMRK_ENV_VERSION") != "2":
         raise PolicyError("runtime environment does not publish complete source-paths-v2")
@@ -466,6 +469,17 @@ def validate_candidate(args: argparse.Namespace) -> None:
             raise PolicyError(
                 f"managed installer does not preserve release identity: {expected}"
             )
+
+    for expected in (
+        'POWER_TRANSITION=/usr/bin/umrk-power-transition',
+        '"$POWER_TRANSITION_TMP" "$POWER_TRANSITION"',
+        'UMRK_POWER_REQUEST_DIR',
+        'verify_closed()',
+        'origin=automatic-check',
+        'last-results/$r_uuid',
+    ):
+        if expected not in installer_text:
+            raise PolicyError(f"managed installer is missing SD safety support: {expected}")
 
 
 def make_parser() -> argparse.ArgumentParser:

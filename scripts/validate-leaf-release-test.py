@@ -222,7 +222,7 @@ class CandidateTests(unittest.TestCase):
         launcher = root / "platforms" / "mlp1" / "launcher"
         write_executable(
             launcher / "bin" / "loong_pangu",
-            b"\x7fELF fixture relocate-games-v1 source-paths-v2 fixture\n",
+            b"\x7fELF fixture relocate-games-v1 source-paths-v2 UMRK_POWER_REQUEST_DIR fixture\n",
         )
         write_executable(
             launcher / "bin" / "jawaka-inhibitctl",
@@ -302,6 +302,9 @@ class CandidateTests(unittest.TestCase):
                 '#!/bin/sh\nRELEASE_ID="v0.7.0"\nRELEASE_VERSION="0.7.0"\n'
                 'cat <<EOF\n"version": "$RELEASE_VERSION"\n'
                 '"release_id": "$RELEASE_ID"\nEOF\n'
+                'POWER_TRANSITION=/usr/bin/umrk-power-transition\n'
+                'mv "$POWER_TRANSITION_TMP" "$POWER_TRANSITION"\n'
+                '# UMRK_POWER_REQUEST_DIR verify_closed() origin=automatic-check last-results/$r_uuid\n'
             ).encode(),
         )
         return SimpleNamespace(
@@ -551,6 +554,22 @@ class CandidateTests(unittest.TestCase):
                 MODULE.PolicyError,
                 "tagged release component provenance is dirty",
             ):
+                MODULE.validate_candidate(args)
+
+    def test_candidate_rejects_unpaired_storage_safety(self):
+        for marker in ('POWER_TRANSITION=/usr/bin/umrk-power-transition',
+                       'origin=automatic-check', 'last-results/$r_uuid'):
+            with tempfile.TemporaryDirectory() as raw:
+                args = self.make_candidate(Path(raw))
+                installer = args.install_stage / "umrk-launcher-install.sh"
+                installer.write_text(installer.read_text().replace(marker, 'old-support'))
+                with self.assertRaisesRegex(MODULE.PolicyError, "SD safety support"):
+                    MODULE.validate_candidate(args)
+        with tempfile.TemporaryDirectory() as raw:
+            args = self.make_candidate(Path(raw))
+            daemon = args.release_root / 'platforms/mlp1/launcher/bin/loong_pangu'
+            daemon.write_bytes(daemon.read_bytes().replace(b'UMRK_POWER_REQUEST_DIR', b'old-daemon'))
+            with self.assertRaisesRegex(MODULE.PolicyError, "rootfs power handoff"):
                 MODULE.validate_candidate(args)
 
     def test_candidate_rejects_tag_and_release_id_mismatch(self):
