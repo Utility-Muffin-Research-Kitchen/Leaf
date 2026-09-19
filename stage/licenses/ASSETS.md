@@ -11,7 +11,7 @@ https://leaf.game/credits.
 | Default system icons (libretro Systematic pack) | libretro team and contributors | CC BY-SA 4.0 |
 | Grid View system wordmarks (`res/grid_wordmarks/`) | System makers' logos, redrawn or adapted by UMRK; EasyRPG Team | Per file: Public Domain (PD-textlogo), CC0 1.0, CC BY-SA 4.0 (EasyRPG), SIL OFL 1.1 (Lexend glyphs); see below |
 | Sample theme system logo cards (`Themes/Sample/grid/icons/`) | System makers' logos on white cards by UMRK; Jean Marc Gimenez (ScummVM); EasyRPG Team | Per file: Public Domain (PD-textlogo), CC0 1.0, CC BY-SA 3.0 (ScummVM), CC BY-SA 4.0 (EasyRPG), SIL OFL 1.1 (Lexend glyphs); see below |
-| UI fonts (Space Grotesk, Inter, Rounded M+, Nunito, Baloo 2, Fredoka, Lexend, IBM Plex Sans, Noto Sans, Source Han Sans) | respective type designers | SIL OFL 1.1 |
+| UI fonts (Space Grotesk, Inter, Rounded M+, Nunito, Baloo 2, Fredoka, Lexend, IBM Plex Sans, Noto Sans, Source Han Sans, Leaf Han Sans JP) | respective type designers; Leaf Han Sans JP is Adobe's Source Han Sans, subset and renamed by UMRK | SIL OFL 1.1 |
 | Keyboard glyph icons (Nerd Fonts) | Nerd Fonts contributors | MIT |
 | RetroArch menu artwork (`platforms/mlp1/assets/`, Ozone and XMB Monochrome) | libretro team and contributors | CC BY 4.0 |
 | RetroArch menu font (Inter UI, in `assets/ozone/`) | The Inter UI project authors | SIL OFL 1.1 |
