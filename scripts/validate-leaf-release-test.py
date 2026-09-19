@@ -39,6 +39,14 @@ def init_repo(path: Path) -> None:
     subprocess.run(["git", "-C", str(path), "commit", "-qm", "fixture"], check=True)
 
 
+COMPLETION = (
+    "sync; cd / && exec env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/ LC_ALL=C /bin/sh -c '"
+    'stock="loong_pangu loong_service loong_daemon"; killall $stock; killall -9 $stock; '
+    "while true; do /usr/bin/umrk-power-transition reboot; sleep 5; done"
+    "' 3>&1 </dev/null >>/run/umrk-power-transition.log 2>&1"
+)
+
+
 class IdentityTests(unittest.TestCase):
     def test_stable_identity_requires_explicit_matching_version_and_tag(self):
         MODULE.validate_identity("stable", "0.7.0", "v0.7.0", "v0.7.0")
@@ -222,7 +230,7 @@ class CandidateTests(unittest.TestCase):
         launcher = root / "platforms" / "mlp1" / "launcher"
         write_executable(
             launcher / "bin" / "loong_pangu",
-            b"\x7fELF fixture relocate-games-v1 source-paths-v2 fixture\n",
+            b"\x7fELF fixture relocate-games-v1 source-paths-v2 UMRK_POWER_REQUEST_DIR UMRK_LOONG_POWER_HANDOFF_DIR fixture\n",
         )
         write_executable(
             launcher / "bin" / "jawaka-inhibitctl",
@@ -302,8 +310,13 @@ class CandidateTests(unittest.TestCase):
                 '#!/bin/sh\nRELEASE_ID="v0.7.0"\nRELEASE_VERSION="0.7.0"\n'
                 'cat <<EOF\n"version": "$RELEASE_VERSION"\n'
                 '"release_id": "$RELEASE_ID"\nEOF\n'
+                'POWER_TRANSITION=/usr/bin/umrk-power-transition\n'
+                'mv "$POWER_TRANSITION_TMP" "$POWER_TRANSITION"\n'
+                '# UMRK_POWER_REQUEST_DIR verify_closed() origin=automatic-check last-results/$r_uuid\n'
+                'prepare_loong_power_handoff() { :; }\n'
             ).encode(),
         )
+        (install / "loong_upgrade").write_text(json.dumps({"otaCommand": COMPLETION}), encoding="utf-8")
         return SimpleNamespace(
             release_root=root,
             install_stage=install,
@@ -551,6 +564,40 @@ class CandidateTests(unittest.TestCase):
                 MODULE.PolicyError,
                 "tagged release component provenance is dirty",
             ):
+                MODULE.validate_candidate(args)
+
+    def test_candidate_rejects_install_completion_without_barrier(self):
+        for bad in ("sync; reboot -f",
+                    COMPLETION.replace(" 3>&1", ""),
+                    COMPLETION.replace("killall -9 $stock", "true"),
+                    COMPLETION.replace(">>/run/umrk-power-transition.log", ">/dev/console")):
+            with tempfile.TemporaryDirectory() as raw:
+                args = self.make_candidate(Path(raw))
+                (args.install_stage / "loong_upgrade").write_text(json.dumps({"otaCommand": bad}))
+                with self.assertRaisesRegex(MODULE.PolicyError, "install completion"):
+                    MODULE.validate_candidate(args)
+
+    def test_candidate_rejects_unpaired_storage_safety(self):
+        for marker in ('POWER_TRANSITION=/usr/bin/umrk-power-transition',
+                       'origin=automatic-check', 'last-results/$r_uuid',
+                       'prepare_loong_power_handoff()'):
+            with tempfile.TemporaryDirectory() as raw:
+                args = self.make_candidate(Path(raw))
+                installer = args.install_stage / "umrk-launcher-install.sh"
+                installer.write_text(installer.read_text().replace(marker, 'old-support'))
+                with self.assertRaisesRegex(MODULE.PolicyError, "SD safety support"):
+                    MODULE.validate_candidate(args)
+        with tempfile.TemporaryDirectory() as raw:
+            args = self.make_candidate(Path(raw))
+            daemon = args.release_root / 'platforms/mlp1/launcher/bin/loong_pangu'
+            daemon.write_bytes(daemon.read_bytes().replace(b'UMRK_POWER_REQUEST_DIR', b'old-daemon'))
+            with self.assertRaisesRegex(MODULE.PolicyError, "rootfs power handoff"):
+                MODULE.validate_candidate(args)
+        with tempfile.TemporaryDirectory() as raw:
+            args = self.make_candidate(Path(raw))
+            daemon = args.release_root / 'platforms/mlp1/launcher/bin/loong_pangu'
+            daemon.write_bytes(daemon.read_bytes().replace(b'UMRK_LOONG_POWER_HANDOFF_DIR', b'old-daemon'))
+            with self.assertRaisesRegex(MODULE.PolicyError, "low-battery power handoff"):
                 MODULE.validate_candidate(args)
 
     def test_candidate_rejects_tag_and_release_id_mismatch(self):
