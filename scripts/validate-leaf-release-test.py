@@ -230,7 +230,7 @@ class CandidateTests(unittest.TestCase):
         launcher = root / "platforms" / "mlp1" / "launcher"
         write_executable(
             launcher / "bin" / "loong_pangu",
-            b"\x7fELF fixture relocate-games-v1 source-paths-v2 UMRK_POWER_REQUEST_DIR UMRK_LOONG_POWER_HANDOFF_DIR fixture\n",
+            b"\x7fELF fixture relocate-games-v1 source-paths-v2 UMRK_POWER_REQUEST_DIR UMRK_LOONG_POWER_HANDOFF_DIR reason=cleanup-failed fixture\n",
         )
         write_executable(
             launcher / "bin" / "jawaka-inhibitctl",
@@ -314,6 +314,7 @@ class CandidateTests(unittest.TestCase):
                 'mv "$POWER_TRANSITION_TMP" "$POWER_TRANSITION"\n'
                 '# UMRK_POWER_REQUEST_DIR verify_closed() origin=automatic-check last-results/$r_uuid\n'
                 'prepare_loong_power_handoff() { :; }\n'
+                'power_prompt() { :; }\ncmd_pre_arm() (\n)\n'
             ).encode(),
         )
         (install / "loong_upgrade").write_text(json.dumps({"otaCommand": COMPLETION}), encoding="utf-8")
@@ -580,7 +581,7 @@ class CandidateTests(unittest.TestCase):
     def test_candidate_rejects_unpaired_storage_safety(self):
         for marker in ('POWER_TRANSITION=/usr/bin/umrk-power-transition',
                        'origin=automatic-check', 'last-results/$r_uuid',
-                       'prepare_loong_power_handoff()'):
+                       'prepare_loong_power_handoff()', 'power_prompt()', 'cmd_pre_arm()'):
             with tempfile.TemporaryDirectory() as raw:
                 args = self.make_candidate(Path(raw))
                 installer = args.install_stage / "umrk-launcher-install.sh"
@@ -598,6 +599,12 @@ class CandidateTests(unittest.TestCase):
             daemon = args.release_root / 'platforms/mlp1/launcher/bin/loong_pangu'
             daemon.write_bytes(daemon.read_bytes().replace(b'UMRK_LOONG_POWER_HANDOFF_DIR', b'old-daemon'))
             with self.assertRaisesRegex(MODULE.PolicyError, "low-battery power handoff"):
+                MODULE.validate_candidate(args)
+        with tempfile.TemporaryDirectory() as raw:
+            args = self.make_candidate(Path(raw))
+            daemon = args.release_root / 'platforms/mlp1/launcher/bin/loong_pangu'
+            daemon.write_bytes(daemon.read_bytes().replace(b'reason=cleanup-failed', b'old-daemon'))
+            with self.assertRaisesRegex(MODULE.PolicyError, "unverified stops"):
                 MODULE.validate_candidate(args)
 
     def test_candidate_rejects_tag_and_release_id_mismatch(self):
