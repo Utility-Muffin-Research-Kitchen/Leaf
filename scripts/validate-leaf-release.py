@@ -387,6 +387,8 @@ def validate_candidate(args: argparse.Namespace) -> None:
         raise PolicyError("launcher daemon does not support the rootfs power handoff")
     if b"UMRK_LOONG_POWER_HANDOFF_DIR" not in daemon.read_bytes():
         raise PolicyError("launcher daemon drops the low-battery power handoff on loong_power restart")
+    if b"reason=cleanup-failed" not in daemon.read_bytes():
+        raise PolicyError("launcher daemon does not report unverified stops to the power supervisor")
 
     environment = read_staged_environment(env_path)
     if environment.get("UMRK_ENV_VERSION") != "2":
@@ -480,6 +482,10 @@ def validate_candidate(args: argparse.Namespace) -> None:
         'origin=automatic-check',
         'last-results/$r_uuid',
         'prepare_loong_power_handoff()',
+        # A paused shutdown must be retryable on the device and pre-arm the
+        # next-boot check before it offers an override or force.
+        'power_prompt()',
+        'cmd_pre_arm()',
     ):
         if expected not in installer_text:
             raise PolicyError(f"managed installer is missing SD safety support: {expected}")
