@@ -383,6 +383,11 @@ def validate_candidate(args: argparse.Namespace) -> None:
     if b"source-paths-v2" not in daemon.read_bytes():
         raise PolicyError("launcher daemon does not advertise source-paths-v2")
 
+    if b"UMRK_POWER_REQUEST_DIR" not in daemon.read_bytes():
+        raise PolicyError("launcher daemon does not support the rootfs power handoff")
+    if b"UMRK_LOONG_POWER_HANDOFF_DIR" not in daemon.read_bytes():
+        raise PolicyError("launcher daemon drops the low-battery power handoff on loong_power restart")
+
     environment = read_staged_environment(env_path)
     if environment.get("UMRK_ENV_VERSION") != "2":
         raise PolicyError("runtime environment does not publish complete source-paths-v2")
@@ -466,6 +471,35 @@ def validate_candidate(args: argparse.Namespace) -> None:
             raise PolicyError(
                 f"managed installer does not preserve release identity: {expected}"
             )
+
+    for expected in (
+        'POWER_TRANSITION=/usr/bin/umrk-power-transition',
+        '"$POWER_TRANSITION_TMP" "$POWER_TRANSITION"',
+        'UMRK_POWER_REQUEST_DIR',
+        'verify_closed()',
+        'origin=automatic-check',
+        'last-results/$r_uuid',
+        'prepare_loong_power_handoff()',
+    ):
+        if expected not in installer_text:
+            raise PolicyError(f"managed installer is missing SD safety support: {expected}")
+
+    # Stock loong_daemon runs otaCommand behind a pipe and kills what is left
+    # once it closes; stock loong_service keeps /oem writable. A completion that
+    # drops the pipe or skips stopping the stock stack returns the user to
+    # stock without the storage barrier ever running.
+    trigger = args.install_stage.resolve() / "loong_upgrade"
+    require_file(trigger, "stock update trigger")
+    try:
+        command = json.loads(trigger.read_text(encoding="utf-8"))["otaCommand"]
+    except (ValueError, KeyError, TypeError) as exc:
+        raise PolicyError(f"stock update trigger has no otaCommand: {exc}") from exc
+    for expected in ("umrk-power-transition reboot", "3>&1", "killall -9 $stock", "loong_service"):
+        if expected not in command:
+            raise PolicyError(f"install completion cannot finish the power barrier: {expected}")
+    for forbidden in ("reboot -f", "/dev/console"):
+        if forbidden in command:
+            raise PolicyError(f"install completion bypasses or loses the power barrier: {forbidden}")
 
 
 def make_parser() -> argparse.ArgumentParser:
