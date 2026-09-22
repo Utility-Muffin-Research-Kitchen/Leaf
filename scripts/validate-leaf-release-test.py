@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import importlib.util
+import hashlib
 import json
 import os
 import stat
@@ -272,14 +273,28 @@ class CandidateTests(unittest.TestCase):
             "vcodec = h264_rkmpp\n",
             encoding="utf-8",
         )
-        (platform / "bin" / "retroarch.build-manifest.json").write_text(
-            json.dumps({"configure_flags": ["--enable-ffmpeg", "--enable-ssl"]}),
-            encoding="utf-8",
-        )
         recording_libs = platform / "lib" / "ffmpeg"
         recording_libs.mkdir(parents=True)
         for name in MODULE.REQUIRED_RECORDING_LIBRARIES:
             (recording_libs / name).write_bytes(b"\x7fELF library\n")
+        digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
+        source_lock = platform / "bin" / "ffmpeg.source-lock.json"
+        source_lock.write_text('{"version":1}\n', encoding="utf-8")
+        stamp = platform / "bin" / "ffmpeg.input-stamp.json"
+        stamp.write_text(json.dumps({
+            "version": 1,
+            "source_lock_sha256": digest(source_lock),
+            "output_sha256": {
+                "bin/ffmpeg": digest(platform / "bin" / "ffmpeg"),
+                **{f"flat/{name}": digest(recording_libs / name)
+                   for name in MODULE.REQUIRED_RECORDING_LIBRARIES},
+            },
+        }), encoding="utf-8")
+        (platform / "bin" / "retroarch.build-manifest.json").write_text(
+            json.dumps({"configure_flags": ["--enable-ffmpeg", "--enable-ssl"],
+                        "ffmpeg_input_stamp_sha256": digest(stamp)}),
+            encoding="utf-8",
+        )
 
         provenance = {
             "schema": 1,
@@ -355,6 +370,32 @@ class CandidateTests(unittest.TestCase):
             args = self.make_candidate(Path(raw))
             (args.release_root / "platforms" / "mlp1" / "bin" / "ffmpeg").unlink()
             with self.assertRaisesRegex(MODULE.PolicyError, "MLP1 FFmpeg"):
+                MODULE.validate_candidate(args)
+
+    def test_candidate_rejects_wrong_ffmpeg_source_lock(self):
+        with tempfile.TemporaryDirectory() as raw:
+            args = self.make_candidate(Path(raw))
+            lock = args.release_root / "platforms/mlp1/bin/ffmpeg.source-lock.json"
+            lock.write_text('{"version":2}\n', encoding="utf-8")
+            with self.assertRaisesRegex(MODULE.PolicyError, "source lock"):
+                MODULE.validate_candidate(args)
+
+    def test_candidate_rejects_stale_ffmpeg_runtime(self):
+        with tempfile.TemporaryDirectory() as raw:
+            args = self.make_candidate(Path(raw))
+            library = args.release_root / "platforms/mlp1/lib/ffmpeg/libavcodec.so.60"
+            library.write_bytes(b"changed runtime")
+            with self.assertRaisesRegex(MODULE.PolicyError, "checksum mismatch"):
+                MODULE.validate_candidate(args)
+
+    def test_candidate_rejects_retroarch_built_against_another_ffmpeg(self):
+        with tempfile.TemporaryDirectory() as raw:
+            args = self.make_candidate(Path(raw))
+            manifest = args.release_root / "platforms/mlp1/bin/retroarch.build-manifest.json"
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+            data["ffmpeg_input_stamp_sha256"] = "0" * 64
+            manifest.write_text(json.dumps(data), encoding="utf-8")
+            with self.assertRaisesRegex(MODULE.PolicyError, "does not match the FFmpeg"):
                 MODULE.validate_candidate(args)
 
     def test_candidate_rejects_retroarch_without_recording_support(self):

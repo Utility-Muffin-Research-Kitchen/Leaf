@@ -141,6 +141,7 @@ pakrat-local-feed-test:
 
 leaf-release-policy-test:
 	python3 scripts/validate-leaf-release-test.py
+	python3 scripts/validate-mlp1-retroarch-build-test.py
 	python3 scripts/validate-mlp1-core-payload-test.py
 	python3 scripts/verify-release-identity-test.py
 

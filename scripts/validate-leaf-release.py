@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -321,10 +322,31 @@ def validate_mlp1_recording_payload(platform: Path) -> None:
             f"MLP1 recording library {name}",
         )
 
+    stamp_path = binary_dir / "ffmpeg.input-stamp.json"
+    lock_path = binary_dir / "ffmpeg.source-lock.json"
+    stamp = read_json(stamp_path, "MLP1 FFmpeg input stamp")
+    if not isinstance(stamp, dict) or stamp.get("version") != 1:
+        raise PolicyError("MLP1 FFmpeg input stamp has an invalid format")
+    require_file(lock_path, "MLP1 FFmpeg source lock")
+    digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
+    if stamp.get("source_lock_sha256") != digest(lock_path):
+        raise PolicyError("MLP1 FFmpeg input stamp does not match its source lock")
+    output_hashes = stamp.get("output_sha256")
+    if not isinstance(output_hashes, dict):
+        raise PolicyError("MLP1 FFmpeg input stamp lacks output checksums")
+    packaged = {"bin/ffmpeg": binary_dir / "ffmpeg"}
+    packaged.update({f"flat/{name}": platform / "lib" / "ffmpeg" / name
+                     for name in REQUIRED_RECORDING_LIBRARIES})
+    for name, path in packaged.items():
+        if output_hashes.get(name) != digest(path):
+            raise PolicyError(f"MLP1 FFmpeg input stamp checksum mismatch: {name}")
+
     manifest = read_json(
         binary_dir / "retroarch.build-manifest.json",
         "MLP1 RetroArch build manifest",
     )
+    if not isinstance(manifest, dict):
+        raise PolicyError("MLP1 RetroArch build manifest has an invalid format")
     flags = manifest.get("configure_flags") if isinstance(manifest, dict) else None
     if (
         not isinstance(flags, list)
@@ -334,6 +356,8 @@ def validate_mlp1_recording_payload(platform: Path) -> None:
         raise PolicyError("MLP1 RetroArch was not built with FFmpeg recording support")
     if "--enable-ssl" not in flags or "--disable-ssl" in flags:
         raise PolicyError("MLP1 RetroArch was not built with TLS support")
+    if manifest.get("ffmpeg_input_stamp_sha256") != digest(stamp_path):
+        raise PolicyError("MLP1 RetroArch does not match the FFmpeg input stamp")
 
 
 def read_staged_environment(env_path: Path) -> dict[str, str]:
