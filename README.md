@@ -44,10 +44,17 @@ git clone https://github.com/Utility-Muffin-Research-Kitchen/Leaf.git
 cd Leaf
 
 make bootstrap
-make -C ../mlp1-toolchain image
-make doctor
-make stage DEVICE=mlp1
+docker pull ghcr.io/utility-muffin-research-kitchen/mlp1-toolchain:latest
+toolchain_image="$(docker image inspect --format '{{.Id}}' \
+  ghcr.io/utility-muffin-research-kitchen/mlp1-toolchain:latest)"
+make release-zips DEVICE=mlp1 TOOLCHAIN_IMAGE="$toolchain_image" REBUILD_CORES=1
 ```
+
+The first dev build may compile missing or stale cores. Once all core outputs
+are valid for the selected image ID, omit `REBUILD_CORES=1` on later dev runs.
+If a core becomes stale, add it again to permit compilation. The install and
+recovery ZIPs are written to `build/release/`; you do not need a connected
+device or ScreenScraper credentials for a dev build.
 
 By default Leaf treats its parent directory as the workspace root:
 
@@ -78,13 +85,24 @@ For unusual checkout layouts, set `LEAF_WORKSPACE_DIR`:
 LEAF_WORKSPACE_DIR=/Volumes/Storage/UMRK make status
 ```
 
+## Connected-device staging
+
+When your MLP1 is connected over ADB, check the device and stage the payload:
+
+```sh
+make doctor
+make stage DEVICE=mlp1 TOOLCHAIN_IMAGE="$toolchain_image"
+```
+
+`make doctor` checks ADB and the device, so use it for staging rather than the
+device-free ZIP build.
+
 ## Commands
 
 Run commands from the `Leaf` repo:
 
 ```sh
 make bootstrap                              # clone public repos; privately clone internal docs when accessible
-make doctor                                 # preflight: adb / docker / toolchain / device
 make status                                 # git status across public siblings
 make status-internal                        # git status including private maintainer repos
 
@@ -108,7 +126,7 @@ make stage-app APP=VideoFromHell DEVICE=mlp1    # optional developer/acceptance 
 make stage-app APP=Nimbus DEVICE=mlp1           # optional developer/acceptance stage only
 make stage-app APP=PortMaster-mlp1 DEVICE=mlp1  # optional developer/acceptance stage only
 
-make release-zips DEVICE=mlp1               # build end-user install + recovery ZIPs
+make release-zips DEVICE=mlp1 TOOLCHAIN_IMAGE="$toolchain_image" # build both ZIPs
 make release-sd-zip DEVICE=mlp1             # build end-user install ZIP only
 make release-recovery-zip DEVICE=mlp1       # build end-user recovery ZIP only
 ```
@@ -201,8 +219,10 @@ From the `Leaf` repo:
 
 ```sh
 make bootstrap
-make -C ../mlp1-toolchain image
-make release-zips DEVICE=mlp1
+docker pull ghcr.io/utility-muffin-research-kitchen/mlp1-toolchain:latest
+toolchain_image="$(docker image inspect --format '{{.Id}}' \
+  ghcr.io/utility-muffin-research-kitchen/mlp1-toolchain:latest)"
+make release-zips DEVICE=mlp1 TOOLCHAIN_IMAGE="$toolchain_image" REBUILD_CORES=1
 ```
 
 The release command builds missing MLP1 components, assembles the launcher and
@@ -257,12 +277,21 @@ repository; `beta-zips` accepts only `vX.Y.Z-beta.N` and publishes to `Leaf-beta
 Each derives the complete identity from the tag and verifies the built artifact
 afterwards.
 
-For beta or stable ZIPs, set `TOOLCHAIN_IMAGE` to a full local `sha256:` image ID.
+For beta or stable ZIPs, set `TOOLCHAIN_IMAGE` to the full local `sha256:` image
+ID above and provide your ScreenScraper developer credentials. Run the
+channel preflight before building, for example:
+
+```sh
+make release-preflight DEVICE=mlp1 LEAF_RELEASE_CHANNEL=beta \
+  TOOLCHAIN_IMAGE="$toolchain_image"
+```
+
 Preflight checks that the image contains the same MLP1 build flags as your
 `mlp1-toolchain` checkout and that all 31 stock-parity cores are cache hits.
-It then assembles a report with 31 reused and 0 compiled cores. These channels
-reject `REBUILD_CORES=1` and `FORCE_REBUILD_CORES=1`. The selected image ID is
-recorded in `provenance/components.json`; `mlp1-toolchain/README.md` shows how
+The tagged build then assembles a report with 31 reused and 0 compiled cores.
+These channels reject `REBUILD_CORES=1` and `FORCE_REBUILD_CORES=1`. The
+selected image ID is recorded in `provenance/components.json`;
+`mlp1-toolchain/README.md` shows how
 to pull the published image and resolve its ID.
 
 Before building a tagged release, run the `Publish corresponding source`
