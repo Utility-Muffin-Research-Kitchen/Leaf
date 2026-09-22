@@ -27,10 +27,12 @@ FUN_DRASTIC_STANDALONE_DIR="${FUN_DRASTIC_STANDALONE_DIR:-$WORKSPACE_DIR/Fun-Dra
 FUN_DRASTIC_SRC_DIR="${FUN_DRASTIC_SRC_DIR:-$WORKSPACE_DIR/Fun-Drastic-src}"
 RETROARCH_BUILDS_DIR="${RETROARCH_BUILDS_DIR:-$WORKSPACE_DIR/retroarch-builds}"
 CORES_SPRUCE_DIR="${CORES_SPRUCE_DIR:-$WORKSPACE_DIR/Cores-spruce}"
+TOOLCHAIN_REPO="${TOOLCHAIN_REPO:-$WORKSPACE_DIR/mlp1-toolchain}"
 LAUNCHER_SWITCHER_DIR="${LAUNCHER_SWITCHER_DIR:-$WORKSPACE_DIR/miniloong-launcher-switcher}"
 MLP1_CORE_REPORT_TOOL="${MLP1_CORE_REPORT_TOOL:-$CORES_SPRUCE_DIR/scripts/mlp1-core-report.py}"
 MLP1_CORE_PROBE_RUNNER="${MLP1_CORE_PROBE_RUNNER:-$CORES_SPRUCE_DIR/probe-mlp1-cores-container.sh}"
 TOOLCHAIN_IMAGE="${TOOLCHAIN_IMAGE:-ghcr.io/utility-muffin-research-kitchen/mlp1-toolchain:local}"
+TOOLCHAIN_IMAGE_ID=
 MLP1_RETROARCH_BIN="${MLP1_RETROARCH_BIN:-$RETROARCH_BUILDS_DIR/output/mlp1/bin/retroarch}"
 MLP1_RETROARCH_MANIFEST="${MLP1_RETROARCH_MANIFEST:-$RETROARCH_BUILDS_DIR/output/mlp1/build-manifest.json}"
 MLP1_SHADERS_DIR="${MLP1_SHADERS_DIR:-$RETROARCH_BUILDS_DIR/output/mlp1/shaders}"
@@ -124,6 +126,10 @@ RECOVERY_ZIP="$RELEASE_BUILD/leaf-mlp1-recovery-$RELEASE_ID.zip"
 UPDATE_MANIFEST="$RELEASE_BUILD/leaf-update.json"
 SHA256SUMS_FILE="$RELEASE_BUILD/SHA256SUMS"
 LEAF_RELEASE_CHANNEL="${LEAF_RELEASE_CHANNEL:-dev}"
+CACHE_ONLY_CORES=0
+if [ "$LEAF_RELEASE_CHANNEL" = beta ] || [ "$LEAF_RELEASE_CHANNEL" = stable ]; then
+    CACHE_ONLY_CORES=1
+fi
 LEAF_RELEASE_VERSION="${LEAF_RELEASE_VERSION:-${VERSION:-}}"
 if [ -z "$LEAF_RELEASE_VERSION" ] && [ "$LEAF_RELEASE_CHANNEL" != "stable" ]; then
     LEAF_RELEASE_VERSION="$RELEASE_ID"
@@ -160,6 +166,28 @@ preflight_file() {
     }
 }
 
+verify_toolchain_flags() {
+    local image_id="$1" name local_flags image_flags
+    for name in mlp1-build-flags.env mlp1-build-flags.mk; do
+        local_flags="$TOOLCHAIN_REPO/flags/$name"
+        preflight_file "$local_flags" || return 1
+        image_flags="$(mktemp "${TMPDIR:-/tmp}/leaf-toolchain-flags.XXXXXX")"
+        if ! docker run --rm --entrypoint cat "$image_id" \
+                "/opt/mlp1-toolchain/umrk/$name" >"$image_flags"; then
+            rm -f "$image_flags"
+            echo "error: cannot read $name from toolchain image $image_id" >&2
+            return 1
+        fi
+        if ! cmp -s "$local_flags" "$image_flags"; then
+            rm -f "$image_flags"
+            echo "error: $local_flags differs from the selected toolchain image; use a matching checkout and image" >&2
+            return 1
+        fi
+        rm -f "$image_flags"
+    done
+    echo "Toolchain flag contract matches checkout and image"
+}
+
 release_preflight() {
     local failed=0 path app image_id make_version=unavailable screenscraper_status
     if command -v make >/dev/null 2>&1; then
@@ -188,7 +216,7 @@ release_preflight() {
             "$STEWARD_NDS_DIR" "$N64_STANDALONE_DIR" "$FLYCAST_STANDALONE_DIR" \
             "$YABASANSHIRO_STANDALONE_DIR" "$FUN_DRASTIC_STANDALONE_DIR" \
             "$FUN_DRASTIC_SRC_DIR" "$RETROARCH_BUILDS_DIR" "$CORES_SPRUCE_DIR" \
-            "$LAUNCHER_SWITCHER_DIR" "$WORKSPACE_DIR/mlp1-toolchain"; do
+            "$LAUNCHER_SWITCHER_DIR" "$TOOLCHAIN_REPO"; do
             [ -d "$path" ] || {
                 echo "error: missing public repo: $path (run make bootstrap)" >&2
                 failed=1
@@ -233,6 +261,7 @@ release_preflight() {
             "$LEAF_ROOT/scripts/audit-pakrat-owned-apps.py" \
             "$LEAF_ROOT/scripts/app-package-policy.sh" \
             "$LEAF_ROOT/scripts/ensure-mlp1-cores.sh" \
+            "$CORES_SPRUCE_DIR/build-mlp1.sh" \
             "$LEAF_ROOT/scripts/package-drastic-mlp1.sh" \
             "$LEAF_ROOT/scripts/build-mlp1-graphics-runtime.sh" \
             "$MLP1_CORE_REPORT_TOOL" "$MLP1_CORE_PROBE_RUNNER" \
@@ -254,10 +283,30 @@ release_preflight() {
                 echo "error: Docker daemon is unavailable; start Docker before building release ZIPs" >&2
                 failed=1
             elif ! image_id="$(docker image inspect "$TOOLCHAIN_IMAGE" --format '{{.Id}}' 2>/dev/null)"; then
-                echo "error: missing toolchain image: $TOOLCHAIN_IMAGE (pull it or run make -C $WORKSPACE_DIR/mlp1-toolchain image)" >&2
+                echo "error: missing toolchain image: $TOOLCHAIN_IMAGE (pull it or run make -C $TOOLCHAIN_REPO image)" >&2
                 failed=1
             else
                 echo "Toolchain image: $image_id"
+                TOOLCHAIN_IMAGE_ID="$image_id"
+                verify_toolchain_flags "$image_id" || failed=1
+                if [ "$CACHE_ONLY_CORES" -eq 1 ]; then
+                    if ! [[ "$TOOLCHAIN_IMAGE" =~ ^sha256:[0-9a-f]{64}$ ]] || \
+                            [ "$TOOLCHAIN_IMAGE" != "$image_id" ]; then
+                        echo "error: $LEAF_RELEASE_CHANNEL ZIPs require TOOLCHAIN_IMAGE to be the full immutable local image ID ($image_id)" >&2
+                        failed=1
+                    fi
+                    if [ "${REBUILD_CORES:-0}" != 0 ] || [ "${FORCE_REBUILD_CORES:-0}" != 0 ]; then
+                        echo "error: $LEAF_RELEASE_CHANNEL ZIPs require REBUILD_CORES=0 and FORCE_REBUILD_CORES=0" >&2
+                        failed=1
+                    fi
+                    if [ "$failed" -eq 0 ]; then
+                        echo "Checking all stock-parity core cache entries under $image_id"
+                        TOOLCHAIN_IMAGE="$image_id" TOOLCHAIN_REPO="$TOOLCHAIN_REPO" \
+                            "$CORES_SPRUCE_DIR/build-mlp1.sh" --check-stock-parity-cache || failed=1
+                    fi
+                fi
+                TOOLCHAIN_IMAGE="$image_id"
+                export TOOLCHAIN_IMAGE TOOLCHAIN_REPO
             fi
         fi
     fi
@@ -318,6 +367,7 @@ write_component_provenance() {
         --version "$LEAF_RELEASE_VERSION" \
         --tag "$LEAF_RELEASE_TAG" \
         --release-id "$RELEASE_ID" \
+        --toolchain-image-id "$TOOLCHAIN_IMAGE_ID" \
         ${clean_args[@]+"${clean_args[@]}"} \
         "${RELEASE_COMPONENT_ARGS[@]}" \
         --output "$output"
@@ -841,6 +891,9 @@ build_missing_platform_bits() {
 
     REBUILD_CORES="${REBUILD_CORES:-0}" \
     FORCE_REBUILD_CORES="${FORCE_REBUILD_CORES:-0}" \
+    MLP1_CACHE_ONLY="$CACHE_ONLY_CORES" \
+    TOOLCHAIN_IMAGE="$TOOLCHAIN_IMAGE" \
+    TOOLCHAIN_REPO="$TOOLCHAIN_REPO" \
     CORES_SPRUCE_DIR="$CORES_SPRUCE_DIR" \
     MLP1_CORES_DIR="$MLP1_CORES_DIR" \
     MLP1_CORES_REPORT="$MLP1_CORES_REPORT" \
@@ -851,7 +904,7 @@ build_missing_platform_bits() {
             --report "$MLP1_CORES_REPORT" \
             --cores-dir "$MLP1_CORES_DIR"; then
         echo "Probing exact MLP1 libretro library names in the toolchain container"
-        "$MLP1_CORE_PROBE_RUNNER" \
+        TOOLCHAIN_IMAGE="$TOOLCHAIN_IMAGE" "$MLP1_CORE_PROBE_RUNNER" \
             --report "$MLP1_CORES_REPORT" \
             --cores-dir "$MLP1_CORES_DIR" || \
             die "MLP1 core identity probe failed"
@@ -878,7 +931,9 @@ package_app() {
     if [ -n "${package_platform:-}" ]; then
         make_args+=("PLATFORM=$package_platform")
     fi
-    make -C "$WORKSPACE_DIR/$app" "${make_args[@]}"
+    make -C "$WORKSPACE_DIR/$app" "${make_args[@]}" \
+        TOOLCHAIN_IMAGE="$TOOLCHAIN_IMAGE" \
+        MLP1_TOOLCHAIN_IMAGE="$TOOLCHAIN_IMAGE"
     [ -d "$package_dir" ] || die "missing package dir: $package_dir"
 
     mkdir -p "$RELEASE_APPS_DIR/$destination_platform"
@@ -963,7 +1018,7 @@ package_emulator() {
     case "$emulator" in
         ppsspp)
             [ -d "$PPSSPP_SPRUCE_DIR" ] || die "missing PPSSPP repo: $PPSSPP_SPRUCE_DIR"
-            make -C "$PPSSPP_SPRUCE_DIR" package-mlp1
+            make -C "$PPSSPP_SPRUCE_DIR" package-mlp1 TOOLCHAIN_IMAGE="$TOOLCHAIN_IMAGE"
             package_dir="$MLP1_PPSSPP_PACKAGE"
             remote_name="ppsspp"
             ;;
@@ -996,6 +1051,7 @@ package_emulator() {
             [ -d "$FUN_DRASTIC_SRC_DIR" ] || die "missing Fun DraStic source repo: $FUN_DRASTIC_SRC_DIR
 Clone it (make bootstrap), or drop fun-drastic from STAGE_EMULATORS for this build."
             make -C "$FUN_DRASTIC_STANDALONE_DIR" package-mlp1 \
+                TOOLCHAIN_IMAGE="$TOOLCHAIN_IMAGE" \
                 FUN_DRASTIC_SRC_DIR="$FUN_DRASTIC_SRC_DIR"
             package_dir="$MLP1_FUN_DRASTIC_PACKAGE"
             remote_name="fun-drastic"
@@ -1249,6 +1305,7 @@ build_install_zip() {
 
     make -C "$LEAF_ROOT" \
         DEVICE=mlp1 \
+        TOOLCHAIN_IMAGE="$TOOLCHAIN_IMAGE" \
         LEAF_RELEASE_CHANNEL="$LEAF_RELEASE_CHANNEL" \
         JAWAKA_REQUIRE_SCREENSCRAPER="$screenscraper_required" \
         MLP1_RETROARCH_BIN="$MLP1_RETROARCH_BIN" \

@@ -215,6 +215,9 @@ def inspect_component(name: str, repo: Path, require_clean: bool) -> dict[str, o
 
 def build_provenance(args: argparse.Namespace) -> dict[str, object]:
     validate_identity(args.channel, args.version, args.tag, args.release_id)
+    image_id = args.toolchain_image_id
+    if not re.fullmatch(r"sha256:[0-9a-f]{64}", image_id):
+        raise PolicyError("toolchain image ID must be a full sha256 image ID")
     require_clean = args.require_clean or bool(args.tag)
     seen: set[str] = set()
     components: list[dict[str, object]] = []
@@ -235,6 +238,7 @@ def build_provenance(args: argparse.Namespace) -> dict[str, object]:
             "version": args.version,
             "tag": args.tag or None,
             "release_id": args.release_id,
+            "toolchain_image_id": image_id,
         },
         "components": components,
     }
@@ -459,6 +463,8 @@ def validate_candidate(args: argparse.Namespace) -> None:
     validate_identity(channel, version, tag or "", release_id)
     if version != args.version or release_id != args.release_id:
         raise PolicyError("component provenance release identity does not match candidate")
+    if not re.fullmatch(r"sha256:[0-9a-f]{64}", str(release.get("toolchain_image_id"))):
+        raise PolicyError("component provenance has no full toolchain image ID")
     components = provenance.get("components")
     if not isinstance(components, list):
         raise PolicyError("component provenance is missing components")
@@ -553,6 +559,7 @@ def make_parser() -> argparse.ArgumentParser:
     provenance.add_argument("--version", default="")
     provenance.add_argument("--tag", default="")
     provenance.add_argument("--release-id", required=True)
+    provenance.add_argument("--toolchain-image-id", required=True)
     provenance.add_argument("--component", action="append", default=[])
     provenance.add_argument("--require-clean", action="store_true")
     provenance.add_argument("--output", type=Path, required=True)
