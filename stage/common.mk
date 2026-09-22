@@ -14,7 +14,6 @@ ROOT := $(WORKSPACE_DIR)
 DEVICE ?= mlp1
 
 # Sibling repo locations (override on the command line if checked out elsewhere).
-UMRK_WORKSPACE_DIR     ?= $(WORKSPACE_DIR)/umrk-workspace
 CATASTROPHE_DIR        ?= $(WORKSPACE_DIR)/Catastrophe
 JAWAKA_DIR             ?= $(WORKSPACE_DIR)/Jawaka
 CENTRAL_SCRUTINIZER_DIR ?= $(WORKSPACE_DIR)/CentralScrutinizer
