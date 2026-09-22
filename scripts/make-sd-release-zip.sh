@@ -482,6 +482,16 @@ print("core gate: %d packaged entries verified (binary + license present)"
 EOF
 }
 
+# The cache and build report above prove the core binaries. This is the same
+# gate device staging runs, so a payload that lost a core's info file, catalog
+# entry, probed report row, or default settings never becomes a ZIP.
+validate_mlp1_core_payload() {
+    local platform_dir="$1"
+    python3 "$LEAF_ROOT/scripts/validate-mlp1-core-payload.py" \
+        --platform-dir "$platform_dir" ||
+        die "MLP1 core payload validation failed"
+}
+
 validate_retroarch_contract() {
     local platform_dir="$1"
     local report="$platform_dir/cores/build-report.json"
@@ -1150,6 +1160,7 @@ build_install_zip() {
 
     cp -R "$LEAF_ROOT/stage/licenses" "$RELEASE_ROOT/licenses"
     validate_packaged_cores "$RELEASE_ROOT"
+    validate_mlp1_core_payload "$RELEASE_ROOT/platforms/mlp1"
     validate_retroarch_contract "$RELEASE_ROOT/platforms/mlp1"
     validate_shader_bundle "$RELEASE_ROOT/platforms/mlp1" "$RELEASE_ROOT/licenses"
     validate_asset_bundle "$RELEASE_ROOT/platforms/mlp1" "$RELEASE_ROOT/licenses"

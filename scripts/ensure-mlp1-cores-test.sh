@@ -85,6 +85,9 @@ set -e
     exit 1
 }
 grep -q 'REBUILD_CORES=1' "$TEST_ROOT/refusal.out"
+# The refusal message has to name the required set the builder just listed
+# (two fixture cores), not a hardcoded count that drifts with the real set.
+grep -q 'requires 2 cache hits' "$TEST_ROOT/refusal.out"
 grep -qx check "$BUILD_LOG"
 
 : >"$BUILD_LOG"

@@ -119,6 +119,13 @@ matching info file from the separate checksum-bound
 `targeted-build-report.json`. Full staging and release ZIPs still require the
 complete canonical stock-parity report.
 
+Full staging and release ZIPs also require every shipped core's extra
+artifacts, not just its binary: matching `.info`, a checksum-bound report row,
+the catalog entry, and its default settings template. A payload missing any of
+those fails before bytes reach a card or a ZIP. Staging replaces `cores/` and
+`info/` by managed name, so developer experiment cores kept beside the shipped
+set survive a stage.
+
 Release preparation runs the Cores-spruce read-only cache preflight before it
 accepts that full report. Any missing or stale core aborts before compilation.
 `REBUILD_CORES=1` explicitly permits an incremental stock-parity run;

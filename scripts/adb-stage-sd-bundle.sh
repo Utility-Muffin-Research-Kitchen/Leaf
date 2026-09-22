@@ -108,9 +108,16 @@ if [ -d "$PLATFORM_DIR" ]; then
     echo "Deploying platform payload to $REMOTE_PLATFORM_PATH ($PLATFORM_MODE)"
     "${ADB[@]}" shell "mkdir -p '$REMOTE_PLATFORM_PATH'"
     if [ "$PLATFORM_MODE" = "replace" ]; then
-        for name in bin cores info defaults platform.d autoconfig boot-animation storage-recovery shaders assets manifest.json; do
+        for name in bin defaults platform.d autoconfig boot-animation storage-recovery shaders assets manifest.json; do
             "${ADB[@]}" shell "rm -rf '$REMOTE_PLATFORM_PATH/$name'"
         done
+        # cores/ and info/ can hold local extras that are not part of the shipped
+        # set (developer experiment cores, for one), so they are refreshed by
+        # managed name instead of by deleting the directory.
+        ADB_SERIAL="$serial" "$ROOT_DIR/scripts/adb-replace-managed-files.sh" \
+            "$REMOTE_PLATFORM_PATH/cores" "$PLATFORM_DIR/cores" '*_libretro.so'
+        ADB_SERIAL="$serial" "$ROOT_DIR/scripts/adb-replace-managed-files.sh" \
+            "$REMOTE_PLATFORM_PATH/info" "$PLATFORM_DIR/info" '*_libretro.info'
     fi
     shopt -s nullglob
     for entry in "$PLATFORM_DIR"/*; do

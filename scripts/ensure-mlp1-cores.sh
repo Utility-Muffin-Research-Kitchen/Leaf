@@ -33,6 +33,14 @@ fi
     exit 2
 }
 
+# The required set is whatever the builder's stock-parity lane ships, so the
+# refusal message below cannot drift from the cores a full payload must carry.
+stock_parity_cores="$("$MLP1_CORE_BUILDER" --list-stock-parity)" || {
+    echo "error: cannot list stock-parity cores: $MLP1_CORE_BUILDER" >&2
+    exit 2
+}
+required_count="$(printf '%s\n' "$stock_parity_cores" | grep -c . || true)"
+
 core_report_valid() {
     local expected actual
     [ -d "$MLP1_CORES_DIR" ] || return 1
@@ -59,7 +67,7 @@ fi
 
 if [ "$cache_ok" != "1" ] && [ "$REBUILD_CORES" != "1" ]; then
     echo "error: MLP1 core cache preflight reported one or more misses." >&2
-    echo "Aborting before compilation; stable preparation requires 28 cache hits." >&2
+    echo "Aborting before compilation; stable preparation requires $required_count cache hits." >&2
     echo "Inspect the misses, or rebuild intentionally with REBUILD_CORES=1." >&2
     exit 2
 fi
