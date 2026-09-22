@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -euo pipefail
 
 MODE="${1:-both}"
@@ -54,13 +54,17 @@ MLP1_FUN_DRASTIC_PACKAGE="${MLP1_FUN_DRASTIC_PACKAGE:-$FUN_DRASTIC_STANDALONE_DI
 # hand-maintained defaults drifted apart twice; the file is the single source.
 MLP1_RETROARCH_PATCH_SET_FILE="${MLP1_RETROARCH_PATCH_SET_FILE:-$LEAF_ROOT/config/mlp1-retroarch-patch-set.txt}"
 if [ -z "${MLP1_RETROARCH_PATCH_SET:-}" ]; then
+    [ -f "$MLP1_RETROARCH_PATCH_SET_FILE" ] || {
+        echo "error: missing RetroArch patch-set file: $MLP1_RETROARCH_PATCH_SET_FILE" >&2
+        exit 1
+    }
     MLP1_RETROARCH_PATCH_SET="$(grep -v '^#' "$MLP1_RETROARCH_PATCH_SET_FILE" | grep -v '^$' | head -1)"
 fi
 MLP1_RETROARCH_VALIDATOR="${MLP1_RETROARCH_VALIDATOR:-$LEAF_ROOT/scripts/validate-mlp1-retroarch-build.py}"
 
 usage() {
     cat >&2 <<'EOF'
-usage: make-sd-release-zip.sh [both|install|recovery]
+usage: make-sd-release-zip.sh [both|install|recovery|preflight]
 
 Environment:
   DEVICE=mlp1
@@ -80,7 +84,7 @@ die() {
 }
 
 case "$MODE" in
-    both|install|recovery) ;;
+    both|install|recovery|preflight) ;;
     -h|--help) usage; exit 0 ;;
     *) usage; die "unsupported mode: $MODE" ;;
 esac
@@ -139,6 +143,92 @@ REQUIRED_COMPONENT_ARGS=()
 BUILT_INSTALL=0
 BUILT_RECOVERY=0
 
+preflight_command() {
+    command -v "$1" >/dev/null 2>&1 || {
+        echo "error: missing $1; install it before building release ZIPs" >&2
+        return 1
+    }
+}
+
+preflight_file() {
+    [ -f "$1" ] || {
+        echo "error: missing release input: $1 (run make bootstrap or restore the file)" >&2
+        return 1
+    }
+}
+
+release_preflight() {
+    local failed=0 path app image_id make_version=unavailable
+    if command -v make >/dev/null 2>&1; then
+        make_version="$(make --version | head -1)"
+    fi
+    printf 'Release preflight: Bash %s; %s\n' "$BASH_VERSION" "$make_version"
+    for path in git make python3 zip; do
+        preflight_command "$path" || failed=1
+    done
+    if ! command -v shasum >/dev/null 2>&1 && ! command -v sha256sum >/dev/null 2>&1; then
+        echo "error: missing shasum or sha256sum" >&2
+        failed=1
+    fi
+    preflight_file "$LAUNCHER_SWITCHER_DIR/make_launcher_switcher_sd.py" || failed=1
+    if [ "$MODE" != "recovery" ]; then
+        preflight_command docker || failed=1
+        preflight_command curl || failed=1
+        for path in \
+            "$CATASTROPHE_DIR" "$JAWAKA_DIR" "$PPSSPP_SPRUCE_DIR" \
+            "$STEWARD_NDS_DIR" "$N64_STANDALONE_DIR" "$FLYCAST_STANDALONE_DIR" \
+            "$YABASANSHIRO_STANDALONE_DIR" "$FUN_DRASTIC_STANDALONE_DIR" \
+            "$FUN_DRASTIC_SRC_DIR" "$RETROARCH_BUILDS_DIR" "$CORES_SPRUCE_DIR" \
+            "$LAUNCHER_SWITCHER_DIR" "$WORKSPACE_DIR/mlp1-toolchain"; do
+            [ -d "$path" ] || {
+                echo "error: missing public repo: $path (run make bootstrap)" >&2
+                failed=1
+            }
+        done
+        for app in $STAGE_APPS; do
+            [ -d "$WORKSPACE_DIR/$app" ] || {
+                echo "error: missing public app repo: $WORKSPACE_DIR/$app (run make bootstrap)" >&2
+                failed=1
+            }
+        done
+        for path in \
+            "$RELEASE_POLICY_TOOL" "$MLP1_RETROARCH_VALIDATOR" \
+            "$LEAF_ROOT/scripts/validate-mlp1-core-payload.py" \
+            "$LEAF_ROOT/scripts/validate-ppsspp-vulkan-release.py" \
+            "$LEAF_ROOT/scripts/validate-flycast-standalone-release.py" \
+            "$LEAF_ROOT/scripts/validate-fun-drastic-release.py" \
+            "$LEAF_ROOT/scripts/validate-yabasanshiro-standalone-release.py" \
+            "$LEAF_ROOT/scripts/validate-logsafe-wrappers.py" \
+            "$LEAF_ROOT/scripts/validate-input-roster-policy.py" \
+            "$LEAF_ROOT/scripts/audit-pakrat-owned-apps.py" \
+            "$LEAF_ROOT/scripts/app-package-policy.sh" \
+            "$LEAF_ROOT/scripts/ensure-mlp1-cores.sh" \
+            "$LEAF_ROOT/scripts/package-drastic-mlp1.sh" \
+            "$LEAF_ROOT/scripts/build-mlp1-graphics-runtime.sh" \
+            "$MLP1_CORE_REPORT_TOOL" "$MLP1_CORE_PROBE_RUNNER" \
+            "$MLP1_SHADER_TOOL" "$MLP1_SHADER_COVERAGE_TOOL" \
+            "$MLP1_SHADER_GLOBAL_SCOPE_TOOL" "$MLP1_ASSET_TOOL" \
+            "$UMRK_WORKSPACE_DIR/scripts/retroarch_validate_package.py" \
+            "$UMRK_WORKSPACE_DIR/scripts/audit-mlp1-build-flags.py" \
+            "$MLP1_SHADER_COVERAGE_EXCLUSIONS"; do
+            preflight_file "$path" || failed=1
+        done
+        if command -v docker >/dev/null 2>&1; then
+            if ! docker info >/dev/null 2>&1; then
+                echo "error: Docker daemon is unavailable; start Docker before building release ZIPs" >&2
+                failed=1
+            elif ! image_id="$(docker image inspect "$TOOLCHAIN_IMAGE" --format '{{.Id}}' 2>/dev/null)"; then
+                echo "error: missing toolchain image: $TOOLCHAIN_IMAGE (pull it or run make -C $WORKSPACE_DIR/mlp1-toolchain image)" >&2
+                failed=1
+            else
+                echo "Toolchain image: $image_id"
+            fi
+        fi
+    fi
+    [ "$failed" -eq 0 ] || die "release preflight failed"
+    echo "Release preflight passed (no ADB device required)"
+}
+
 validate_json_scalar() {
     local name="$1"
     local value="$2"
@@ -192,7 +282,7 @@ write_component_provenance() {
         --version "$LEAF_RELEASE_VERSION" \
         --tag "$LEAF_RELEASE_TAG" \
         --release-id "$RELEASE_ID" \
-        "${clean_args[@]}" \
+        ${clean_args[@]+"${clean_args[@]}"} \
         "${RELEASE_COMPONENT_ARGS[@]}" \
         --output "$output"
 }
@@ -579,7 +669,7 @@ validate_global_shader_scope() {
     python3 "$MLP1_SHADER_GLOBAL_SCOPE_TOOL" \
         --menu-binary "$menu_binary" \
         --fugazi-pak "${paks[0]}" \
-        "${source_args[@]}" ||
+        ${source_args[@]+"${source_args[@]}"} ||
         die "assembled Fugazi does not support the enabled global shader scope"
 }
 
@@ -669,7 +759,7 @@ validate_pakrat_owned_apps() {
         [ -n "$package" ] && pakrat_packages+=("$package")
     done < <(leaf_pakrat_owned_package_names)
     python3 "$LEAF_ROOT/scripts/audit-pakrat-owned-apps.py" \
-        "$release_root" "${pakrat_packages[@]}" || \
+        "$release_root" ${pakrat_packages[@]+"${pakrat_packages[@]}"} || \
         die "Pak Rat ownership validation failed"
 }
 
@@ -988,7 +1078,7 @@ validate_standalone_yabasanshiro_release() {
         source_args+=(--require-published-source)
     fi
     python3 "$LEAF_ROOT/scripts/validate-yabasanshiro-standalone-release.py" \
-        "${source_args[@]}" "$platform_dir" ||
+        ${source_args[@]+"${source_args[@]}"} "$platform_dir" ||
         die "YabaSanshiro standalone release validation failed"
 }
 
@@ -1186,7 +1276,7 @@ build_install_zip() {
         --force \
         --mode managed-install \
         --release-id "$RELEASE_ID" \
-        "${release_version_args[@]}" \
+        ${release_version_args[@]+"${release_version_args[@]}"} \
         --no-require-adb-pinned \
         --completion-action reboot \
         "$INSTALL_STAGE"
@@ -1218,6 +1308,9 @@ build_recovery_zip() {
     zip_stage "$RECOVERY_STAGE" "$RECOVERY_ZIP"
     BUILT_RECOVERY=1
 }
+
+release_preflight
+[ "$MODE" = "preflight" ] && exit 0
 
 mkdir -p "$RELEASE_BUILD"
 prepare_release_policy

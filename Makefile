@@ -22,7 +22,7 @@ LARGE_LIBRARY_FIXTURE_ENV = \
 	REMOTE_SDCARD_PATH="$(REMOTE_SDCARD_PATH)"
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap doctor status status-internal pakrat-local-feed-test leaf-release-policy-test shader-bundle-release-policy-test shader-coverage-policy-test shader-global-scope-policy-test input-roster-policy-test log-safety-policy-test flycast-release-policy-smoke yabasanshiro-release-policy-smoke yabasanshiro-stage-policy-smoke fun-drastic-release-policy-smoke fun-drastic-stage-policy-smoke core-rebuild-gate-test package-quiesce-smoke adb-enable-marker adb-disable-marker adb-tail-logs adb-large-library-create adb-large-library-clean adb-large-library-status adb-install-wrapper adb-uninstall-wrapper benchmark-ppsspp
+.PHONY: help bootstrap doctor release-preflight status status-internal pakrat-local-feed-test leaf-release-policy-test shader-bundle-release-policy-test shader-coverage-policy-test shader-global-scope-policy-test input-roster-policy-test log-safety-policy-test flycast-release-policy-smoke yabasanshiro-release-policy-smoke yabasanshiro-stage-policy-smoke fun-drastic-release-policy-smoke fun-drastic-stage-policy-smoke core-rebuild-gate-test package-quiesce-smoke adb-enable-marker adb-disable-marker adb-tail-logs adb-large-library-create adb-large-library-clean adb-large-library-status adb-install-wrapper adb-uninstall-wrapper benchmark-ppsspp
 
 help:
 	@echo "Leaf workspace commands (DEVICE=$(DEVICE), WORKSPACE_DIR=$(WORKSPACE_DIR)):"
@@ -56,6 +56,7 @@ help:
 	@echo "  make release-zips DEVICE=mlp1             build end-user install + recovery ZIPs"
 	@echo "    REBUILD_CORES=1                         explicitly permit compiling missing/stale cores"
 	@echo "    FORCE_REBUILD_CORES=1                   with REBUILD_CORES=1, bypass every valid cache hit"
+	@echo "  make release-preflight DEVICE=mlp1        check ZIP build inputs without ADB"
 	@echo "  make beta-zips TAG=v0.8.0-beta.3 DEVICE=mlp1  build clean beta ZIPs from one tag, then verify"
 	@echo "  make stable-zips TAG=v0.10.0 DEVICE=mlp1      build clean stable ZIPs from one tag, then verify"
 	@echo "  make release-sd-zip DEVICE=mlp1           build end-user install ZIP"
@@ -103,6 +104,11 @@ fun-drastic-stage-policy-smoke:
 
 doctor:
 	@LEAF_WORKSPACE_DIR="$(WORKSPACE_DIR)" TOOLCHAIN_IMAGE="$(TOOLCHAIN_IMAGE)" scripts/doctor.sh
+
+release-preflight:
+	@DEVICE="$(DEVICE)" LEAF_WORKSPACE_DIR="$(WORKSPACE_DIR)" \
+		TOOLCHAIN_IMAGE="$(TOOLCHAIN_IMAGE)" STAGE_APPS="$(STAGE_APPS)" \
+		scripts/make-sd-release-zip.sh preflight
 
 status:
 	@for r in $(REQUIRED_REPOS); do \
