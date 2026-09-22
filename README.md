@@ -210,6 +210,15 @@ platform payload, packages standalone emulators and first-party apps, and asks
 `miniloong-launcher-switcher` to generate the stock `loong_upgrade` install and
 recovery payloads.
 
+Local `release-zips` builds use the `dev` channel. ScreenScraper works when
+you provide developer credentials and is disabled when you do not. To enable
+it, copy `Jawaka/.env.example` to `Jawaka/.env.local` and set
+`SCREENSCRAPER_DEV_ID` and `SCREENSCRAPER_DEV_PASSWORD`, or export both variables
+in your environment. Keep `.env.local` private. Beta and stable ZIPs require
+both credentials and stop during preflight if they are missing. The build log,
+the install ZIP's platform manifest, and `leaf-update.json` record whether
+ScreenScraper was enabled; the credential values are never written there.
+
 Output is written to:
 
 ```text

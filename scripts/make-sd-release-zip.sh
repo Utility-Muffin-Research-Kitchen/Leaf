@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+export PYTHONDONTWRITEBYTECODE=1
 
 MODE="${1:-both}"
 
@@ -143,6 +144,7 @@ RELEASE_COMPONENT_ARGS=()
 REQUIRED_COMPONENT_ARGS=()
 BUILT_INSTALL=0
 BUILT_RECOVERY=0
+SCREENSCRAPER_FEATURE=
 
 preflight_command() {
     command -v "$1" >/dev/null 2>&1 || {
@@ -159,7 +161,7 @@ preflight_file() {
 }
 
 release_preflight() {
-    local failed=0 path app image_id make_version=unavailable
+    local failed=0 path app image_id make_version=unavailable screenscraper_status
     if command -v make >/dev/null 2>&1; then
         make_version="$(make --version | head -1)"
     fi
@@ -198,6 +200,24 @@ release_preflight() {
                 failed=1
             }
         done
+        if [ -d "$JAWAKA_DIR" ] && command -v make >/dev/null 2>&1; then
+            if screenscraper_status="$(make -s -C "$JAWAKA_DIR" screenscraper-status)"; then
+                case "$screenscraper_status" in
+                    true) echo "ScreenScraper credentials: available" ;;
+                    false)
+                        echo "ScreenScraper credentials: unavailable"
+                        if [ "$LEAF_RELEASE_CHANNEL" = beta ] || [ "$LEAF_RELEASE_CHANNEL" = stable ]; then
+                            echo "error: $LEAF_RELEASE_CHANNEL ZIPs require SCREENSCRAPER_DEV_ID and SCREENSCRAPER_DEV_PASSWORD; set them in Jawaka/.env.local or the environment" >&2
+                            failed=1
+                        fi
+                        ;;
+                    *) echo "error: unexpected Jawaka ScreenScraper status" >&2; failed=1 ;;
+                esac
+            else
+                echo "error: cannot check Jawaka ScreenScraper credentials" >&2
+                failed=1
+            fi
+        fi
         for path in \
             "$RELEASE_POLICY_TOOL" "$MLP1_RETROARCH_VALIDATOR" \
             "$MLP1_FFMPEG_BUILDER" "$RETROARCH_BUILDS_DIR/build-mlp1-ffmpeg.sh" \
@@ -410,7 +430,7 @@ sync_platform_managed_apps_manifest() {
     [ -f "$manifest" ] || die "missing platform manifest: $manifest"
     [ -f "$managed_file" ] || die "missing managed apps file: $managed_file"
 
-    python3 - "$manifest" "$managed_file" <<'PY'
+    python3 - "$manifest" "$managed_file" "$SCREENSCRAPER_FEATURE" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -428,6 +448,7 @@ for raw in managed_path.read_text(encoding="utf-8").splitlines():
         managed.append(app)
 
 manifest["managed_apps"] = managed
+manifest["features"] = {"screenscraper": sys.argv[3] == "true"}
 manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 PY
 }
@@ -464,6 +485,7 @@ write_release_manifest() {
   "published_at": "$published_at",
   "platforms": {
     "mlp1": {
+      "features": {"screenscraper": $SCREENSCRAPER_FEATURE},
       "min_installed_schema": 1,
       "managed_apps": [
 EOF
@@ -1190,6 +1212,18 @@ audit_zip_no_nintendo_bios() {
     fi
 }
 
+audit_zip_no_bytecode() {
+    local zip_path="$1"
+    local found
+    found="$(unzip -Z1 "$zip_path" 2>/dev/null |
+        grep -E '(^|/)__pycache__(/|$)|\.py[co]$' ||
+        true)"
+    if [ -n "$found" ]; then
+        printf '%s\n' "$found" >&2
+        die "Python bytecode found in $(basename "$zip_path")"
+    fi
+}
+
 zip_stage() {
     local stage_dir="$1"
     local zip_path="$2"
@@ -1200,16 +1234,23 @@ zip_stage() {
         zip -qr "$zip_path" .
     )
     audit_zip_no_nintendo_bios "$zip_path"
+    audit_zip_no_bytecode "$zip_path"
     echo "Wrote $zip_path"
 }
 
 build_install_zip() {
+    local screenscraper_required=0
+    if [ "$LEAF_RELEASE_CHANNEL" = beta ] || [ "$LEAF_RELEASE_CHANNEL" = stable ]; then
+        screenscraper_required=1
+    fi
     echo "Building Leaf MLP1 install ZIP release=$RELEASE_ID"
     validate_configured_source_consumers
     build_missing_platform_bits
 
     make -C "$LEAF_ROOT" \
         DEVICE=mlp1 \
+        LEAF_RELEASE_CHANNEL="$LEAF_RELEASE_CHANNEL" \
+        JAWAKA_REQUIRE_SCREENSCRAPER="$screenscraper_required" \
         MLP1_RETROARCH_BIN="$MLP1_RETROARCH_BIN" \
         MLP1_RETROARCH_MANIFEST="$MLP1_RETROARCH_MANIFEST" \
         MLP1_SHADERS_DIR="$MLP1_SHADERS_DIR" \
@@ -1217,6 +1258,18 @@ build_install_zip() {
         MLP1_CORES_DIR="$MLP1_CORES_DIR" \
         MLP1_CORES_REPORT="$MLP1_CORES_REPORT" \
         assemble-jawaka
+    SCREENSCRAPER_FEATURE="$(python3 - "$PAYLOAD_ROOT/.system/leaf/platforms/mlp1/launcher/build-manifest.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+value = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")).get("features", {}).get("screenscraper")
+if not isinstance(value, bool):
+    raise SystemExit("error: Jawaka build manifest lacks a boolean ScreenScraper feature")
+print(str(value).lower())
+PY
+)"
+    echo "Release ScreenScraper feature: $SCREENSCRAPER_FEATURE ($LEAF_RELEASE_CHANNEL channel)"
     [ -d "$PAYLOAD_ROOT/.system/leaf/platforms/mlp1/launcher" ] || die "missing assembled launcher payload"
     [ -d "$PAYLOAD_ROOT/.system/leaf/platforms/mlp1" ] || die "missing assembled MLP1 platform payload"
 
