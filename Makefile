@@ -71,7 +71,7 @@ help:
 	@echo "  make yabasanshiro-release-policy-smoke    test standalone Saturn release gates"
 	@echo "  make yabasanshiro-stage-policy-smoke      test standalone Saturn dispatch"
 	@echo "  make fun-drastic-release-policy-smoke fun-drastic-stage-policy-smoke     test the second NDS emulator release gates"
-	@echo "  make core-rebuild-gate-test               test explicit long core-rebuild authorization"
+	@echo "  make core-rebuild-gate-test               test explicit long core-rebuild authorization and managed-core staging"
 	@echo "  make package-quiesce-smoke                test fail-closed stage-app service barrier"
 	@echo "  make adb-enable-marker                    enable Leaf launcher marker"
 	@echo "  make adb-disable-marker                   disable Leaf launcher marker"
@@ -135,6 +135,7 @@ pakrat-local-feed-test:
 
 leaf-release-policy-test:
 	python3 scripts/validate-leaf-release-test.py
+	python3 scripts/validate-mlp1-core-payload-test.py
 	python3 scripts/verify-release-identity-test.py
 
 shader-bundle-release-policy-test:
@@ -154,6 +155,7 @@ log-safety-policy-test:
 
 core-rebuild-gate-test:
 	bash scripts/ensure-mlp1-cores-test.sh
+	python3 scripts/adb-replace-managed-files-test.py
 
 package-quiesce-smoke:
 	@bash scripts/adb-stage-app-package-smoke.sh

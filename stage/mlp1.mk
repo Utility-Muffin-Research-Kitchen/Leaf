@@ -32,6 +32,7 @@ MLP1_CORE_TEST_REPORT ?= $(CORES_SPRUCE_DIR)/output/mlp1/targeted-build-report.j
 MLP1_INFO_DIR      ?= $(CORES_SPRUCE_DIR)/output/mlp1/info
 MLP1_METADATA_DIR  ?= $(UMRK_WORKSPACE_DIR)/plans/retroarch/generated/mlp1
 MLP1_CORE_REPORT_TOOL ?= $(CORES_SPRUCE_DIR)/scripts/mlp1-core-report.py
+MLP1_CORE_PAYLOAD_VALIDATOR ?= $(LEAF_ROOT)/scripts/validate-mlp1-core-payload.py
 MLP1_CORE_PROBE_RUNNER ?= $(CORES_SPRUCE_DIR)/probe-mlp1-cores-adb.sh
 MLP1_PPSSPP_PACKAGE ?= $(PPSSPP_SPRUCE_DIR)/output/mlp1/ppsspp
 MLP1_GRAPHICS_RUNTIME ?= $(LEAF_ROOT)/build/mlp1/runtime/graphics
@@ -195,6 +196,11 @@ assemble-jawaka: jawaka-build shader-bundle-mlp1
 		mkdir -p "$(PLATFORM_PAYLOAD_DIR)/info"; \
 		find "$(MLP1_INFO_DIR)" -maxdepth 1 -type f -name '*_libretro.info' -exec cp -f {} "$(PLATFORM_PAYLOAD_DIR)/info/" \;; \
 	fi
+	@# Every full payload carries the cores Leaf ships, not just the binaries the
+	@# stock-parity cache knows about: matching info, a checksum-bound probed
+	@# report row, the shipped catalog entry, and the per-core default settings.
+	@python3 "$(MLP1_CORE_PAYLOAD_VALIDATOR)" \
+		--platform-dir "$(PLATFORM_PAYLOAD_DIR)"
 	@test -d "$(MLP1_SHADERS_DIR)" || { echo "missing MLP1 shader bundle: $(MLP1_SHADERS_DIR)" >&2; exit 1; }
 	@mkdir -p "$(PLATFORM_PAYLOAD_DIR)/shaders"
 	@cp -Rf "$(MLP1_SHADERS_DIR)/." "$(PLATFORM_PAYLOAD_DIR)/shaders/"
@@ -275,9 +281,19 @@ stage-retroarch:
 		--report "$(MLP1_CORES_REPORT)" \
 		--cores-dir "$(MLP1_CORES_DIR)"
 	@python3 "$(UMRK_WORKSPACE_DIR)/scripts/retroarch_validate_package.py" \
+		--umrk-root "$(WORKSPACE_DIR)" \
 		--metadata-dir "$(MLP1_METADATA_DIR)" \
 		--build-report "$(MLP1_CORES_REPORT)" \
 		--require-full-build-report
+	@python3 "$(MLP1_CORE_PAYLOAD_VALIDATOR)" \
+		--platform-dir "$(DEVICE_OVERLAY)" \
+		--cores-dir "$(MLP1_CORES_DIR)" \
+		--info-dir "$(MLP1_INFO_DIR)" \
+		--report "$(MLP1_CORES_REPORT)"
+	@# cores/ and info/ are refreshed by managed name rather than wiped: a
+	@# developer card can carry experiment cores beside the shipped set, and an
+	@# rm -rf of the whole directory would delete them. The rest of this tree is
+	@# release-owned, so it is replaced.
 	@set -euo pipefail; \
 	if [ -n "$${ADB_SERIAL:-}" ]; then \
 		serial="$$ADB_SERIAL"; \
@@ -300,7 +316,9 @@ stage-retroarch:
 		REMOTE_SYSTEM_PATH="$$remote_system" \
 		REMOTE_PLATFORM_PATH="$$remote_platform" \
 		"$(LEAF_ROOT)/scripts/adb-sync-shader-namespaces.sh" --migrate-only; \
-	"$${ADB[@]}" shell "mkdir -p '$$remote_platform' && rm -rf '$$remote_platform/bin' '$$remote_platform/cores' '$$remote_platform/info' '$$remote_platform/shaders' '$$remote_platform/assets' && mkdir -p '$$remote_platform/bin' '$$remote_platform/cores' '$$remote_platform/info' '$$remote_platform/shaders' '$$remote_platform/assets'"; \
+	"$${ADB[@]}" shell "mkdir -p '$$remote_platform' && rm -rf '$$remote_platform/bin' '$$remote_platform/shaders' '$$remote_platform/assets' && mkdir -p '$$remote_platform/bin' '$$remote_platform/cores' '$$remote_platform/info' '$$remote_platform/shaders' '$$remote_platform/assets'"; \
+	ADB_SERIAL="$$serial" "$(LEAF_ROOT)/scripts/adb-replace-managed-files.sh" "$$remote_platform/cores" "$(MLP1_CORES_DIR)" '*_libretro.so'; \
+	ADB_SERIAL="$$serial" "$(LEAF_ROOT)/scripts/adb-replace-managed-files.sh" "$$remote_platform/info" "$(MLP1_INFO_DIR)" '*_libretro.info'; \
 	"$${ADB[@]}" push "$(MLP1_RETROARCH_BIN)" "$$remote_platform/bin/retroarch" >/dev/null; \
 	if [ -f "$(MLP1_RETROARCH_MANIFEST)" ]; then \
 		"$${ADB[@]}" push "$(MLP1_RETROARCH_MANIFEST)" "$$remote_platform/bin/retroarch.build-manifest.json" >/dev/null; \
@@ -314,6 +332,8 @@ stage-retroarch:
 	fi; \
 	"$${ADB[@]}" push "$(MLP1_SHADERS_DIR)/." "$$remote_platform/shaders/" >/dev/null; \
 	"$${ADB[@]}" push "$(MLP1_ASSETS_DIR)/." "$$remote_platform/assets/" >/dev/null; \
+	"$${ADB[@]}" shell "mkdir -p '$$remote_platform/defaults/retroarch/core-options'"; \
+	"$${ADB[@]}" push "$(DEVICE_OVERLAY)/defaults/retroarch/core-options/." "$$remote_platform/defaults/retroarch/core-options/" >/dev/null; \
 	ADB_SERIAL="$$serial" PLATFORM_ID="mlp1" \
 		REMOTE_SDCARD_PATH="$$remote_sd" \
 		REMOTE_SYSTEM_PATH="$$remote_system" \
