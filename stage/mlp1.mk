@@ -97,7 +97,7 @@ shader-bundle-mlp1:
 assemble-jawaka: jawaka-build shader-bundle-mlp1
 	$(MAKE) -C "$(CATASTROPHE_DIR)" assets
 	@test -f "$(JAWAKA_BUILD_DIR)/build-manifest.json" || { echo "missing Jawaka MLP1 build manifest" >&2; exit 1; }
-	@python3 -c 'import json,sys; value=json.load(open(sys.argv[1], encoding="utf-8")).get("features", {}).get("screenscraper"); required=sys.argv[2] == "1"; print("Jawaka ScreenScraper: " + ("enabled" if value else "disabled")); sys.exit(0 if isinstance(value, bool) and (value or not required) else 1)' "$(JAWAKA_BUILD_DIR)/build-manifest.json" "$(if $(filter 1 yes true,$(JAWAKA_REQUIRE_SCREENSCRAPER)),1,0)" || { echo "refusing to assemble Jawaka: ScreenScraper feature missing or disabled for a required build" >&2; exit 1; }
+	@python3 -c 'import json,sys; value=json.load(open(sys.argv[1], encoding="utf-8")).get("features", {}).get("screenscraper"); state="enabled" if value is True else "disabled" if value is False else "invalid"; print("Jawaka ScreenScraper: " + state); sys.exit(0 if state != "invalid" and (state == "enabled" or sys.argv[2] != "1") else 1)' "$(JAWAKA_BUILD_DIR)/build-manifest.json" "$(if $(filter 1 yes true,$(JAWAKA_REQUIRE_SCREENSCRAPER)),1,0)" || { echo "refusing to assemble Jawaka: ScreenScraper feature missing or disabled for a required build" >&2; exit 1; }
 	@for scale in 1 2 3 4; do \
 		asset="$(CATASTROPHE_ASSETS_DIR)/assets@$${scale}x.png"; \
 		test -f "$$asset" || { echo "missing generated Catastrophe asset: $$asset" >&2; exit 1; }; \

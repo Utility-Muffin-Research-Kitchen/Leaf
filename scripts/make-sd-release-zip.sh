@@ -1269,6 +1269,9 @@ if not isinstance(value, bool):
 print(str(value).lower())
 PY
 )"
+    if [ "$screenscraper_required" -eq 1 ] && [ "$SCREENSCRAPER_FEATURE" != true ]; then
+        die "$LEAF_RELEASE_CHANNEL ZIPs require a ScreenScraper-enabled launcher"
+    fi
     echo "Release ScreenScraper feature: $SCREENSCRAPER_FEATURE ($LEAF_RELEASE_CHANNEL channel)"
     [ -d "$PAYLOAD_ROOT/.system/leaf/platforms/mlp1/launcher" ] || die "missing assembled launcher payload"
     [ -d "$PAYLOAD_ROOT/.system/leaf/platforms/mlp1" ] || die "missing assembled MLP1 platform payload"
