@@ -586,6 +586,11 @@ def validate_build_report(
 
         if status == "built":
             library_name = row.get("library_name")
+            if row.get("library_name_source") not in ("container", "device"):
+                errors.append(
+                    f"build report {core_file} has invalid library_name_source: "
+                    f"{row.get('library_name_source')!r}"
+                )
             expected_sha256 = row.get("sha256")
             if not core_file or not str(core_file).endswith("_libretro.so"):
                 errors.append(f"build report built core has invalid core_file: {core} -> {core_file}")

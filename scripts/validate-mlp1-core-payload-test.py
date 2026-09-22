@@ -70,6 +70,7 @@ class PayloadTests(unittest.TestCase):
                             "sha256": hashlib.sha256(core_bytes).hexdigest(),
                             "status": "built",
                             "library_name": "FlyCast Fast UMRK",
+                            "library_name_source": "container",
                             "build_action": "compiled",
                         }
                     ],
@@ -129,6 +130,16 @@ class PayloadTests(unittest.TestCase):
             report["library_name_status"] = "pending"
             report_path.write_text(json.dumps(report), encoding="utf-8")
             with self.assertRaisesRegex(MODULE.PayloadError, "not verified"):
+                self.validate(platform)
+
+    def test_rejects_missing_probe_source(self):
+        with tempfile.TemporaryDirectory() as raw:
+            platform = self.make_payload(Path(raw))
+            report_path = platform / "cores" / "build-report.json"
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            del report["cores"][0]["library_name_source"]
+            report_path.write_text(json.dumps(report), encoding="utf-8")
+            with self.assertRaisesRegex(MODULE.PayloadError, "probe source"):
                 self.validate(platform)
 
     def test_rejects_catalog_entry_that_is_not_packaged(self):
