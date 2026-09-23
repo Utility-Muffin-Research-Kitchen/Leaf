@@ -122,6 +122,14 @@ class IdentityTests(unittest.TestCase):
 
 
 class ProvenanceTests(unittest.TestCase):
+    def test_provenance_requires_immutable_toolchain_image_id(self):
+        args = SimpleNamespace(
+            channel="dev", version="build-123", tag="", release_id="build-123",
+            toolchain_image_id="mlp1-toolchain:local", component=[], require_clean=False,
+        )
+        with self.assertRaisesRegex(MODULE.PolicyError, "full sha256 image ID"):
+            MODULE.build_provenance(args)
+
     def test_provenance_records_exact_clean_commits(self):
         with tempfile.TemporaryDirectory() as raw:
             base = Path(raw)
@@ -138,6 +146,7 @@ class ProvenanceTests(unittest.TestCase):
                 version="0.7.0",
                 tag="v0.7.0",
                 release_id="v0.7.0",
+                toolchain_image_id="sha256:" + "b" * 64,
                 component=components,
                 require_clean=True,
             )
@@ -151,6 +160,7 @@ class ProvenanceTests(unittest.TestCase):
             ])
             self.assertTrue(all(len(row["commit"]) == 40 for row in rows))
             self.assertTrue(all(row["dirty"] is False for row in rows))
+            self.assertEqual(result["release"]["toolchain_image_id"], "sha256:" + "b" * 64)
 
     def test_tagged_provenance_rejects_dirty_component(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -166,6 +176,7 @@ class ProvenanceTests(unittest.TestCase):
                 version="0.7.0",
                 tag="v0.7.0",
                 release_id="v0.7.0",
+                toolchain_image_id="sha256:" + "b" * 64,
                 component=components,
                 require_clean=True,
             )
@@ -190,6 +201,7 @@ class ProvenanceTests(unittest.TestCase):
                 version="0.8.0-beta.1",
                 tag="v0.8.0-beta.1",
                 release_id="v0.8.0-beta.1",
+                toolchain_image_id="sha256:" + "b" * 64,
                 component=components,
                 require_clean=False,
             )
@@ -214,6 +226,7 @@ class ProvenanceTests(unittest.TestCase):
                 version="build-123",
                 tag="",
                 release_id="build-123",
+                toolchain_image_id="sha256:" + "b" * 64,
                 component=components,
                 require_clean=False,
             )
@@ -304,6 +317,7 @@ class CandidateTests(unittest.TestCase):
                 "version": "0.7.0",
                 "tag": "v0.7.0",
                 "release_id": "v0.7.0",
+                "toolchain_image_id": "sha256:" + "b" * 64,
             },
             "components": [
                 {"name": name, "commit": "a" * 40, "dirty": False, "remote": None}
@@ -349,6 +363,16 @@ class CandidateTests(unittest.TestCase):
     def test_candidate_accepts_required_capabilities_and_identity(self):
         with tempfile.TemporaryDirectory() as raw:
             MODULE.validate_candidate(self.make_candidate(Path(raw)))
+
+    def test_candidate_rejects_missing_toolchain_image_id(self):
+        with tempfile.TemporaryDirectory() as raw:
+            args = self.make_candidate(Path(raw))
+            path = args.release_root / "provenance" / "components.json"
+            provenance = json.loads(path.read_text(encoding="utf-8"))
+            del provenance["release"]["toolchain_image_id"]
+            path.write_text(json.dumps(provenance), encoding="utf-8")
+            with self.assertRaisesRegex(MODULE.PolicyError, "toolchain image ID"):
+                MODULE.validate_candidate(args)
 
     def test_candidate_rejects_missing_launcher_capability(self):
         with tempfile.TemporaryDirectory() as raw:

@@ -257,6 +257,14 @@ repository; `beta-zips` accepts only `vX.Y.Z-beta.N` and publishes to `Leaf-beta
 Each derives the complete identity from the tag and verifies the built artifact
 afterwards.
 
+For beta or stable ZIPs, set `TOOLCHAIN_IMAGE` to a full local `sha256:` image ID.
+Preflight checks that the image contains the same MLP1 build flags as your
+`mlp1-toolchain` checkout and that all 31 stock-parity cores are cache hits.
+It then assembles a report with 31 reused and 0 compiled cores. These channels
+reject `REBUILD_CORES=1` and `FORCE_REBUILD_CORES=1`. The selected image ID is
+recorded in `provenance/components.json`; `mlp1-toolchain/README.md` shows how
+to pull the published image and resolve its ID.
+
 Before building a tagged release, run the `Publish corresponding source`
 workflow in `Yabasanshiro-standalone`. Normally, use the same tag as Leaf. If
 you revise the standalone source while that Leaf release is still unpublished,

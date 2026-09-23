@@ -11,8 +11,9 @@ MLP1_CORE_REPORT_TOOL="${MLP1_CORE_REPORT_TOOL:-$CORES_SPRUCE_DIR/scripts/mlp1-c
 MLP1_CORE_BUILDER="${MLP1_CORE_BUILDER:-$CORES_SPRUCE_DIR/build-mlp1.sh}"
 REBUILD_CORES="${REBUILD_CORES:-0}"
 FORCE_REBUILD_CORES="${FORCE_REBUILD_CORES:-0}"
+MLP1_CACHE_ONLY="${MLP1_CACHE_ONLY:-0}"
 
-for setting in REBUILD_CORES FORCE_REBUILD_CORES; do
+for setting in REBUILD_CORES FORCE_REBUILD_CORES MLP1_CACHE_ONLY; do
     value="${!setting}"
     case "$value" in
         0|1) ;;
@@ -25,6 +26,11 @@ done
 
 if [ "$FORCE_REBUILD_CORES" = "1" ] && [ "$REBUILD_CORES" != "1" ]; then
     echo "error: FORCE_REBUILD_CORES=1 also requires REBUILD_CORES=1" >&2
+    exit 2
+fi
+
+if [ "$MLP1_CACHE_ONLY" = 1 ] && { [ "$REBUILD_CORES" != 0 ] || [ "$FORCE_REBUILD_CORES" != 0 ]; }; then
+    echo "error: MLP1_CACHE_ONLY=1 requires REBUILD_CORES=0 and FORCE_REBUILD_CORES=0" >&2
     exit 2
 fi
 
@@ -60,7 +66,7 @@ if cache_preflight; then
     cache_ok=1
 fi
 
-if [ "$FORCE_REBUILD_CORES" = "0" ] && [ "$cache_ok" = "1" ] && core_report_valid; then
+if [ "$MLP1_CACHE_ONLY" = 0 ] && [ "$FORCE_REBUILD_CORES" = "0" ] && [ "$cache_ok" = "1" ] && core_report_valid; then
     echo "Reusing checksum-validated MLP1 core set: $MLP1_CORES_REPORT"
     exit 0
 fi
@@ -82,8 +88,25 @@ fi
 (
     cd "$CORES_SPRUCE_DIR"
     FORCE_REBUILD_CORES="$FORCE_REBUILD_CORES" \
+    MLP1_CACHE_ONLY="$MLP1_CACHE_ONLY" \
         "$MLP1_CORE_BUILDER" --stock-parity
 )
+
+if [ "$MLP1_CACHE_ONLY" = 1 ]; then
+    python3 - "$MLP1_CORES_REPORT" "$required_count" <<'PY' || exit 1
+import json
+import sys
+from pathlib import Path
+
+report = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+expected = int(sys.argv[2])
+if (report.get("build_mode") != "stock-parity"
+        or report.get("compiled_count") != 0
+        or report.get("reused_count") != expected):
+    raise SystemExit(f"error: cache-only core report must record {expected} reused and 0 compiled cores")
+print(f"Cache-only core report: {expected} reused / 0 compiled")
+PY
+fi
 
 cache_preflight || {
     echo "error: MLP1 core cache still has misses after the stock-parity run" >&2
