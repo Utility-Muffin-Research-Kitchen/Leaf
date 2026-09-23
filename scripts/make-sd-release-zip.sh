@@ -1039,7 +1039,15 @@ package_emulator() {
             ;;
         flycast)
             [ -d "$FLYCAST_STANDALONE_DIR" ] || die "missing Flycast standalone repo: $FLYCAST_STANDALONE_DIR"
-            make -C "$FLYCAST_STANDALONE_DIR" package-mlp1 TOOLCHAIN_IMAGE="$TOOLCHAIN_IMAGE"
+            # A locked Flycast checkout builds with its own digest-pinned
+            # toolchain, so the release carries the reproducible payload.
+            if [ -n "${FLYCAST_TOOLCHAIN_IMAGE:-}" ]; then
+                make -C "$FLYCAST_STANDALONE_DIR" package-mlp1 TOOLCHAIN_IMAGE="$FLYCAST_TOOLCHAIN_IMAGE"
+            elif [ -f "$FLYCAST_STANDALONE_DIR/locks/build-inputs.lock.json" ]; then
+                make -C "$FLYCAST_STANDALONE_DIR" package-mlp1
+            else
+                make -C "$FLYCAST_STANDALONE_DIR" package-mlp1 TOOLCHAIN_IMAGE="$TOOLCHAIN_IMAGE"
+            fi
             package_dir="$MLP1_FLYCAST_PACKAGE"
             remote_name="flycast"
             ;;
