@@ -28,7 +28,7 @@ RETROARCH_BUILDS_DIR="${RETROARCH_BUILDS_DIR:-$WORKSPACE_DIR/retroarch-builds}"
 CORES_SPRUCE_DIR="${CORES_SPRUCE_DIR:-$WORKSPACE_DIR/Cores-spruce}"
 LAUNCHER_SWITCHER_DIR="${LAUNCHER_SWITCHER_DIR:-$WORKSPACE_DIR/miniloong-launcher-switcher}"
 MLP1_CORE_REPORT_TOOL="${MLP1_CORE_REPORT_TOOL:-$CORES_SPRUCE_DIR/scripts/mlp1-core-report.py}"
-MLP1_CORE_PROBE_RUNNER="${MLP1_CORE_PROBE_RUNNER:-$CORES_SPRUCE_DIR/probe-mlp1-cores-adb.sh}"
+MLP1_CORE_PROBE_RUNNER="${MLP1_CORE_PROBE_RUNNER:-$CORES_SPRUCE_DIR/probe-mlp1-cores-container.sh}"
 TOOLCHAIN_IMAGE="${TOOLCHAIN_IMAGE:-ghcr.io/utility-muffin-research-kitchen/mlp1-toolchain:local}"
 MLP1_RETROARCH_BIN="${MLP1_RETROARCH_BIN:-$RETROARCH_BUILDS_DIR/output/mlp1/bin/retroarch}"
 MLP1_RETROARCH_MANIFEST="${MLP1_RETROARCH_MANIFEST:-$RETROARCH_BUILDS_DIR/output/mlp1/build-manifest.json}"
@@ -819,7 +819,7 @@ build_missing_platform_bits() {
     if ! python3 "$MLP1_CORE_REPORT_TOOL" verify \
             --report "$MLP1_CORES_REPORT" \
             --cores-dir "$MLP1_CORES_DIR"; then
-        echo "Probing exact MLP1 libretro library names on the selected device"
+        echo "Probing exact MLP1 libretro library names in the toolchain container"
         "$MLP1_CORE_PROBE_RUNNER" \
             --report "$MLP1_CORES_REPORT" \
             --cores-dir "$MLP1_CORES_DIR" || \

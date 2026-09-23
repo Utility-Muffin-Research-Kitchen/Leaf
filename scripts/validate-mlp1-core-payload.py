@@ -136,6 +136,8 @@ def validate_core(
         )
     if not row.get("library_name"):
         raise PayloadError(f"core build report {core} row has no probed library name")
+    if row.get("library_name_source") not in ("container", "device"):
+        raise PayloadError(f"core build report {core} row has no probe source")
 
     require_artifact(
         platform_dir

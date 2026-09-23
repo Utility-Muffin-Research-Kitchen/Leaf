@@ -33,7 +33,7 @@ MLP1_INFO_DIR      ?= $(CORES_SPRUCE_DIR)/output/mlp1/info
 MLP1_METADATA_DIR  ?= $(LEAF_ROOT)/config/retroarch/mlp1
 MLP1_CORE_REPORT_TOOL ?= $(CORES_SPRUCE_DIR)/scripts/mlp1-core-report.py
 MLP1_CORE_PAYLOAD_VALIDATOR ?= $(LEAF_ROOT)/scripts/validate-mlp1-core-payload.py
-MLP1_CORE_PROBE_RUNNER ?= $(CORES_SPRUCE_DIR)/probe-mlp1-cores-adb.sh
+MLP1_CORE_PROBE_RUNNER ?= $(CORES_SPRUCE_DIR)/probe-mlp1-cores-container.sh
 MLP1_PPSSPP_PACKAGE ?= $(PPSSPP_SPRUCE_DIR)/output/mlp1/ppsspp
 MLP1_GRAPHICS_RUNTIME ?= $(LEAF_ROOT)/build/mlp1/runtime/graphics
 MLP1_VULKAN_RUNTIME ?= $(MLP1_GRAPHICS_RUNTIME)/vulkan/rk3566-g52-g29p1
@@ -272,8 +272,8 @@ stage-retroarch:
 	@if ! python3 "$(MLP1_CORE_REPORT_TOOL)" verify \
 			--report "$(MLP1_CORES_REPORT)" \
 			--cores-dir "$(MLP1_CORES_DIR)"; then \
-		echo "Probing exact MLP1 libretro library names on the selected device"; \
-		ADB_SERIAL="$${ADB_SERIAL:-}" "$(MLP1_CORE_PROBE_RUNNER)" \
+		echo "Probing exact MLP1 libretro library names in the toolchain container"; \
+		"$(MLP1_CORE_PROBE_RUNNER)" \
 			--report "$(MLP1_CORES_REPORT)" \
 			--cores-dir "$(MLP1_CORES_DIR)"; \
 	fi

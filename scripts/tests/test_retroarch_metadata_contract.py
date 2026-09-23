@@ -627,6 +627,7 @@ class BuildReportContractTests(unittest.TestCase):
                     "info_file": "test_core_libretro.info",
                     "reason": "",
                     "library_name": "Test Core",
+                    "library_name_source": "container",
                     "sha256": self.sha256,
                 }
             ],
@@ -654,6 +655,12 @@ class BuildReportContractTests(unittest.TestCase):
         self.assertEqual([], errors)
         self.assertEqual([], warnings)
         self.assertEqual([], self.validate_generator_report(self.report))
+
+    def test_report_rejects_missing_probe_source(self) -> None:
+        report = copy.deepcopy(self.report)
+        del report["cores"][0]["library_name_source"]
+        errors, _ = self.validate_report(report)
+        self.assertTrue(any("library_name_source" in error for error in errors), errors)
 
     def test_generator_rejects_every_identity_mismatch(self) -> None:
         cases = (
@@ -844,6 +851,7 @@ class BuildReportContractTests(unittest.TestCase):
                     "core_file": one["file_name"],
                     "info_file": one["info_name"],
                     "library_name": one["config_folder"],
+                    "library_name_source": "container",
                     "sha256": hashlib.sha256(b"").hexdigest(),
                 }
             ],
