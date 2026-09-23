@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "platform": "mlp1",
+  "_comment": "Canonical user system folders policy. Drives folder folding in retroarch_generate_metadata.py. One public folder per user library; emulator/region variants live behind core/launch-profile choices, not separate folders. Internal catalog ids are kept low-churn (CentralScrutinizer/src/platforms.c keys its identity map on these); only the public folder (rom_root/image_root) becomes the friendly name. See plans/canonical-user-system-folders.md.",
+  "systems": [
+    {
+      "canonical_id": "FC",
+      "public_folder": "NES",
+      "display_name": "Nintendo Entertainment System / Famicom",
+      "fold_ids": ["NES"],
+      "aliases": ["NES", "FAMICOM"],
+      "variant_ids": []
+    },
+    {
+      "canonical_id": "SFC",
+      "public_folder": "SNES",
+      "display_name": "Super Nintendo / Super Famicom",
+      "fold_ids": ["SNES", "SFC_JP"],
+      "aliases": ["SNES", "SUPERFAMICOM", "SUPERNES", "SFC_JP", "SUPERFAMICOM_JP", "SUPA"],
+      "variant_ids": ["SUPA"]
+    },
+    {
+      "canonical_id": "MD",
+      "public_folder": "GENESIS",
+      "display_name": "Genesis / Mega Drive",
+      "fold_ids": ["GENESIS", "GEN"],
+      "aliases": ["GENESIS", "MEGADRIVE", "GEN"],
+      "variant_ids": []
+    },
+    {
+      "canonical_id": "PCE",
+      "public_folder": "PCE",
+      "display_name": "PC Engine / TurboGrafx-16",
+      "fold_ids": ["TG16"],
+      "aliases": ["TG16", "TURBOGRAFX16", "TURBOGRAFX", "PCENGINE"],
+      "variant_ids": []
+    },
+    {
+      "canonical_id": "PS",
+      "public_folder": "PSX",
+      "display_name": "Sony PlayStation",
+      "fold_ids": ["PSX"],
+      "aliases": ["PSX", "PLAYSTATION", "PS1", "PSONE"],
+      "variant_ids": []
+    },
+    {
+      "canonical_id": "SEVENTYEIGHTHUNDRED",
+      "public_folder": "A7800",
+      "display_name": "Atari 7800",
+      "fold_ids": ["PROSYSTEM"],
+      "aliases": ["A7800", "ATARI7800", "PROSYSTEM"],
+      "variant_ids": []
+    },
+    {
+      "canonical_id": "GBA",
+      "public_folder": "GBA",
+      "display_name": "Game Boy Advance",
+      "fold_ids": [],
+      "aliases": ["MGBA"],
+      "variant_ids": ["MGBA"]
+    },
+    {
+      "canonical_id": "GB",
+      "public_folder": "GB",
+      "display_name": "Game Boy",
+      "fold_ids": [],
+      "aliases": ["SGB"],
+      "variant_ids": ["SGB"]
+    },
+    {
+      "canonical_id": "N64",
+      "public_folder": "N64",
+      "display_name": "Nintendo 64",
+      "fold_ids": [],
+      "aliases": [],
+      "variant_ids": ["N64RA", "N64STANDALONE"]
+    }
+  ],
+  "disallowed_public_system_ids": ["MGBA", "SUPA", "SGB", "N64RA", "N64STANDALONE"]
+}

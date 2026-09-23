@@ -132,6 +132,25 @@ accepts that full report. Any missing or stale core aborts before compilation.
 `FORCE_REBUILD_CORES=1` additionally bypasses valid hits for an intentional
 full rebuild.
 
+Leaf owns the release catalog source and generated MLP1 metadata in
+`scripts/retroarch_generate_metadata.py`, `scripts/system_folder_policy.json`,
+and `config/retroarch/mlp1/`. After assembling a complete stock-parity core
+report, regenerate and validate the catalogs from the Leaf checkout:
+
+```sh
+python3 scripts/retroarch_generate_metadata.py --umrk-root "$(pwd)/.." \
+  --allium-root /path/to/Allium --spruce-root /path/to/spruceOS \
+  --build-report ../Cores-spruce/output/mlp1/build-report.json
+python3 scripts/retroarch_catalog_audit.py --quiet
+python3 scripts/retroarch_validate_package.py \
+  --canonical-systems config/retroarch/mlp1/systems.json
+cp config/retroarch/mlp1/cores.json ../miniloong-launcher-switcher/device/mlp1/defaults/cores.json
+cp config/retroarch/mlp1/systems.json ../miniloong-launcher-switcher/device/mlp1/defaults/systems.json
+```
+
+The reference checkouts are authoring inputs. ZIP builds use the checked-in
+catalogs and do not need those checkouts.
+
 On MLP1, `stage-app` uses Jawaka's `package-quiesce-v1` barrier before it
 removes or pushes any package bytes. Close foreground apps first. A missing
 daemon, stale/unverified service generation, or rejected barrier fails the
@@ -365,7 +384,7 @@ per system, not one per emulator. Legacy alias folders (e.g. `Roms/FC` for NES)
 still scan and fold into the canonical system; emulator variants are a launcher
 **Core** choice, not a separate folder. The canonical folder per system plus its
 accepted aliases come from the staged platform `systems.json`, driven by
-`umrk-workspace/scripts/system_folder_policy.json`; the release path enforces the
+`Leaf/scripts/system_folder_policy.json`; the release path enforces the
 invariant via `retroarch_validate_package.py --canonical-systems`.
 
 The current first-party app policies are:

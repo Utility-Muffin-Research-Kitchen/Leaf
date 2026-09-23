@@ -27,7 +27,6 @@ FUN_DRASTIC_SRC_DIR="${FUN_DRASTIC_SRC_DIR:-$WORKSPACE_DIR/Fun-Drastic-src}"
 RETROARCH_BUILDS_DIR="${RETROARCH_BUILDS_DIR:-$WORKSPACE_DIR/retroarch-builds}"
 CORES_SPRUCE_DIR="${CORES_SPRUCE_DIR:-$WORKSPACE_DIR/Cores-spruce}"
 LAUNCHER_SWITCHER_DIR="${LAUNCHER_SWITCHER_DIR:-$WORKSPACE_DIR/miniloong-launcher-switcher}"
-UMRK_WORKSPACE_DIR="${UMRK_WORKSPACE_DIR:-$WORKSPACE_DIR/umrk-workspace}"
 MLP1_CORE_REPORT_TOOL="${MLP1_CORE_REPORT_TOOL:-$CORES_SPRUCE_DIR/scripts/mlp1-core-report.py}"
 MLP1_CORE_PROBE_RUNNER="${MLP1_CORE_PROBE_RUNNER:-$CORES_SPRUCE_DIR/probe-mlp1-cores-adb.sh}"
 TOOLCHAIN_IMAGE="${TOOLCHAIN_IMAGE:-ghcr.io/utility-muffin-research-kitchen/mlp1-toolchain:local}"
@@ -166,6 +165,12 @@ release_preflight() {
     for path in git make python3 zip; do
         preflight_command "$path" || failed=1
     done
+    if command -v python3 >/dev/null 2>&1; then
+        if ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 11))'; then
+            echo "error: Python 3.11 or newer is required for the RetroArch catalog tools" >&2
+            failed=1
+        fi
+    fi
     if ! command -v shasum >/dev/null 2>&1 && ! command -v sha256sum >/dev/null 2>&1; then
         echo "error: missing shasum or sha256sum" >&2
         failed=1
@@ -208,8 +213,14 @@ release_preflight() {
             "$MLP1_CORE_REPORT_TOOL" "$MLP1_CORE_PROBE_RUNNER" \
             "$MLP1_SHADER_TOOL" "$MLP1_SHADER_COVERAGE_TOOL" \
             "$MLP1_SHADER_GLOBAL_SCOPE_TOOL" "$MLP1_ASSET_TOOL" \
-            "$UMRK_WORKSPACE_DIR/scripts/retroarch_validate_package.py" \
-            "$UMRK_WORKSPACE_DIR/scripts/audit-mlp1-build-flags.py" \
+            "$LEAF_ROOT/scripts/retroarch_validate_package.py" \
+            "$LEAF_ROOT/scripts/retroarch_generate_metadata.py" \
+            "$LEAF_ROOT/scripts/retroarch_inventory.py" \
+            "$LEAF_ROOT/scripts/audit-mlp1-build-flags.py" \
+            "$LEAF_ROOT/scripts/system_folder_policy.json" \
+            "$LEAF_ROOT/config/retroarch/mlp1/cores.json" \
+            "$LEAF_ROOT/config/retroarch/mlp1/systems.json" \
+            "$LEAF_ROOT/config/retroarch/mlp1/phase-2-inventory.json" \
             "$MLP1_SHADER_COVERAGE_EXCLUSIONS"; do
             preflight_file "$path" || failed=1
         done
@@ -586,9 +597,9 @@ validate_retroarch_contract() {
     local platform_dir="$1"
     local report="$platform_dir/cores/build-report.json"
     [ -f "$report" ] || die "missing MLP1 core build report: $report"
-    python3 "$UMRK_WORKSPACE_DIR/scripts/retroarch_validate_package.py" \
+    python3 "$LEAF_ROOT/scripts/retroarch_validate_package.py" \
         --umrk-root "$WORKSPACE_DIR" \
-        --metadata-dir "$UMRK_WORKSPACE_DIR/plans/retroarch/generated/mlp1" \
+        --metadata-dir "$LEAF_ROOT/config/retroarch/mlp1" \
         --build-report "$report" \
         --package-root "$platform_dir" \
         || die "RetroArch runtime metadata contract validation failed"
@@ -637,7 +648,7 @@ validate_shader_bundle() {
     python3 "$MLP1_SHADER_COVERAGE_TOOL" \
         --platform-dir "$platform_dir" \
         --exclusions "$MLP1_SHADER_COVERAGE_EXCLUSIONS" \
-        --report-root "$UMRK_WORKSPACE_DIR" ||
+        --report-root "$LEAF_ROOT/build" ||
         die "MLP1 shader coverage release validation failed"
     [ -f "$license_root/SHADERS.md" ] ||
         die "missing shader license notice: $license_root/SHADERS.md"
@@ -765,12 +776,9 @@ validate_pakrat_owned_apps() {
 
 audit_mlp1_build_tuning() {
     local release_root="$1"
-    local audit_script="$WORKSPACE_DIR/umrk-workspace/scripts/audit-mlp1-build-flags.py"
+    local audit_script="$LEAF_ROOT/scripts/audit-mlp1-build-flags.py"
 
-    if [ ! -f "$audit_script" ]; then
-        echo "warning: MLP1 build tuning audit script not found: $audit_script"
-        return 0
-    fi
+    [ -f "$audit_script" ] || die "missing MLP1 build tuning audit: $audit_script"
 
     python3 "$audit_script" "$release_root" || die "MLP1 build tuning audit failed"
 }

@@ -30,7 +30,7 @@ MLP1_CORES_DIR     ?= $(CORES_SPRUCE_DIR)/output/mlp1/cores
 MLP1_CORES_REPORT  ?= $(CORES_SPRUCE_DIR)/output/mlp1/build-report.json
 MLP1_CORE_TEST_REPORT ?= $(CORES_SPRUCE_DIR)/output/mlp1/targeted-build-report.json
 MLP1_INFO_DIR      ?= $(CORES_SPRUCE_DIR)/output/mlp1/info
-MLP1_METADATA_DIR  ?= $(UMRK_WORKSPACE_DIR)/plans/retroarch/generated/mlp1
+MLP1_METADATA_DIR  ?= $(LEAF_ROOT)/config/retroarch/mlp1
 MLP1_CORE_REPORT_TOOL ?= $(CORES_SPRUCE_DIR)/scripts/mlp1-core-report.py
 MLP1_CORE_PAYLOAD_VALIDATOR ?= $(LEAF_ROOT)/scripts/validate-mlp1-core-payload.py
 MLP1_CORE_PROBE_RUNNER ?= $(CORES_SPRUCE_DIR)/probe-mlp1-cores-adb.sh
@@ -208,7 +208,7 @@ assemble-jawaka: jawaka-build shader-bundle-mlp1
 	@python3 "$(MLP1_SHADER_COVERAGE_TOOL)" \
 		--platform-dir "$(PLATFORM_PAYLOAD_DIR)" \
 		--exclusions "$(MLP1_SHADER_COVERAGE_EXCLUSIONS)" \
-		--report-root "$(UMRK_WORKSPACE_DIR)"
+		--report-root "$(LEAF_ROOT)/build"
 	@# RetroArch menu assets. Ozone reads every icon and font it draws from
 	@# assets_directory, which jawaka-retroarch-runner points here; without this
 	@# tree Ozone has no icons and falls back to a bitmap font that cannot draw CJK.
@@ -217,7 +217,7 @@ assemble-jawaka: jawaka-build shader-bundle-mlp1
 	@cp -Rf "$(MLP1_ASSETS_DIR)/." "$(PLATFORM_PAYLOAD_DIR)/assets/"
 	@python3 "$(MLP1_ASSET_TOOL)" validate --output "$(PLATFORM_PAYLOAD_DIR)/assets"
 	@test -f "$(PLATFORM_PAYLOAD_DIR)/cores/build-report.json" || { echo "missing MLP1 core build report: $(PLATFORM_PAYLOAD_DIR)/cores/build-report.json" >&2; exit 1; }
-	@python3 "$(UMRK_WORKSPACE_DIR)/scripts/retroarch_validate_package.py" \
+	@python3 "$(LEAF_ROOT)/scripts/retroarch_validate_package.py" \
 		--umrk-root "$(WORKSPACE_DIR)" \
 		--metadata-dir "$(MLP1_METADATA_DIR)" \
 		--build-report "$(PLATFORM_PAYLOAD_DIR)/cores/build-report.json" \
@@ -280,7 +280,7 @@ stage-retroarch:
 	@python3 "$(MLP1_CORE_REPORT_TOOL)" verify \
 		--report "$(MLP1_CORES_REPORT)" \
 		--cores-dir "$(MLP1_CORES_DIR)"
-	@python3 "$(UMRK_WORKSPACE_DIR)/scripts/retroarch_validate_package.py" \
+	@python3 "$(LEAF_ROOT)/scripts/retroarch_validate_package.py" \
 		--umrk-root "$(WORKSPACE_DIR)" \
 		--metadata-dir "$(MLP1_METADATA_DIR)" \
 		--build-report "$(MLP1_CORES_REPORT)" \
