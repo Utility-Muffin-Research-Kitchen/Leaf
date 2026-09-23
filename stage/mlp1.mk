@@ -15,7 +15,8 @@ PUBLIC_ROOT_DIRS ?= Roms Images Videos Apps BIOS Saves States Cheats Themes
 
 # --- Launcher payload assembly inputs --------------------------------------
 JAWAKA_BUILD_DIR ?= $(JAWAKA_DIR)/build/mlp1
-JAWAKA_REQUIRE_SCREENSCRAPER ?= 1
+LEAF_RELEASE_CHANNEL ?= dev
+JAWAKA_REQUIRE_SCREENSCRAPER ?= $(if $(filter beta stable,$(LEAF_RELEASE_CHANNEL)),1,0)
 DEVICE_OVERLAY   ?= $(LAUNCHER_SWITCHER_DIR)/device/mlp1
 CATASTROPHE_ASSETS_DIR ?= $(CATASTROPHE_DIR)/res/assets
 MLP1_RETROARCH_BIN ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/bin/retroarch
@@ -96,7 +97,7 @@ shader-bundle-mlp1:
 assemble-jawaka: jawaka-build shader-bundle-mlp1
 	$(MAKE) -C "$(CATASTROPHE_DIR)" assets
 	@test -f "$(JAWAKA_BUILD_DIR)/build-manifest.json" || { echo "missing Jawaka MLP1 build manifest" >&2; exit 1; }
-	@python3 -c 'import json,sys; data=json.load(open(sys.argv[1], encoding="utf-8")); sys.exit(0 if data.get("features", {}).get("screenscraper") is True else 1)' "$(JAWAKA_BUILD_DIR)/build-manifest.json" || { echo "refusing to assemble Jawaka without ScreenScraper support" >&2; exit 1; }
+	@python3 -c 'import json,sys; value=json.load(open(sys.argv[1], encoding="utf-8")).get("features", {}).get("screenscraper"); state="enabled" if value is True else "disabled" if value is False else "invalid"; print("Jawaka ScreenScraper: " + state); sys.exit(0 if state != "invalid" and (state == "enabled" or sys.argv[2] != "1") else 1)' "$(JAWAKA_BUILD_DIR)/build-manifest.json" "$(if $(filter 1 yes true,$(JAWAKA_REQUIRE_SCREENSCRAPER)),1,0)" || { echo "refusing to assemble Jawaka: ScreenScraper feature missing or disabled for a required build" >&2; exit 1; }
 	@for scale in 1 2 3 4; do \
 		asset="$(CATASTROPHE_ASSETS_DIR)/assets@$${scale}x.png"; \
 		test -f "$$asset" || { echo "missing generated Catastrophe asset: $$asset" >&2; exit 1; }; \
