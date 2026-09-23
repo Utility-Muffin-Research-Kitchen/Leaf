@@ -1,0 +1,22 @@
+name: Release preflight
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  macos-preflight:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check public release inputs
+        run: python3 scripts/check-public-release-path.py
+      - name: Check stock Bash syntax and release argument parsing
+        run: |
+          /bin/bash --version | head -1
+          make --version | head -1
+          /bin/bash -n scripts/make-sd-release-zip.sh scripts/ensure-mlp1-cores.sh scripts/release-preflight-smoke.sh
+          /bin/bash scripts/release-preflight-smoke.sh
