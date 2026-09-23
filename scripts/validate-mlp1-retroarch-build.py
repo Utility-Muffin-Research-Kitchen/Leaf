@@ -16,6 +16,7 @@ so a set with the right names in the wrong order is a different binary.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 
@@ -41,6 +42,8 @@ def main() -> None:
     ap.add_argument("--binary", required=True, type=Path)
     ap.add_argument("--manifest", required=True, type=Path)
     ap.add_argument("--expected-patch-set", required=True)
+    ap.add_argument("--require-ffmpeg", action="store_true")
+    ap.add_argument("--ffmpeg-stamp", type=Path)
     args = ap.parse_args()
 
     expected = parse_patch_set(args.expected_patch_set, "expected")
@@ -66,6 +69,15 @@ def main() -> None:
         or "--disable-ssl" in flags
     ):
         fail("RetroArch was not built with TLS support")
+
+    if args.require_ffmpeg:
+        if "--enable-ffmpeg" not in flags or "--disable-ffmpeg" in flags:
+            fail("RetroArch was not built with FFmpeg recording support")
+        if args.ffmpeg_stamp is None or not args.ffmpeg_stamp.is_file():
+            fail("MLP1 FFmpeg input stamp is missing")
+        stamp_sha256 = hashlib.sha256(args.ffmpeg_stamp.read_bytes()).hexdigest()
+        if manifest.get("ffmpeg_input_stamp_sha256") != stamp_sha256:
+            fail("FFmpeg input stamp does not match RetroArch build manifest")
 
     controls = manifest.get("patch_controls")
     if not isinstance(controls, dict) or "MLP1_PATCH_SET" not in controls:

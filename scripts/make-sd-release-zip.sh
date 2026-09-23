@@ -60,6 +60,8 @@ if [ -z "${MLP1_RETROARCH_PATCH_SET:-}" ]; then
     MLP1_RETROARCH_PATCH_SET="$(grep -v '^#' "$MLP1_RETROARCH_PATCH_SET_FILE" | grep -v '^$' | head -1)"
 fi
 MLP1_RETROARCH_VALIDATOR="${MLP1_RETROARCH_VALIDATOR:-$LEAF_ROOT/scripts/validate-mlp1-retroarch-build.py}"
+MLP1_FFMPEG_BUILDER="${MLP1_FFMPEG_BUILDER:-$RETROARCH_BUILDS_DIR/build-mlp1-ffmpeg.py}"
+MLP1_FFMPEG_STAMP="${MLP1_FFMPEG_STAMP:-$RETROARCH_BUILDS_DIR/output/mlp1/ffmpeg/input-stamp.json}"
 
 usage() {
     cat >&2 <<'EOF'
@@ -198,6 +200,9 @@ release_preflight() {
         done
         for path in \
             "$RELEASE_POLICY_TOOL" "$MLP1_RETROARCH_VALIDATOR" \
+            "$MLP1_FFMPEG_BUILDER" "$RETROARCH_BUILDS_DIR/build-mlp1-ffmpeg.sh" \
+            "$RETROARCH_BUILDS_DIR/scripts/verify-mlp1-ffmpeg.sh" \
+            "$RETROARCH_BUILDS_DIR/config/mlp1-ffmpeg-source-lock.json" \
             "$LEAF_ROOT/scripts/validate-mlp1-core-payload.py" \
             "$LEAF_ROOT/scripts/validate-ppsspp-vulkan-release.py" \
             "$LEAF_ROOT/scripts/validate-flycast-standalone-release.py" \
@@ -788,13 +793,17 @@ mlp1_retroarch_reusable() {
     python3 "$MLP1_RETROARCH_VALIDATOR" \
         --binary "$MLP1_RETROARCH_BIN" \
         --manifest "$MLP1_RETROARCH_MANIFEST" \
-        --expected-patch-set "$MLP1_RETROARCH_PATCH_SET"
+        --expected-patch-set "$MLP1_RETROARCH_PATCH_SET" \
+        --require-ffmpeg --ffmpeg-stamp "$MLP1_FFMPEG_STAMP"
 }
 
 build_missing_platform_bits() {
+    TOOLCHAIN_IMAGE="$TOOLCHAIN_IMAGE" "$MLP1_FFMPEG_BUILDER" ||
+        die "MLP1 FFmpeg source build failed"
     if ! mlp1_retroarch_reusable; then
         echo "building MLP1 RetroArch in $RETROARCH_BUILDS_DIR"
-        (cd "$RETROARCH_BUILDS_DIR" && MLP1_PATCH_SET="$MLP1_RETROARCH_PATCH_SET" ./build-mlp1.sh)
+        (cd "$RETROARCH_BUILDS_DIR" && TOOLCHAIN_IMAGE="$TOOLCHAIN_IMAGE" \
+            MLP1_REQUIRE_FFMPEG=1 MLP1_PATCH_SET="$MLP1_RETROARCH_PATCH_SET" ./build-mlp1.sh)
         mlp1_retroarch_reusable || die "MLP1 RetroArch still does not match $MLP1_RETROARCH_PATCH_SET after rebuild"
     fi
 

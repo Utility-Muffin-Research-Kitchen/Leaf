@@ -34,6 +34,7 @@ MLP1_METADATA_DIR  ?= $(LEAF_ROOT)/config/retroarch/mlp1
 MLP1_CORE_REPORT_TOOL ?= $(CORES_SPRUCE_DIR)/scripts/mlp1-core-report.py
 MLP1_CORE_PAYLOAD_VALIDATOR ?= $(LEAF_ROOT)/scripts/validate-mlp1-core-payload.py
 MLP1_CORE_PROBE_RUNNER ?= $(CORES_SPRUCE_DIR)/probe-mlp1-cores-container.sh
+MLP1_CORE_DEVICE_PROBE_RUNNER ?= $(CORES_SPRUCE_DIR)/probe-mlp1-cores-adb.sh
 MLP1_PPSSPP_PACKAGE ?= $(PPSSPP_SPRUCE_DIR)/output/mlp1/ppsspp
 MLP1_GRAPHICS_RUNTIME ?= $(LEAF_ROOT)/build/mlp1/runtime/graphics
 MLP1_VULKAN_RUNTIME ?= $(MLP1_GRAPHICS_RUNTIME)/vulkan/rk3566-g52-g29p1
@@ -44,6 +45,9 @@ MLP1_YABASANSHIRO_PACKAGE ?= $(YABASANSHIRO_STANDALONE_DIR)/output/mlp1/yabasans
 MLP1_FUN_DRASTIC_PACKAGE ?= $(FUN_DRASTIC_STANDALONE_DIR)/output/mlp1/fun-drastic
 MLP1_FFMPEG_BIN    ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/ffmpeg/bin/ffmpeg
 MLP1_FFMPEG_LIBS   ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/ffmpeg/flat
+MLP1_FFMPEG_STAMP  ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/ffmpeg/input-stamp.json
+MLP1_FFMPEG_SOURCE_LOCK ?= $(RETROARCH_BUILDS_DIR)/config/mlp1-ffmpeg-source-lock.json
+MLP1_FFMPEG_BUILDER ?= $(RETROARCH_BUILDS_DIR)/build-mlp1-ffmpeg.py
 MLP1_RECORD_CONVERT ?= $(RETROARCH_BUILDS_DIR)/config/mlp1/leaf-record-convert.sh
 MLP1_RECORD_PRESET ?= $(RETROARCH_BUILDS_DIR)/config/mlp1/retroarch-record-rkmpp.cfg
 MLP1_RETROARCH_PATCH_SET_FILE ?= $(LEAF_ROOT)/config/mlp1-retroarch-patch-set.txt
@@ -172,6 +176,9 @@ assemble-jawaka: jawaka-build shader-bundle-mlp1
 	@if [ -f "$(MLP1_FFMPEG_BIN)" ] && [ -d "$(MLP1_FFMPEG_LIBS)" ]; then \
 		mkdir -p "$(PLATFORM_PAYLOAD_DIR)/bin" "$(PLATFORM_PAYLOAD_DIR)/lib/ffmpeg"; \
 		cp -f "$(MLP1_FFMPEG_BIN)" "$(PLATFORM_PAYLOAD_DIR)/bin/ffmpeg"; \
+		test -f "$(MLP1_FFMPEG_STAMP)" && test -f "$(MLP1_FFMPEG_SOURCE_LOCK)" || { echo "missing MLP1 FFmpeg build provenance" >&2; exit 1; }; \
+		cp -f "$(MLP1_FFMPEG_STAMP)" "$(PLATFORM_PAYLOAD_DIR)/bin/ffmpeg.input-stamp.json"; \
+		cp -f "$(MLP1_FFMPEG_SOURCE_LOCK)" "$(PLATFORM_PAYLOAD_DIR)/bin/ffmpeg.source-lock.json"; \
 		chmod 755 "$(PLATFORM_PAYLOAD_DIR)/bin/ffmpeg"; \
 		find "$(MLP1_FFMPEG_LIBS)" -maxdepth 1 -type f -name '*.so.*' -exec cp -f {} "$(PLATFORM_PAYLOAD_DIR)/lib/ffmpeg/" \;; \
 		chmod 755 "$(PLATFORM_PAYLOAD_DIR)/lib/ffmpeg/"*.so.* 2>/dev/null || true; \
@@ -245,16 +252,20 @@ stage-jawaka: assemble-jawaka
 # Build or reuse the current MLP1 RetroArch/core outputs, then refresh only the
 # platform runtime folders on the SD card.
 stage-retroarch:
+	@TOOLCHAIN_IMAGE="$(TOOLCHAIN_IMAGE)" "$(MLP1_FFMPEG_BUILDER)"
 	@if ! python3 "$(MLP1_RETROARCH_VALIDATOR)" \
 			--binary "$(MLP1_RETROARCH_BIN)" \
 			--manifest "$(MLP1_RETROARCH_MANIFEST)" \
-			--expected-patch-set "$(MLP1_RETROARCH_PATCH_SET)"; then \
+			--expected-patch-set "$(MLP1_RETROARCH_PATCH_SET)" \
+			--require-ffmpeg --ffmpeg-stamp "$(MLP1_FFMPEG_STAMP)"; then \
 		echo "building MLP1 RetroArch in $(RETROARCH_BUILDS_DIR)"; \
-		cd "$(RETROARCH_BUILDS_DIR)" && MLP1_PATCH_SET="$(MLP1_RETROARCH_PATCH_SET)" ./build-mlp1.sh; \
+		cd "$(RETROARCH_BUILDS_DIR)" && TOOLCHAIN_IMAGE="$(TOOLCHAIN_IMAGE)" \
+			MLP1_REQUIRE_FFMPEG=1 MLP1_PATCH_SET="$(MLP1_RETROARCH_PATCH_SET)" ./build-mlp1.sh; \
 		cd "$(LEAF_ROOT)" && python3 "$(MLP1_RETROARCH_VALIDATOR)" \
 			--binary "$(MLP1_RETROARCH_BIN)" \
 			--manifest "$(MLP1_RETROARCH_MANIFEST)" \
-			--expected-patch-set "$(MLP1_RETROARCH_PATCH_SET)"; \
+			--expected-patch-set "$(MLP1_RETROARCH_PATCH_SET)" \
+			--require-ffmpeg --ffmpeg-stamp "$(MLP1_FFMPEG_STAMP)"; \
 	fi
 	@REBUILD_CORES="$(REBUILD_CORES)" \
 		FORCE_REBUILD_CORES="$(FORCE_REBUILD_CORES)" \
@@ -359,7 +370,7 @@ stage-core-test:
 			--report "$(MLP1_CORE_TEST_REPORT)" \
 			--cores-dir "$(MLP1_CORES_DIR)" >/dev/null 2>&1; then \
 		echo "Probing targeted MLP1 build report on the selected device"; \
-		ADB_SERIAL="$${ADB_SERIAL:-}" "$(MLP1_CORE_PROBE_RUNNER)" \
+		ADB_SERIAL="$${ADB_SERIAL:-}" "$(MLP1_CORE_DEVICE_PROBE_RUNNER)" \
 			--report "$(MLP1_CORE_TEST_REPORT)" \
 			--cores-dir "$(MLP1_CORES_DIR)"; \
 	fi; \
