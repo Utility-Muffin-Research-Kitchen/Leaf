@@ -17,6 +17,20 @@ PACKAGE_REL = Path("emulators/flycast")
 FLYCAST_SYSTEM_IDS = ("DC", "ATOMISWAVE", "NAOMI")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+# The bundled Flycast this Leaf release ships: upstream v2.7 at its pinned
+# commit, packaged as 2.7.0. A different upstream is a reviewed change here,
+# never something a payload can bring along on its own.
+EXPECTED_UPSTREAM_TAG = "v2.7"
+EXPECTED_UPSTREAM_SHA = "5aa091fde632fb332c8d8c34e280d62dc951954c"
+EXPECTED_PACKAGE_VERSION = "2.7.0"
+PACKAGE_VERSION_RE = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
+# Capability records. Jawaka hands the account snapshot only to a payload
+# carrying ra-account-v1, and the route intent only when ra-route-v1 is there
+# too; each must name exactly its capability.
+CAPABILITY_RECORDS = {
+    "ra-account-v1": "standalone-ra-account-v1",
+    "ra-route-v1": "umrk-flycast-ra-route-v1",
+}
 REQUIRED_LICENSES = {
     "Boost-Nowide-BSL-1.0.txt",
     "Breakpad-BSD-3-Clause.txt",
@@ -195,6 +209,35 @@ def validate(platform_dir: Path) -> None:
         manifest["upstream_sha"]
     ):
         fail("Flycast manifest must record a full lowercase upstream SHA")
+    if manifest["upstream_tag"] != EXPECTED_UPSTREAM_TAG:
+        fail(
+            f"Flycast upstream tag is {manifest['upstream_tag']!r}; "
+            f"this release requires {EXPECTED_UPSTREAM_TAG!r}"
+        )
+    if manifest["upstream_sha"] != EXPECTED_UPSTREAM_SHA:
+        fail(
+            f"Flycast upstream SHA is {manifest['upstream_sha']}; "
+            f"{EXPECTED_UPSTREAM_TAG} is pinned at {EXPECTED_UPSTREAM_SHA}"
+        )
+    package_version = manifest.get("package_version")
+    if not isinstance(package_version, str) or not PACKAGE_VERSION_RE.fullmatch(
+        package_version
+    ):
+        fail(
+            "Flycast manifest package_version must be MAJOR.MINOR.PATCH, "
+            f"got {package_version!r}"
+        )
+    if package_version != EXPECTED_PACKAGE_VERSION:
+        fail(
+            f"Flycast package_version is {package_version}; "
+            f"this release requires {EXPECTED_PACKAGE_VERSION}"
+        )
+    provenance = load_json(package_dir / "provenance/build-manifest.json")
+    if not isinstance(provenance, dict):
+        fail("Flycast build provenance must be a JSON object")
+    for key in ("upstream_tag", "upstream_sha", "package_version", "binary_sha256"):
+        if provenance.get(key) != manifest.get(key):
+            fail(f"Flycast build provenance {key} does not match the package manifest")
     dependencies = manifest.get("dynamic_dependencies")
     if not isinstance(dependencies, list) or not dependencies or not all(
         isinstance(item, str) and item for item in dependencies
@@ -230,6 +273,17 @@ def validate(platform_dir: Path) -> None:
         if actual_sha != expected_sha:
             fail(f"Flycast package checksum mismatch: {relative}")
 
+    for record, capability in CAPABILITY_RECORDS.items():
+        record_path = package_dir / record
+        if not record_path.is_file():
+            fail(f"missing Flycast capability record: {record}")
+        try:
+            content = record_path.read_text(encoding="utf-8").strip()
+        except (OSError, UnicodeError) as exc:
+            fail(f"unreadable Flycast capability record {record}: {exc}")
+        if content != capability:
+            fail(f"Flycast capability record {record} must name {capability!r}, not {content!r}")
+
     binary_sha = sha256(binary)
     if manifest.get("binary") != "bin/flycast":
         fail("Flycast manifest binary path must be bin/flycast")
@@ -238,7 +292,9 @@ def validate(platform_dir: Path) -> None:
 
     print(
         "Flycast standalone release gate: "
-        f"{CORE_PATH}, {len(expected_files)} checksummed files, binary {binary_sha}"
+        f"{CORE_PATH}, Flycast {manifest['upstream_tag']} package {package_version}, "
+        f"{', '.join(CAPABILITY_RECORDS)}, "
+        f"{len(expected_files)} checksummed files, binary {binary_sha}"
     )
 
 

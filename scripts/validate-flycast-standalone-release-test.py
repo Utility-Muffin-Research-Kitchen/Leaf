@@ -35,11 +35,39 @@ LICENSES = {
 }
 
 
+# The bundled payload this release requires, and the v2.6 payload it replaced
+# (kept as a negative case: a stale checkout must not pass the gate).
+V27 = {
+    "upstream_tag": "v2.7",
+    "upstream_sha": "5aa091fde632fb332c8d8c34e280d62dc951954c",
+    "package_version": "2.7.0",
+}
+V26 = {
+    "upstream_tag": "v2.6",
+    "upstream_sha": "392a429e8b040b3e5bf6696cb4f984274fc44123",
+}
+RECORDS = {
+    "ra-account-v1": "standalone-ra-account-v1\n",
+    "ra-route-v1": "umrk-flycast-ra-route-v1\n",
+}
+
+
 def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def write_manifest(package: Path) -> None:
+def write_manifest(package: Path, identity: dict | None = None,
+                   provenance_identity: dict | None = None) -> None:
+    """Write provenance/build-manifest.json and manifest.json for the current
+    package contents. `identity` replaces the upstream/package fields of the
+    manifest (None keeps v2.7 / 2.7.0); `provenance_identity` those of the
+    build provenance (None: the same as the manifest)."""
+    identity = dict(V27 if identity is None else identity)
+    provenance = dict(identity if provenance_identity is None else provenance_identity)
+    provenance["binary_sha256"] = sha256(package / "bin/flycast")
+    (package / "provenance/build-manifest.json").write_text(
+        json.dumps(provenance, indent=2) + "\n", encoding="utf-8"
+    )
     files = []
     for path in sorted(package.rglob("*")):
         if path.is_file() and path.name != "manifest.json":
@@ -55,8 +83,7 @@ def write_manifest(package: Path) -> None:
         "kind": "standalone-emulator",
         "package_schema_version": 1,
         "config_schema_version": 1,
-        "upstream_tag": "v2.6",
-        "upstream_sha": "392a429e8b040b3e5bf6696cb4f984274fc44123",
+        **identity,
         "dynamic_dependencies": ["libSDL2-2.0.so.0"],
         "binary": "bin/flycast",
         "binary_sha256": sha256(package / "bin/flycast"),
@@ -117,6 +144,7 @@ def fixture(root: Path) -> Path:
         "defaults/config.version": b"1\n",
         "defaults/SDL_Loong Gamepad.cfg": b"[emulator]\nmapping_name=Loong\n",
         "provenance/build-manifest.json": b"{}\n",
+        **{name: content.encode("utf-8") for name, content in RECORDS.items()},
     }
     for relative, content in files.items():
         (package / relative).write_bytes(content)
@@ -204,6 +232,53 @@ def main() -> None:
         path.write_text(json.dumps(data), encoding="utf-8")
 
     run_case("naomi-missing-retroarch-fallback", remove_naomi_fallback, False)
+
+    package_of = lambda platform: platform / "emulators/flycast"
+
+    # The v2.6 payload this upgrade replaces, as a stale checkout would stage it.
+    run_case("v2.6-payload", lambda platform: write_manifest(package_of(platform), V26), False)
+    run_case(
+        "v2.7-tag-at-another-commit",
+        lambda platform: write_manifest(
+            package_of(platform), {**V27, "upstream_sha": V26["upstream_sha"]}
+        ),
+        False,
+    )
+    for version in ("2.7.0-umrk1", "2.7", "v2.7.0", "02.7.0", "2.7.1"):
+        run_case(
+            f"package-version-{version}",
+            lambda platform, version=version: write_manifest(
+                package_of(platform), {**V27, "package_version": version}
+            ),
+            False,
+        )
+    run_case(
+        "package-version-missing",
+        lambda platform: write_manifest(
+            package_of(platform),
+            {k: v for k, v in V27.items() if k != "package_version"},
+        ),
+        False,
+    )
+    run_case(
+        "provenance-disagrees",
+        lambda platform: write_manifest(
+            package_of(platform), V27, {**V27, "package_version": "2.7.1"}
+        ),
+        False,
+    )
+
+    for record in RECORDS:
+        def drop_record(platform: Path, record=record) -> None:
+            (package_of(platform) / record).unlink()
+            write_manifest(package_of(platform))
+
+        def wrong_record(platform: Path, record=record) -> None:
+            (package_of(platform) / record).write_text("something-else-v1\n", encoding="utf-8")
+            write_manifest(package_of(platform))
+
+        run_case(f"missing-{record}", drop_record, False)
+        run_case(f"wrong-{record}", wrong_record, False)
     print("Flycast standalone release policy checks passed")
 
 

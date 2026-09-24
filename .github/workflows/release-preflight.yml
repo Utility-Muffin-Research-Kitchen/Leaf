@@ -20,3 +20,5 @@ jobs:
           make --version | head -1
           /bin/bash -n scripts/make-sd-release-zip.sh scripts/ensure-mlp1-cores.sh scripts/release-preflight-smoke.sh
           /bin/bash scripts/release-preflight-smoke.sh
+      - name: Flycast standalone release gate policy
+        run: python3 scripts/validate-flycast-standalone-release-test.py
