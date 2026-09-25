@@ -42,6 +42,12 @@ MLP1_VULKAN_RUNTIME ?= $(MLP1_GRAPHICS_RUNTIME)/vulkan/rk3566-g52-g29p1
 MLP1_DRASTIC_PACKAGE ?= $(LEAF_ROOT)/build/drastic/mlp1/drastic
 MLP1_MUPEN64PLUS_PACKAGE ?= $(N64_STANDALONE_DIR)/output/mlp1/mupen64plus
 MLP1_FLYCAST_PACKAGE ?= $(FLYCAST_STANDALONE_DIR)/output/mlp1/flycast
+# A Flycast-standalone checkout with locks/build-inputs.lock.json builds with
+# its own digest-pinned toolchain. Forcing Leaf's TOOLCHAIN_IMAGE (by default
+# the unpinned :local tag) into that build stages a binary that differs from
+# the reproducible payload. FLYCAST_TOOLCHAIN_IMAGE overrides the lock for
+# deliberate toolchain development only.
+FLYCAST_TOOLCHAIN_IMAGE ?=
 MLP1_YABASANSHIRO_PACKAGE ?= $(YABASANSHIRO_STANDALONE_DIR)/output/mlp1/yabasanshiro
 MLP1_FUN_DRASTIC_PACKAGE ?= $(FUN_DRASTIC_STANDALONE_DIR)/output/mlp1/fun-drastic
 MLP1_FFMPEG_BIN    ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/ffmpeg/bin/ffmpeg
@@ -465,7 +471,13 @@ stage-emulator:
 			;; \
 		flycast) \
 			test -d "$(FLYCAST_STANDALONE_DIR)" || { echo "missing repo: $(FLYCAST_STANDALONE_DIR)" >&2; exit 1; }; \
-			$(MAKE) -C "$(FLYCAST_STANDALONE_DIR)" package-mlp1 TOOLCHAIN_IMAGE="$(TOOLCHAIN_IMAGE)"; \
+			if [ -n "$(FLYCAST_TOOLCHAIN_IMAGE)" ]; then \
+				$(MAKE) -C "$(FLYCAST_STANDALONE_DIR)" package-mlp1 TOOLCHAIN_IMAGE="$(FLYCAST_TOOLCHAIN_IMAGE)"; \
+			elif [ -f "$(FLYCAST_STANDALONE_DIR)/locks/build-inputs.lock.json" ]; then \
+				$(MAKE) -C "$(FLYCAST_STANDALONE_DIR)" package-mlp1; \
+			else \
+				$(MAKE) -C "$(FLYCAST_STANDALONE_DIR)" package-mlp1 TOOLCHAIN_IMAGE="$(TOOLCHAIN_IMAGE)"; \
+			fi; \
 			package_dir="$(MLP1_FLYCAST_PACKAGE)"; \
 			remote_name="flycast"; \
 			;; \
