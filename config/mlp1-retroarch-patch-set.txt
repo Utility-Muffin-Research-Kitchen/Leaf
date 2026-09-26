@@ -37,4 +37,12 @@
 # for the whole recording. It does not appear in the clip (capture taps the core
 # framebuffer before this pass, same reason shaders are not captured).
 #
-portrait-rotation,command-menu,jawaka-load-content,controller-bindings,record-scale-clamp,record-indicator
+# wayland-swap-interval: SDL's Wayland backend clamps any swap interval above 1
+# to 1, so at 120 Hz Auto's interval 2 became 1 and ~60 fps content landed 1, 3
+# or 4 refreshes apart (27% at the intended two). The patch preserves the back
+# buffer and swaps once per refresh the interval asks for. It only engages when
+# Auto picks 2 or more; 60 Hz, BFI and fast-forward keep a single swap. Jawaka
+# forces video_swap_interval to Auto so it can. Plan:
+# umrk-workspace plans/retroarch/mlp1-120hz-frame-pacing.md.
+#
+portrait-rotation,command-menu,jawaka-load-content,controller-bindings,record-scale-clamp,record-indicator,wayland-swap-interval
