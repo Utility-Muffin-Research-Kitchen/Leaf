@@ -866,6 +866,7 @@ mlp1_retroarch_reusable() {
         --binary "$MLP1_RETROARCH_BIN" \
         --manifest "$MLP1_RETROARCH_MANIFEST" \
         --expected-patch-set "$MLP1_RETROARCH_PATCH_SET" \
+        --retroarch-builds-dir "$RETROARCH_BUILDS_DIR" \
         --require-ffmpeg --ffmpeg-stamp "$MLP1_FFMPEG_STAMP"
 }
 

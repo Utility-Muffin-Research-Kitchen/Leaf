@@ -167,6 +167,7 @@ assemble-jawaka: jawaka-build shader-bundle-mlp1
 			--binary "$(MLP1_RETROARCH_BIN)" \
 			--manifest "$(MLP1_RETROARCH_MANIFEST)" \
 			--expected-patch-set "$(MLP1_RETROARCH_PATCH_SET)" \
+			--retroarch-builds-dir "$(RETROARCH_BUILDS_DIR)" \
 		|| { echo "refusing to stage an unverified RetroArch; run: make stage-retroarch DEVICE=mlp1" >&2; exit 1; }; \
 		mkdir -p "$(PLATFORM_PAYLOAD_DIR)/bin"; \
 		cp -f "$(MLP1_RETROARCH_BIN)" "$(PLATFORM_PAYLOAD_DIR)/bin/retroarch"; \
@@ -264,6 +265,7 @@ stage-retroarch:
 			--binary "$(MLP1_RETROARCH_BIN)" \
 			--manifest "$(MLP1_RETROARCH_MANIFEST)" \
 			--expected-patch-set "$(MLP1_RETROARCH_PATCH_SET)" \
+			--retroarch-builds-dir "$(RETROARCH_BUILDS_DIR)" \
 			--require-ffmpeg --ffmpeg-stamp "$(MLP1_FFMPEG_STAMP)"; then \
 		echo "building MLP1 RetroArch in $(RETROARCH_BUILDS_DIR)"; \
 		cd "$(RETROARCH_BUILDS_DIR)" && TOOLCHAIN_IMAGE="$(TOOLCHAIN_IMAGE)" \
@@ -272,6 +274,7 @@ stage-retroarch:
 			--binary "$(MLP1_RETROARCH_BIN)" \
 			--manifest "$(MLP1_RETROARCH_MANIFEST)" \
 			--expected-patch-set "$(MLP1_RETROARCH_PATCH_SET)" \
+			--retroarch-builds-dir "$(RETROARCH_BUILDS_DIR)" \
 			--require-ffmpeg --ffmpeg-stamp "$(MLP1_FFMPEG_STAMP)"; \
 	fi
 	@REBUILD_CORES="$(REBUILD_CORES)" \
