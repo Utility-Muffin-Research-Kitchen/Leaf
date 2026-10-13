@@ -45,4 +45,13 @@
 # forces video_swap_interval to Auto so it can. Plan:
 # umrk-workspace plans/retroarch/mlp1-120hz-frame-pacing.md.
 #
-portrait-rotation,command-menu,jawaka-load-content,controller-bindings,record-scale-clamp,record-indicator,wayland-swap-interval
+# sdl-gl-attributes: RetroArch sets SDL's GL context version and profile in
+# bind_api, before SDL's video subsystem exists, and SDL resets them when it
+# starts. The device's SDL happens to default to GLES 2, which hides it; an SDL
+# that defaults to desktop GL (Debian's, as in the 32-bit Yabadabadoo pak, which
+# vendors this set) gets a desktop context a GLES-only driver cannot create. The
+# patch stores the request in bind_api and applies it again after SDL starts, so
+# the 64-bit build no longer depends on that default. It edits the same function
+# as wayland-swap-interval and is written to apply after it, so keep it last.
+#
+portrait-rotation,command-menu,jawaka-load-content,controller-bindings,record-scale-clamp,record-indicator,wayland-swap-interval,sdl-gl-attributes
