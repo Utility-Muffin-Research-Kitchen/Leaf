@@ -296,9 +296,14 @@ selected image ID is recorded in `provenance/components.json`;
 to pull the published image and resolve its ID.
 
 Before building a tagged release, run the `Publish corresponding source`
-workflow in `Yabasanshiro-standalone`. Normally, use the same tag as Leaf. If
+workflow in `Yabasanshiro-standalone` with the Leaf tag. If that repository's
+`main` already has a published source release, the workflow reuses it: nothing
+is rebuilt or uploaded, and the Leaf tag is added to that release's
+`Leaf releases:` notes line. Pass the reused tag, which the run summary names,
+to the Leaf build as `YABASANSHIRO_SOURCE_TAG`. Otherwise the workflow
+publishes new source under the Leaf tag, and the override can stay unset. If
 you revise the standalone source while that Leaf release is still unpublished,
-publish an immutable source revision tag and pass it to the Leaf build as
+publish an immutable source revision tag and pass it as
 `YABASANSHIRO_SOURCE_TAG`. The source tag identifies corresponding source only;
 it does not change the Leaf release identity. The workflow publishes the exact
 GPL source archive and checksum, but no emulator binary. Leaf downloads and

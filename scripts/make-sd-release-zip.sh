@@ -943,19 +943,20 @@ package_app() {
     printf '%s/%s\n' "$destination_platform" "$package_name" >>"$MANAGED_APPS_FILE"
 }
 
-# The Saturn corresponding source has its own immutable revision tag when the
-# wrapper changes inside an unpublished Leaf release: the old source tag and its
-# assets must never be replaced, and a source-only tag must never become the
-# Leaf release identity. YABASANSHIRO_SOURCE_TAG selects it; unset, this is
-# exactly the old matching-tag behavior. A differing source tag is not
-# permission to build from a differing source commit -- the tag-to-commit,
-# archive and checksum gates below are unchanged.
-# See umrk-workspace/plans/bios-selection-source-release.md.
+# The Saturn corresponding source tag can differ from the Leaf tag. A Leaf
+# release whose standalone commit is already published reuses that source
+# release, and a wrapper change inside an unpublished Leaf release gets its own
+# immutable revision tag: published source tags and assets are never replaced,
+# and a source-only tag never becomes the Leaf release identity.
+# YABASANSHIRO_SOURCE_TAG selects it; unset, the source tag must equal the Leaf
+# tag. A differing source tag is not permission to build from a differing
+# source commit -- the tag-to-commit, archive and checksum gates below are
+# unchanged. See umrk-workspace/plans/bios-selection-source-release.md.
 prepare_yabasanshiro_source() {
     local source_repo="https://github.com/Utility-Muffin-Research-Kitchen/Yabasanshiro-standalone"
     local source_tag="${YABASANSHIRO_SOURCE_TAG:-$LEAF_RELEASE_TAG}"
     local source_archive source_sha source_name source_extra remote_sha local_sha
-    local checksum_file source_file downloaded_sha
+    local checksum_file source_file downloaded_sha published_tags
     local YABASANSHIRO_UPSTREAM_VERSION
 
     case "$source_tag" in
@@ -978,7 +979,14 @@ prepare_yabasanshiro_source() {
 
     local_sha="$(git -C "$YABASANSHIRO_STANDALONE_DIR" rev-parse HEAD)"
     remote_sha="$(git ls-remote --refs "$source_repo.git" "refs/tags/$source_tag" | awk 'NR == 1 {print $1}')"
-    [ -n "$remote_sha" ] || die "missing published YabaSanshiro source tag: $source_tag"
+    if [ -z "$remote_sha" ]; then
+        published_tags="$(git ls-remote --refs --tags "$source_repo.git" |
+            awk -v sha="$local_sha" '$1 == sha {sub("^refs/tags/", "", $2); printf " %s", $2}')"
+        [ -z "$published_tags" ] || die "missing published YabaSanshiro source tag: $source_tag
+This YabaSanshiro commit is already published as:$published_tags
+To reuse it, pass YABASANSHIRO_SOURCE_TAG with the tag the Publish corresponding source run named."
+        die "missing published YabaSanshiro source tag: $source_tag"
+    fi
     [ "$remote_sha" = "$local_sha" ] || \
         die "YabaSanshiro source tag $source_tag points at $remote_sha, expected $local_sha"
 
