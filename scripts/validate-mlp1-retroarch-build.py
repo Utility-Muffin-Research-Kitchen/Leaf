@@ -17,6 +17,11 @@ save and load commands both landed in command-menu without renaming it), so the
 manifest's patch, build script and binary hashes are compared against the
 retroarch-builds checkout too. A manifest written before those hashes existed
 is stale by definition and forces one rebuild.
+
+The binary is not the whole build either. RetroArch loads the patched SDL2
+built beside it through a $ORIGIN/../lib/retroarch runpath, and quietly falls
+back to the rootfs SDL when that file is missing, which works until HDMI is
+unplugged. So the library must be there and match the manifest as well.
 """
 
 from __future__ import annotations
@@ -26,6 +31,8 @@ import hashlib
 import json
 from pathlib import Path, PurePosixPath
 
+SDL2_LIBRARY = "libSDL2-2.0.so.0"
+SDL2_RUNPATH = "$ORIGIN/../lib/retroarch"
 
 def fail(message: str) -> None:
     raise SystemExit(f"stale: {message}")
@@ -174,9 +181,31 @@ def main() -> None:
     if sha256(args.binary) != binary_sha256:
         fail(f"RetroArch binary does not match its build manifest: {args.binary}")
 
+    runpath = manifest.get("runpath")
+    if not isinstance(runpath, str) or SDL2_RUNPATH not in runpath.split(":"):
+        fail(f"RetroArch was not linked with the {SDL2_RUNPATH} runpath")
+    sdl2 = manifest.get("sdl2")
+    if not isinstance(sdl2, dict):
+        fail("build manifest does not record the bundled SDL2")
+    sdl2_patches = sdl2.get("patches_sha256")
+    if not isinstance(sdl2_patches, dict) or not sdl2_patches:
+        fail("build manifest does not record sdl2.patches_sha256")
+    for label, digest in sorted(sdl2_patches.items()):
+        if not isinstance(digest, str) or not digest:
+            fail(f"build manifest has no sdl2.patches_sha256 entry for {label}")
+        check_input(builds_dir / "patches", label, digest, "SDL2 patch")
+    library = args.binary.parent.parent / "lib" / "retroarch" / SDL2_LIBRARY
+    if library.is_symlink() or not library.is_file():
+        fail(f"no bundled SDL2 at {library}")
+    library_sha256 = sdl2.get("output_library_sha256")
+    if not isinstance(library_sha256, str) or not library_sha256:
+        fail("build manifest does not record sdl2.output_library_sha256")
+    if sha256(library) != library_sha256:
+        fail(f"bundled SDL2 does not match its build manifest: {library}")
+
     print(
         f"reusable: RetroArch matches patch set {','.join(expected)} "
-        "and its recorded patch, build script and binary hashes"
+        "and its recorded patch, build script, binary and SDL2 hashes"
     )
 
 
