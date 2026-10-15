@@ -21,6 +21,10 @@ DEVICE_OVERLAY   ?= $(LAUNCHER_SWITCHER_DIR)/device/mlp1
 CATASTROPHE_ASSETS_DIR ?= $(CATASTROPHE_DIR)/res/assets
 MLP1_RETROARCH_BIN ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/bin/retroarch
 MLP1_RETROARCH_MANIFEST ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/build-manifest.json
+# Built with RetroArch and found through its $$ORIGIN/../lib/retroarch RUNPATH, so
+# it sits at lib/retroarch beside bin/ in the build output and on the card.
+# MLP1_RETROARCH_VALIDATOR looks for it there too.
+MLP1_RETROARCH_SDL2 = $(abspath $(dir $(MLP1_RETROARCH_BIN))../lib/retroarch/libSDL2-2.0.so.0)
 MLP1_SHADERS_DIR    ?= $(RETROARCH_BUILDS_DIR)/output/mlp1/shaders
 MLP1_SHADER_TOOL    ?= $(RETROARCH_BUILDS_DIR)/scripts/mlp1_shader_bundle.py
 MLP1_SHADER_COVERAGE_TOOL ?= $(LEAF_ROOT)/scripts/validate-shader-coverage.py
@@ -169,10 +173,11 @@ assemble-jawaka: jawaka-build shader-bundle-mlp1
 			--expected-patch-set "$(MLP1_RETROARCH_PATCH_SET)" \
 			--retroarch-builds-dir "$(RETROARCH_BUILDS_DIR)" \
 		|| { echo "refusing to stage an unverified RetroArch; run: make stage-retroarch DEVICE=mlp1" >&2; exit 1; }; \
-		mkdir -p "$(PLATFORM_PAYLOAD_DIR)/bin"; \
+		mkdir -p "$(PLATFORM_PAYLOAD_DIR)/bin" "$(PLATFORM_PAYLOAD_DIR)/lib/retroarch"; \
 		cp -f "$(MLP1_RETROARCH_BIN)" "$(PLATFORM_PAYLOAD_DIR)/bin/retroarch"; \
 		cp -f "$(MLP1_RETROARCH_MANIFEST)" "$(PLATFORM_PAYLOAD_DIR)/bin/retroarch.build-manifest.json"; \
-		chmod 755 "$(PLATFORM_PAYLOAD_DIR)/bin/retroarch"; \
+		cp -f "$(MLP1_RETROARCH_SDL2)" "$(PLATFORM_PAYLOAD_DIR)/lib/retroarch/libSDL2-2.0.so.0"; \
+		chmod 755 "$(PLATFORM_PAYLOAD_DIR)/bin/retroarch" "$(PLATFORM_PAYLOAD_DIR)/lib/retroarch/libSDL2-2.0.so.0"; \
 	else \
 		echo "warning: MLP1 RetroArch not found at $(MLP1_RETROARCH_BIN); launches will fail until built (make stage-retroarch)."; \
 	fi
@@ -339,10 +344,11 @@ stage-retroarch:
 		REMOTE_SYSTEM_PATH="$$remote_system" \
 		REMOTE_PLATFORM_PATH="$$remote_platform" \
 		"$(LEAF_ROOT)/scripts/adb-sync-shader-namespaces.sh" --migrate-only; \
-	"$${ADB[@]}" shell "mkdir -p '$$remote_platform' && rm -rf '$$remote_platform/bin' '$$remote_platform/shaders' '$$remote_platform/assets' && mkdir -p '$$remote_platform/bin' '$$remote_platform/cores' '$$remote_platform/info' '$$remote_platform/shaders' '$$remote_platform/assets'"; \
+	"$${ADB[@]}" shell "mkdir -p '$$remote_platform' && rm -rf '$$remote_platform/bin' '$$remote_platform/lib/retroarch' '$$remote_platform/shaders' '$$remote_platform/assets' && mkdir -p '$$remote_platform/bin' '$$remote_platform/lib/retroarch' '$$remote_platform/cores' '$$remote_platform/info' '$$remote_platform/shaders' '$$remote_platform/assets'"; \
 	ADB_SERIAL="$$serial" "$(LEAF_ROOT)/scripts/adb-replace-managed-files.sh" "$$remote_platform/cores" "$(MLP1_CORES_DIR)" '*_libretro.so'; \
 	ADB_SERIAL="$$serial" "$(LEAF_ROOT)/scripts/adb-replace-managed-files.sh" "$$remote_platform/info" "$(MLP1_INFO_DIR)" '*_libretro.info'; \
 	"$${ADB[@]}" push "$(MLP1_RETROARCH_BIN)" "$$remote_platform/bin/retroarch" >/dev/null; \
+	"$${ADB[@]}" push "$(MLP1_RETROARCH_SDL2)" "$$remote_platform/lib/retroarch/libSDL2-2.0.so.0" >/dev/null; \
 	if [ -f "$(MLP1_RETROARCH_MANIFEST)" ]; then \
 		"$${ADB[@]}" push "$(MLP1_RETROARCH_MANIFEST)" "$$remote_platform/bin/retroarch.build-manifest.json" >/dev/null; \
 	fi; \
@@ -367,7 +373,7 @@ stage-retroarch:
 		REMOTE_SYSTEM_PATH="$$remote_system" \
 		REMOTE_PLATFORM_PATH="$$remote_platform" \
 		"$(LEAF_ROOT)/scripts/adb-sync-asset-namespaces.sh"; \
-	"$${ADB[@]}" shell "chmod 755 '$$remote_platform/bin/retroarch' '$$remote_platform/cores/'*_libretro.so 2>/dev/null || true"; \
+	"$${ADB[@]}" shell "chmod 755 '$$remote_platform/bin/retroarch' '$$remote_platform/lib/retroarch/libSDL2-2.0.so.0' '$$remote_platform/cores/'*_libretro.so 2>/dev/null || true"; \
 	"$${ADB[@]}" shell sync; \
 	echo "RetroArch platform payload staged."
 

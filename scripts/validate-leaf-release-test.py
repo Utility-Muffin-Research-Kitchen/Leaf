@@ -303,11 +303,20 @@ class CandidateTests(unittest.TestCase):
                    for name in MODULE.REQUIRED_RECORDING_LIBRARIES},
             },
         }), encoding="utf-8")
+        sdl2 = platform / MODULE.MLP1_RETROARCH_SDL2
+        sdl2.parent.mkdir(parents=True)
+        sdl2.write_bytes(b"\x7fELF SDL2\n")
         (platform / "bin" / "retroarch.build-manifest.json").write_text(
             json.dumps({"configure_flags": ["--enable-ffmpeg", "--enable-ssl"],
-                        "ffmpeg_input_stamp_sha256": digest(stamp)}),
+                        "ffmpeg_input_stamp_sha256": digest(stamp),
+                        "runpath": "$ORIGIN/../lib/retroarch:$ORIGIN/../lib/ffmpeg",
+                        "sdl2": {"output_library_sha256": digest(sdl2)}}),
             encoding="utf-8",
         )
+        licenses = root / "licenses"
+        licenses.mkdir()
+        (licenses / "SDL2.txt").write_text("zlib license\n", encoding="utf-8")
+        (licenses / "SDL2.md").write_text("# SDL2 notice\n", encoding="utf-8")
 
         provenance = {
             "schema": 1,
@@ -421,6 +430,42 @@ class CandidateTests(unittest.TestCase):
             manifest.write_text(json.dumps(data), encoding="utf-8")
             with self.assertRaisesRegex(MODULE.PolicyError, "does not match the FFmpeg"):
                 MODULE.validate_candidate(args)
+
+    def test_candidate_rejects_missing_or_stale_retroarch_sdl2(self):
+        for change, reason in (
+            ("missing", "missing or empty MLP1 RetroArch SDL2"),
+            ("stale", "SDL2 does not match its build manifest"),
+            ("symlink", "SDL2 must be a regular file"),
+            ("runpath", "does not load SDL2 from lib/retroarch"),
+            ("unrecorded", "SDL2 does not match its build manifest"),
+            ("license", "missing or empty SDL2 license"),
+            ("notice", "missing or empty SDL2 notice"),
+        ):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as raw:
+                args = self.make_candidate(Path(raw))
+                platform = args.release_root / "platforms" / "mlp1"
+                library = platform / MODULE.MLP1_RETROARCH_SDL2
+                manifest = platform / "bin" / "retroarch.build-manifest.json"
+                data = json.loads(manifest.read_text(encoding="utf-8"))
+                if change == "missing":
+                    library.unlink()
+                elif change == "stale":
+                    library.write_bytes(b"rootfs SDL2")
+                elif change == "symlink":
+                    target = library.with_name("libSDL2-2.0.so.0.2800.5")
+                    library.rename(target)
+                    library.symlink_to(target.name)
+                elif change == "runpath":
+                    data["runpath"] = "$ORIGIN/../lib/ffmpeg"
+                elif change == "unrecorded":
+                    del data["sdl2"]
+                elif change == "license":
+                    (args.release_root / "licenses" / "SDL2.txt").unlink()
+                else:
+                    (args.release_root / "licenses" / "SDL2.md").unlink()
+                manifest.write_text(json.dumps(data), encoding="utf-8")
+                with self.assertRaisesRegex(MODULE.PolicyError, reason):
+                    MODULE.validate_candidate(args)
 
     def test_candidate_rejects_retroarch_without_recording_support(self):
         with tempfile.TemporaryDirectory() as raw:

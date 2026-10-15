@@ -15,6 +15,7 @@ PATCHES = {
     "one": "mlp1/0001-one.patch",
     "two": "common/0002-two.patch",
 }
+SDL2_PATCH = "mlp1/sdl2/0001-null-display.patch"
 
 
 def sha256(path: Path) -> str:
@@ -29,7 +30,8 @@ class RetroarchReuseTests(unittest.TestCase):
         self.binary = self.builds / "output/mlp1/bin/retroarch"
         self.manifest_path = self.builds / "output/mlp1/build-manifest.json"
         self.stamp = self.builds / "output/mlp1/ffmpeg/input-stamp.json"
-        for label in PATCHES.values():
+        self.sdl2 = self.builds / "output/mlp1/lib/retroarch/libSDL2-2.0.so.0"
+        for label in (*PATCHES.values(), SDL2_PATCH):
             patch = self.builds / "patches" / label
             patch.parent.mkdir(parents=True, exist_ok=True)
             patch.write_text(f"--- a/{label}\n+++ b/{label}\n", encoding="utf-8")
@@ -37,6 +39,8 @@ class RetroarchReuseTests(unittest.TestCase):
             (self.builds / script).write_text(f"#!/bin/sh\n# {script}\n", encoding="utf-8")
         self.binary.parent.mkdir(parents=True)
         self.binary.write_bytes(b"retroarch fixture")
+        self.sdl2.parent.mkdir(parents=True)
+        self.sdl2.write_bytes(b"sdl2 fixture")
         self.stamp.parent.mkdir(parents=True)
         self.stamp.write_text('{"source_lock_sha256":"test"}\n', encoding="utf-8")
         url = "https://github.com/libretro/RetroArch.git"
@@ -60,6 +64,13 @@ class RetroarchReuseTests(unittest.TestCase):
             },
             "ffmpeg_input_stamp_sha256": sha256(self.stamp),
             "output_binary_sha256": sha256(self.binary),
+            "runpath": "$ORIGIN/../lib/retroarch:$ORIGIN/../lib/ffmpeg",
+            "sdl2": {
+                "patches_sha256": {
+                    SDL2_PATCH: sha256(self.builds / "patches" / SDL2_PATCH),
+                },
+                "output_library_sha256": sha256(self.sdl2),
+            },
         }
 
     def tearDown(self) -> None:
@@ -172,6 +183,38 @@ class RetroarchReuseTests(unittest.TestCase):
     def test_binary_replaced_after_build_is_stale(self) -> None:
         self.binary.write_bytes(b"a different retroarch")
         self.assertStale("binary does not match its build manifest")
+
+    def test_missing_or_replaced_sdl2_is_stale(self) -> None:
+        # RetroArch would quietly load the rootfs SDL, which crashes on an
+        # HDMI unplug.
+        self.sdl2.write_bytes(b"a different sdl2")
+        self.assertStale("bundled SDL2 does not match its build manifest")
+        self.sdl2.unlink()
+        self.assertStale("no bundled SDL2 at")
+        self.sdl2.symlink_to(self.binary)
+        self.assertStale("no bundled SDL2 at")
+
+    def test_manifest_without_sdl2_is_stale(self) -> None:
+        for key, value, reason in (
+            ("sdl2", None, "does not record the bundled SDL2"),
+            ("sdl2", {"output_library_sha256": "x"}, "sdl2.patches_sha256"),
+            ("sdl2", {"patches_sha256": {SDL2_PATCH: ""}}, "no sdl2.patches_sha256 entry"),
+            ("runpath", None, "runpath"),
+            ("runpath", "$ORIGIN/../lib/ffmpeg", "runpath"),
+        ):
+            with self.subTest(key=key, value=value):
+                saved = self.manifest[key]
+                self.manifest[key] = value
+                self.assertStale(reason)
+                self.manifest[key] = saved
+        sdl2 = self.manifest["sdl2"]
+        del sdl2["output_library_sha256"]
+        self.assertStale("sdl2.output_library_sha256")
+
+    def test_sdl2_patch_edited_in_place_is_stale(self) -> None:
+        patch = self.builds / "patches" / SDL2_PATCH
+        patch.write_text(patch.read_text(encoding="utf-8") + "+edited\n", encoding="utf-8")
+        self.assertStale(f"SDL2 patch {SDL2_PATCH} changed since")
 
     def test_missing_checkout_is_stale(self) -> None:
         for script in ("build-mlp1.sh", "fetch-retroarch.sh"):

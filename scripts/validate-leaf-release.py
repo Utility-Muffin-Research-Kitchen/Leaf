@@ -75,6 +75,9 @@ REQUIRED_RECORDING_LIBRARIES = (
     "libswresample.so.4",
     "libswscale.so.7",
 )
+# RetroArch's patched SDL2, found through its $ORIGIN/../lib/retroarch runpath.
+MLP1_RETROARCH_SDL2 = Path("lib") / "retroarch" / "libSDL2-2.0.so.0"
+MLP1_RETROARCH_SDL2_RUNPATH = "$ORIGIN/../lib/retroarch"
 
 
 class PolicyError(Exception):
@@ -364,6 +367,33 @@ def validate_mlp1_recording_payload(platform: Path) -> None:
         raise PolicyError("MLP1 RetroArch does not match the FFmpeg input stamp")
 
 
+def validate_mlp1_retroarch_sdl2(root: Path, platform: Path) -> None:
+    # Without this file RetroArch loads the firmware's SDL 2.28.5 instead,
+    # which crashes when HDMI is unplugged and loses the in-game save.
+    library = platform / MLP1_RETROARCH_SDL2
+    if library.is_symlink():
+        raise PolicyError(f"MLP1 RetroArch SDL2 must be a regular file: {library}")
+    require_file(library, "MLP1 RetroArch SDL2")
+    manifest = read_json(
+        platform / "bin" / "retroarch.build-manifest.json",
+        "MLP1 RetroArch build manifest",
+    )
+    if not isinstance(manifest, dict):
+        raise PolicyError("MLP1 RetroArch build manifest has an invalid format")
+    runpath = manifest.get("runpath")
+    if (
+        not isinstance(runpath, str)
+        or MLP1_RETROARCH_SDL2_RUNPATH not in runpath.split(":")
+    ):
+        raise PolicyError("MLP1 RetroArch does not load SDL2 from lib/retroarch")
+    sdl2 = manifest.get("sdl2")
+    expected = sdl2.get("output_library_sha256") if isinstance(sdl2, dict) else None
+    if expected != hashlib.sha256(library.read_bytes()).hexdigest():
+        raise PolicyError("MLP1 RetroArch SDL2 does not match its build manifest")
+    require_file(root / "licenses" / "SDL2.txt", "SDL2 license")
+    require_file(root / "licenses" / "SDL2.md", "SDL2 notice")
+
+
 def read_staged_environment(env_path: Path) -> dict[str, str]:
     result = subprocess.run(
         [
@@ -406,6 +436,7 @@ def validate_candidate(args: argparse.Namespace) -> None:
     require_file(env_path, "runtime environment")
     validate_mlp1_retroarch_input_profile(platform)
     validate_mlp1_recording_payload(platform)
+    validate_mlp1_retroarch_sdl2(root, platform)
     if b"relocate-games-v1" not in daemon.read_bytes():
         raise PolicyError("launcher daemon does not advertise relocate-games-v1")
     if b"source-paths-v2" not in daemon.read_bytes():
