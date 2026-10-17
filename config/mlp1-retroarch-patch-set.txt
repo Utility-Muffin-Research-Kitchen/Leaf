@@ -63,4 +63,10 @@
 # blocks game input from the poll that first sees the modifier, only when
 # input_hotkey_block_delay is 0 (Jawaka's default for the Menu modifier).
 #
-portrait-rotation,command-menu,jawaka-load-content,controller-bindings,record-scale-clamp,record-indicator,wayland-swap-interval,sdl-gl-attributes,hotkey-poll-block
+# get-status-system-id: GET_STATUS copied the core's system_id with no NULL
+# check, and a core whose .info has no systemid (Game & Watch, EasyRPG) leaves
+# it NULL, so RetroArch died with SIGSEGV. jawakad sends GET_STATUS on every
+# in-game Menu tap, so Menu killed those games. The patch answers with the
+# core's library name instead; upstream fixed it after v1.22.2.
+#
+portrait-rotation,command-menu,jawaka-load-content,controller-bindings,record-scale-clamp,record-indicator,wayland-swap-interval,sdl-gl-attributes,hotkey-poll-block,get-status-system-id
