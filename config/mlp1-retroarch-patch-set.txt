@@ -52,6 +52,15 @@
 # vendors this set) gets a desktop context a GLES-only driver cannot create. The
 # patch stores the request in bind_api and applies it again after SDL starts, so
 # the 64-bit build no longer depends on that default. It edits the same function
-# as wayland-swap-interval and is written to apply after it, so keep it last.
+# as wayland-swap-interval and is written to apply after it.
 #
-portrait-rotation,command-menu,jawaka-load-content,controller-bindings,record-scale-clamp,record-indicator,wayland-swap-interval,sdl-gl-attributes
+# hotkey-poll-block: RetroArch decides "the hotkey modifier is held, block game
+# input" from the previous poll, and the core reads input after the next one.
+# Jawaka's input proxy holds Menu back until the chord button arrives and sends
+# both together, so the core saw the chord button for one frame on nearly every
+# Menu chord. gambatte and gpSP make R2 a hold-to-fast-forward, so a Menu + R2
+# fast-forward toggle turned on but took several presses to turn off. The patch
+# blocks game input from the poll that first sees the modifier, only when
+# input_hotkey_block_delay is 0 (Jawaka's default for the Menu modifier).
+#
+portrait-rotation,command-menu,jawaka-load-content,controller-bindings,record-scale-clamp,record-indicator,wayland-swap-interval,sdl-gl-attributes,hotkey-poll-block
