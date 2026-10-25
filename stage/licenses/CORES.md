@@ -47,6 +47,7 @@ from the named upstream release asset.
 | np2kai | MIT | https://github.com/libretro/NP2kai |
 | pcsx_rearmed | GPL-2.0 | https://github.com/libretro/pcsx_rearmed |
 | picodrive | PicoDrive (non-commercial) | https://github.com/libretro/picodrive |
+| pokemini | GPL-3.0 | https://github.com/libretro/PokeMini |
 | ppsspp (standalone) | GPL-2.0+ | https://github.com/hrydgard/ppsspp |
 | prosystem | GPL-2.0 | https://github.com/libretro/prosystem-libretro |
 | puae | GPL-2.0 | https://github.com/libretro/libretro-uae |
