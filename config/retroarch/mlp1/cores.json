@@ -953,6 +953,25 @@
       "status": "packaged"
     },
     {
+      "id": "pokemini",
+      "display_name": "PokeMini",
+      "type": "retroarch",
+      "libretro_name": "pokemini",
+      "file_name": "pokemini_libretro.so",
+      "config_folder": "PokeMini",
+      "info_name": "pokemini_libretro.info",
+      "path": null,
+      "supports_menu": true,
+      "supports_savestate": true,
+      "supports_disk_control": false,
+      "needs_swap": false,
+      "requires_direct_drm": false,
+      "platforms": [
+        "mlp1"
+      ],
+      "status": "packaged"
+    },
+    {
       "id": "ports",
       "display_name": "Ports",
       "type": "path",

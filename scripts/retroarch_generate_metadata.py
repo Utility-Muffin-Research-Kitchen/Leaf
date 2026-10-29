@@ -64,6 +64,7 @@ MLP1_PACKAGED_CORE_LIBRARY_NAMES = {
     "np2kai": "Neko Project II kai",
     "pcsx_rearmed": "PCSX-ReARMed",
     "picodrive": "PicoDrive",
+    "pokemini": "PokeMini",
     "prosystem": "ProSystem",
     "puae": "PUAE",
     "puae2021": "PUAE 2021",
@@ -604,6 +605,29 @@ SUPPLEMENTAL_SYSTEM_ROWS = [
         "rom_root": "Roms/PICO8",
         "image_root": "Images/PICO8",
         "bios_notes": [],
+    },
+    {
+        "id": "POKEMINI",
+        "name": "Pokémon mini",
+        "patterns": ["POKEMINI", "pokemini", "POKE", "poke", "PKM", "pkm", "POKEMONMINI", "pokemonmini"],
+        "extensions": ["min"],
+        "archive_extensions": ["7z", "zip"],
+        "archive_inner_extensions": ["min"],
+        "archive_mode": "pass_through",
+        "file_names": [],
+        # PokeMini reads its optional BIOS from BIOS/bios.min; a copy dropped
+        # beside the games must not be listed as one.
+        "ignore_file_names": ["bios.min"],
+        "playlist_extensions": [],
+        "m3u_generation": "none",
+        "default_core": "pokemini",
+        "alternate_cores": [],
+        "rom_root": "Roms/POKEMINI",
+        "image_root": "Images/POKEMINI",
+        "bios_notes": [
+            "bios.min (optional, user-supplied, place under BIOS; "
+            "the core's built-in FreeBIOS is used otherwise)"
+        ],
     },
     {
         "id": "VB",
