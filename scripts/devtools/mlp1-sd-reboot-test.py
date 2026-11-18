@@ -21,7 +21,8 @@ import time
 LEAF = Path(__file__).resolve().parents[2]
 SOCKET = '/tmp/jawaka-runtime/jawakad.sock'
 CANARY = '.userdata/mlp1/sd-safety-test/canary.bin'
-MLP1_MODEL = 'RK3566 RK817 MANGMI'
+# LoongOS 1.3.x names the board MANGMI, 1.4.x MINILOONG.
+MLP1_MODELS = ('RK3566 RK817 MANGMI', 'RK3566 RK817 MINILOONG')
 ERROR = re.compile(r'FAT-fs .*?(?:error|not properly unmounted|read-only)|I/O error|Buffer I/O', re.I)
 
 
@@ -42,15 +43,19 @@ def main():
                                 capture_output=True, text=True, timeout=10)
         return result.stdout if result.returncode == 0 else ''
 
+    def is_mlp1(serial):
+        found = model(serial)
+        return any(name in found for name in MLP1_MODELS)
+
     # Serials do not identify an MLP1 and other devices share the hub.
     if not args.serial:
         listing = subprocess.check_output(['adb', 'devices'], text=True)
         args.serial = next((row.split()[0] for row in listing.splitlines()[1:]
                             if len(row.split()) == 2 and row.split()[1] == 'device'
-                            and MLP1_MODEL in model(row.split()[0])), None)
+                            and is_mlp1(row.split()[0])), None)
     if not args.serial:
         parser.error('no online MLP1 over ADB')
-    if MLP1_MODEL not in model(args.serial):
+    if not is_mlp1(args.serial):
         parser.error(f'{args.serial} is not an MLP1')
     adb = ['adb', '-s', args.serial]
     args.out.mkdir(parents=True, exist_ok=True)
