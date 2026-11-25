@@ -1,0 +1,53 @@
+#!/bin/sh
+# Stand-in for jawakad in the session tests. Each start takes the next line of
+# $FIXTURE/plan and writes the power handoff with power-request (Jawaka's own
+# power_request.h).
+fx="${FIXTURE:?}"
+step="$(head -n 1 "$fx/plan")"
+sed -i 1d "$fx/plan"
+n=$(($(cat "$fx/starts" 2>/dev/null || echo 0) + 1))
+echo "$n" >"$fx/starts"
+env | sort >"$fx/env.$n"
+pwd >"$fx/cwd.$n"
+echo "start $n $step ${UMRK_POWER_REQUEST_DIR:-}" >>"$fx/events"
+
+pr() { "$POWER_REQUEST" "$@"; }
+clean_exit() { : >"$UMRK_CLEAN_EXIT_SENTINEL"; }
+handoff() { pr publish "$1" && pr reason "$2" && pr complete; }
+
+case "$step" in
+    crash) kill -KILL $$ ;;
+    crash+*)
+        # A crash, then the clock moves on by the given seconds.
+        read -r up _ <"$fx/uptime"
+        echo "$((${up%%.*} + ${step#crash+})).00 0.00" >"$fx/uptime"
+        exit 1
+        ;;
+    clean) clean_exit; exit 0 ;;
+    poweroff|reboot) handoff "$step" power-button && clean_exit; exit 0 ;;
+    unavailable)
+        if pr available; then echo "capability offered" >>"$fx/events"
+        else echo "capability refused" >>"$fx/events"; fi
+        clean_exit
+        exit 0
+        ;;
+    game-left)
+        # Shutdown left a game running: record it, as jawakad does.
+        pr publish poweroff && pr reason menu || exit 1
+        sleep 2 &
+        game=$!
+        echo "$game" >"$fx/game.pid"
+        ticks="$(awk '{ sub(/^.*\) /, ""); print $20 }' "/proc/$game/stat")"
+        printf 'reason=game-child\ngame pid=%s start=%s\n' "$game" "$ticks" | pr incomplete
+        clean_exit
+        exit 0
+        ;;
+    request-crash) pr publish reboot && pr reason menu; kill -KILL $$ ;;
+    wait-term)
+        trap 'clean_exit; echo "term" >>"$fx/events"; exit 0' TERM
+        : >"$fx/running"
+        while :; do sleep 1 & wait $!; done
+        ;;
+    exit-to-stock) : >"$UMRK_EXIT_TO_STOCK_SENTINEL"; clean_exit; exit 0 ;;
+    *) echo "fake-jawakad: no step '$step'" >>"$fx/events"; exit 2 ;;
+esac

@@ -22,7 +22,7 @@ LARGE_LIBRARY_FIXTURE_ENV = \
 	REMOTE_SDCARD_PATH="$(REMOTE_SDCARD_PATH)"
 
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap doctor release-preflight status status-internal pakrat-local-feed-test leaf-release-policy-test shader-bundle-release-policy-test shader-coverage-policy-test shader-global-scope-policy-test input-roster-policy-test log-safety-policy-test flycast-release-policy-smoke yabasanshiro-release-policy-smoke yabasanshiro-stage-policy-smoke fun-drastic-release-policy-smoke fun-drastic-stage-policy-smoke core-rebuild-gate-test package-quiesce-smoke adb-enable-marker adb-disable-marker adb-tail-logs adb-large-library-create adb-large-library-clean adb-large-library-status adb-install-wrapper adb-uninstall-wrapper benchmark-ppsspp
+.PHONY: help bootstrap doctor release-preflight status status-internal pakrat-local-feed-test leaf-release-policy-test shader-bundle-release-policy-test shader-coverage-policy-test shader-global-scope-policy-test input-roster-policy-test log-safety-policy-test flycast-release-policy-smoke yabasanshiro-release-policy-smoke yabasanshiro-stage-policy-smoke fun-drastic-release-policy-smoke fun-drastic-stage-policy-smoke core-rebuild-gate-test package-quiesce-smoke xylem-session-test adb-enable-marker adb-disable-marker adb-tail-logs adb-large-library-create adb-large-library-clean adb-large-library-status adb-install-wrapper adb-uninstall-wrapper benchmark-ppsspp
 
 help:
 	@echo "Leaf workspace commands (DEVICE=$(DEVICE), WORKSPACE_DIR=$(WORKSPACE_DIR)):"
@@ -74,6 +74,7 @@ help:
 	@echo "  make fun-drastic-release-policy-smoke fun-drastic-stage-policy-smoke     test the second NDS emulator release gates"
 	@echo "  make core-rebuild-gate-test               test explicit long core-rebuild authorization and managed-core staging"
 	@echo "  make package-quiesce-smoke                test fail-closed stage-app service barrier"
+	@echo "  make xylem-session-test                   test the xylem lab session's power handoff (Docker)"
 	@echo "  make adb-enable-marker                    enable Leaf launcher marker"
 	@echo "  make adb-disable-marker                   disable Leaf launcher marker"
 	@echo "  make adb-tail-logs                        tail launcher logs"
@@ -169,6 +170,11 @@ core-rebuild-gate-test:
 
 package-quiesce-smoke:
 	@bash scripts/adb-stage-app-package-smoke.sh
+
+XYLEM_TEST_IMAGES ?= busybox:1.36.1
+
+xylem-session-test:
+	@JAWAKA_DIR="$(WORKSPACE_DIR)/Jawaka" XYLEM_TEST_IMAGES="$(XYLEM_TEST_IMAGES)" sh xylem/test/run.sh
 
 adb-enable-marker:
 	scripts/adb-set-marker.sh on
