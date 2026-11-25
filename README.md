@@ -98,6 +98,68 @@ make stage DEVICE=mlp1 TOOLCHAIN_IMAGE="$toolchain_image"
 `make doctor` checks ADB and the device, so use it for staging rather than the
 device-free ZIP build.
 
+## xylem lab session (MLP1)
+
+`xylem/leaf-xylem-session` runs Leaf's `jawakad` on xylem, with Green Genes'
+MLP1 image as the lab. It is a small BusyBox `sh` port of the parts of the
+switcher's stock session (`umrk-leaf-session`, `umrk-power-transition`) that
+xylem needs:
+
+- It sets Leaf's runtime environment (`umrk-workspace` `docs/runtime-paths.md`)
+  for a layout under `/opt/leaf-xylem`, with Green Genes' Weston socket
+  (`/run/gg/xdg/wayland-1`).
+- It starts `jawakad` and starts it again after a crash. Three crashes in
+  120 s stop the session, and the log says so.
+- It serves Jawaka's power handoff (`UMRK_POWER_REQUEST_DIR`). Once `jawakad`
+  completes a power-off or reboot, the session stops `jawaka-ledd`, Weston and
+  PulseAudio, syncs, remounts every persistent mount read-only and runs
+  `busybox poweroff -f` or `busybox reboot -f`.
+- If `jawakad` couldn't prove everything stopped, the session waits for the
+  recorded processes to go. To go on anyway, run
+  `touch /run/leaf-xylem/power-override`.
+- If storage won't close, it retries every 5 s and logs which processes hold
+  the root writable. To retry at once, run `touch /run/leaf-xylem/power-retry`.
+
+The layout is Jawaka's SD shape with `/opt/leaf-xylem` as the card root:
+
+```text
+/opt/leaf-xylem/leaf-xylem-session
+/opt/leaf-xylem/.system/leaf/platforms/mlp1/launcher/bin/   # jawakad, jawaka-launcher, jawaka-menu
+/opt/leaf-xylem/.system/leaf/platforms/mlp1/launcher/res/   # font.ttf, themes/, assets/
+/opt/leaf-xylem/.umrk/mlp1/
+/opt/leaf-xylem/.userdata/mlp1/logs/leaf-xylem-session.log
+/opt/leaf-xylem/Roms/
+```
+
+Boot the unit in Green Genes' `weston` mode, then start the session over SSH:
+
+```sh
+setsid /opt/leaf-xylem/leaf-xylem-session </dev/null >/dev/null 2>&1 &
+```
+
+`leaf-xylem-session status` shows the session and `jawakad`, and
+`leaf-xylem-session stop` stops both. The session log is on the root. Power
+steps go to `/run/leaf-xylem/power.log` and the kernel log, which survives a
+warm reboot in `/sys/fs/pstore`.
+
+The handshake test needs Docker and the Jawaka sibling. It runs the session
+against a fake `jawakad` that writes the handoff with Jawaka's own
+`power_request.h`, with `sync`, `mount` and `busybox` stubbed:
+
+```sh
+make xylem-session-test
+```
+
+To run it on xylem's own BusyBox too, import the rootfs of a Green Genes MLP1
+image (its root partition starts at 80 MiB) and name the image:
+
+```sh
+docker run --rm --network none -v "$PWD/../green-genes/out:/img:ro" debian:bookworm-slim \
+  sh -c 'mkdir /x && debugfs -R "rdump / /x" "/img/gg-mlp1.img?offset=83886080" >/dev/null 2>&1 && tar -C /x -cf - .' |
+  docker import - leaf-xylem-gg-rootfs:local
+make xylem-session-test XYLEM_TEST_IMAGES="busybox:1.36.1 leaf-xylem-gg-rootfs:local"
+```
+
 ## Commands
 
 Run commands from the `Leaf` repo:
