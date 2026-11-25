@@ -126,9 +126,10 @@ leaf_env() {
     export UMRK_RETROARCH_SHADERS_DIR="${UMRK_RETROARCH_SHADERS_DIR:-$p/shaders}"
     export UMRK_RETROARCH_USER_SHADERS_DIR="${UMRK_RETROARCH_USER_SHADERS_DIR:-$i/retroarch/.config/retroarch/shaders}"
     export UMRK_RETROARCH_CONFIG_DIR="${UMRK_RETROARCH_CONFIG_DIR:-$i/retroarch/.config/retroarch/config}"
-    # Both MLP1 slots in every list, as on stock (PATH-2). The second is
-    # configured but not mounted in the lab; Jawaka checks mountinfo.
-    export UMRK_SECONDARY_SDCARD_PATH="${UMRK_SECONDARY_SDCARD_PATH:-/media/sdcard1}"
+    # Both MLP1 slots in every list, as on stock (PATH-2). The second slot's
+    # card is where Green Genes' image mounts it, /roms (Jawaka's xylem build
+    # uses the same default); Jawaka checks mountinfo.
+    export UMRK_SECONDARY_SDCARD_PATH="${UMRK_SECONDARY_SDCARD_PATH:-/roms}"
     s="$UMRK_SECONDARY_SDCARD_PATH"
     export UMRK_ENV_VERSION="${UMRK_ENV_VERSION:-2}"
     export SDCARD_PATHS="${SDCARD_PATHS:-$sd:$s}"

@@ -147,7 +147,7 @@ check "jawakad published poweroff" same "$(cat "$dir/request")" poweroff
 check "jawakad published complete" [ -f "$dir/complete" ]
 check "the request is kept" [ -f "$dir/reason" ]
 check "SDCARD_PATH is the lab root" has "$fx/env.1" "^SDCARD_PATH=$fx/root\$"
-check "both MLP1 slots" has "$fx/env.1" "^SDCARD_PATHS=$fx/root:/media/sdcard1\$"
+check "both MLP1 slots" has "$fx/env.1" "^SDCARD_PATHS=$fx/root:/roms\$"
 check "PATH-2 version" has "$fx/env.1" "^UMRK_ENV_VERSION=2\$"
 check "the launcher path" has "$fx/env.1" "^UMRK_LAUNCHER_PATH=$l\$"
 check "control state under the lab root" has "$fx/env.1" "^UMRK_INTERNAL_DATA_PATH=$fx/root/.umrk/mlp1\$"
