@@ -1,0 +1,652 @@
+#!/bin/sh
+# leaf-xylem-session: Leaf's session on xylem, for the lab (Green Genes' MLP1
+# image). It runs jawakad from a layout under /opt/leaf-xylem, starts it again
+# after a crash, and serves Jawaka's power handoff: once jawakad has finished
+# a power-off or reboot, it closes storage (sync, every persistent mount
+# read-only) and calls the kernel.
+#
+#   leaf-xylem-session [start]   run the session in the foreground
+#   leaf-xylem-session stop      stop jawakad, then the session
+#   leaf-xylem-session status    the session's and jawakad's pids
+#
+# A minimal port of miniloong-launcher-switcher's device/umrk-leaf-session
+# (environment, generations, crash guard, power handoff, pause on an
+# unverified stop) and device/umrk-power-transition (the storage barrier),
+# which stay stock-only. Not ported: the marker and the hand-off to stock,
+# storage repair and the card pre-arm, SD exec remounts, ADB, the boot
+# animation and pause screens, loong_power and loong_light, the PulseAudio
+# supervisor, Wi-Fi workers, the usbmount lock, the critical-battery rule and
+# forcing power with a held key.
+#
+# The handshake is Jawaka's (internal/platform/power_request.h): a fresh
+# mode-0700 directory per jawakad generation, holding `ready` ("1\n"), named
+# by UMRK_POWER_REQUEST_DIR. jawakad publishes `request` (poweroff or reboot)
+# and `reason`, shuts its games and services down, then publishes `complete`,
+# or `incomplete` when it could not prove every writer gone, and exits.
+#
+# /bin/sh on xylem is BusyBox 1.37 ash. Its sync takes no -f.
+
+set -u
+
+ROOT="${LEAF_XYLEM_ROOT:-/opt/leaf-xylem}"
+# tmpfs: the power request directories and this session's state.
+RUN_DIR="${LEAF_XYLEM_RUN_DIR:-/run}"
+STATE="${LEAF_XYLEM_STATE_DIR:-$RUN_DIR/leaf-xylem}"
+POWER_LOG="$STATE/power.log"
+KMSG="${LEAF_XYLEM_KMSG:-/dev/kmsg}"
+UPTIME="${LEAF_XYLEM_UPTIME:-/proc/uptime}"
+MOUNTINFO="${LEAF_XYLEM_MOUNTINFO:-/proc/self/mountinfo}"
+PROC="${LEAF_XYLEM_PROC:-/proc}"
+# The barrier runs with the rootfs's own tools on this PATH.
+POWER_PATH="${LEAF_XYLEM_POWER_PATH:-/usr/sbin:/usr/bin:/sbin:/bin}"
+# Stopped before each barrier attempt. None holds user data, and each can keep
+# the root writable: a left-over LED engine its log descriptor, Weston on
+# Panfrost Mesa's shader-cache index (a shared writable mapping), PulseAudio
+# its restore databases in /root. An empty value stops nothing.
+POWER_STOP="${LEAF_XYLEM_POWER_STOP-jawaka-ledd weston pulseaudio}"
+# What a crashed jawakad can leave running, stopped before the next one.
+STRAGGLERS="jawaka-launcher jawaka-menu jawaka-osd jawaka-ledd retroarch PPSSPPSDL"
+BARRIER_RETRY_S="${LEAF_XYLEM_BARRIER_RETRY_S:-5}"
+COMPOSITOR_WAIT_S="${LEAF_XYLEM_COMPOSITOR_WAIT_S:-30}"
+RESTART_DELAY_S="${LEAF_XYLEM_RESTART_DELAY_S:-1}"
+CRASH_WINDOW_S=120
+CRASH_LIMIT=3
+
+SELF="$(readlink -f "$0" 2>/dev/null || echo "$0")"
+LOG=""
+IN_POWER=0
+STOP_REQUESTED=0
+CRASHES=""
+
+uptime_s() {
+    read -r up _ 2>/dev/null <"$UPTIME" || up=0
+    echo "${up%%.*}"
+}
+
+log_msg() {
+    line="[$(date '+%F %T' 2>/dev/null)] $*"
+    if [ -n "$LOG" ]; then
+        printf '%s\n' "$line" >>"$LOG" 2>/dev/null && return 0
+    fi
+    printf '%s\n' "$line" >&2
+}
+
+# Power-phase log: tmpfs and the kernel's log (dmesg; after a warm reboot,
+# the last boot's console in /sys/fs/pstore). Nothing here writes the root.
+power_log() {
+    printf '[%s] %s\n' "$(uptime_s)" "$*" >>"$POWER_LOG" 2>/dev/null
+    printf 'leaf-xylem-session: %s\n' "$*" >>"$KMSG" 2>/dev/null
+    return 0
+}
+
+say() {
+    if [ "$IN_POWER" = 1 ]; then power_log "$@"; else log_msg "$@"; fi
+}
+
+# ── Environment ─────────────────────────────────────────────────────────────
+# umrk-workspace docs/runtime-paths.md, as the stock session and wrapper set
+# it, rooted at $ROOT. Explicit variables win; Jawaka's own fallbacks would
+# point at /mnt/sdcard, so every one is set.
+leaf_env() {
+    export PLATFORM="${PLATFORM:-mlp1}"
+    export DEVICE="${DEVICE:-$PLATFORM}"
+    export SDCARD_PATH="${SDCARD_PATH:-$ROOT}"
+    sd="$SDCARD_PATH"
+    export SYSTEM_PATH="${SYSTEM_PATH:-$sd/.system/leaf/platforms/$PLATFORM}"
+    export UMRK_PLATFORM_PATH="${UMRK_PLATFORM_PATH:-$SYSTEM_PATH}"
+    p="$UMRK_PLATFORM_PATH"
+    export UMRK_LAUNCHER_PATH="${UMRK_LAUNCHER_PATH:-$p/launcher}"
+    l="$UMRK_LAUNCHER_PATH"
+    export UMRK_BIN_PATH="${UMRK_BIN_PATH:-$l/bin}"
+    export UMRK_ENV_FILE="${UMRK_ENV_FILE:-$l/env.sh}"
+    export TMPDIR="${TMPDIR:-/tmp}"
+    export UMRK_RUNTIME_PATH="${UMRK_RUNTIME_PATH:-$TMPDIR/jawaka-runtime}"
+    export UMRK_LEAF_MODE="${UMRK_LEAF_MODE:-1}"
+    export UMRK_RETROARCH_BIN="${UMRK_RETROARCH_BIN:-$p/bin/retroarch}"
+    export USERDATA_PATH="${USERDATA_PATH:-$sd/.userdata/$PLATFORM}"
+    export SHARED_USERDATA_PATH="${SHARED_USERDATA_PATH:-$sd/.userdata/shared}"
+    export LOGS_PATH="${LOGS_PATH:-$USERDATA_PATH/logs}"
+    export UMRK_INTERNAL_DATA_PATH="${UMRK_INTERNAL_DATA_PATH:-$sd/.umrk/$PLATFORM}"
+    i="$UMRK_INTERNAL_DATA_PATH"
+    export UMRK_MARKER_PATH="${UMRK_MARKER_PATH:-$p/enabled}"
+    export UMRK_ADB_MARKER_PATH="${UMRK_ADB_MARKER_PATH:-$i/adb-enabled}"
+    export UMRK_BOOT_SPLASH_DISABLED_PATH="${UMRK_BOOT_SPLASH_DISABLED_PATH:-$i/boot-splash-disabled}"
+    export ROMS_PATH="${ROMS_PATH:-$sd/Roms}"
+    export IMAGES_PATH="${IMAGES_PATH:-$sd/Images}"
+    export MUSIC_PATH="${MUSIC_PATH:-$sd/Music}"
+    export VIDEO_PATH="${VIDEO_PATH:-$sd/Videos}"
+    export RECORDINGS_PATH="${RECORDINGS_PATH:-$sd/Recordings}"
+    export APPS_PATH="${APPS_PATH:-$sd/Apps}"
+    export BIOS_PATH="${BIOS_PATH:-$sd/BIOS}"
+    export SAVES_PATH="${SAVES_PATH:-$sd/Saves}"
+    export STATES_PATH="${STATES_PATH:-$sd/States}"
+    export CHEATS_PATH="${CHEATS_PATH:-$sd/Cheats}"
+    export CORES_PATH="${CORES_PATH:-$p/cores}"
+    export INFO_PATH="${INFO_PATH:-$p/info}"
+    export UMRK_RETROARCH_SHADERS_DIR="${UMRK_RETROARCH_SHADERS_DIR:-$p/shaders}"
+    export UMRK_RETROARCH_USER_SHADERS_DIR="${UMRK_RETROARCH_USER_SHADERS_DIR:-$i/retroarch/.config/retroarch/shaders}"
+    export UMRK_RETROARCH_CONFIG_DIR="${UMRK_RETROARCH_CONFIG_DIR:-$i/retroarch/.config/retroarch/config}"
+    # Both MLP1 slots in every list, as on stock (PATH-2). The second is
+    # configured but not mounted in the lab; Jawaka checks mountinfo.
+    export UMRK_SECONDARY_SDCARD_PATH="${UMRK_SECONDARY_SDCARD_PATH:-/media/sdcard1}"
+    s="$UMRK_SECONDARY_SDCARD_PATH"
+    export UMRK_ENV_VERSION="${UMRK_ENV_VERSION:-2}"
+    export SDCARD_PATHS="${SDCARD_PATHS:-$sd:$s}"
+    export USERDATA_PATHS="${USERDATA_PATHS:-$USERDATA_PATH:$s/.userdata/$PLATFORM}"
+    export SHARED_USERDATA_PATHS="${SHARED_USERDATA_PATHS:-$SHARED_USERDATA_PATH:$s/.userdata/shared}"
+    export ROMS_PATHS="${ROMS_PATHS:-$ROMS_PATH:$s/Roms}"
+    export IMAGES_PATHS="${IMAGES_PATHS:-$IMAGES_PATH:$s/Images}"
+    export MUSIC_PATHS="${MUSIC_PATHS:-$MUSIC_PATH:$s/Music}"
+    export VIDEO_PATHS="${VIDEO_PATHS:-$VIDEO_PATH:$s/Videos}"
+    export APPS_PATHS="${APPS_PATHS:-$APPS_PATH:$s/Apps}"
+    export BIOS_PATHS="${BIOS_PATHS:-$BIOS_PATH:$s/BIOS}"
+    export SAVES_PATHS="${SAVES_PATHS:-$SAVES_PATH:$s/Saves}"
+    export STATES_PATHS="${STATES_PATHS:-$STATES_PATH:$s/States}"
+    export CHEATS_PATHS="${CHEATS_PATHS:-$CHEATS_PATH:$s/Cheats}"
+    # Green Genes' Weston mode (/etc/gg/modes/weston) serves wayland-1 here.
+    export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/gg/xdg}"
+    export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-1}"
+    export SDL_VIDEODRIVER="${SDL_VIDEODRIVER:-wayland}"
+    export SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS="${SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS:-1}"
+    export CAT_WINDOW_WIDTH="${CAT_WINDOW_WIDTH:-960}"
+    export CAT_WINDOW_HEIGHT="${CAT_WINDOW_HEIGHT:-720}"
+    export CAT_THEMES_DIR="${CAT_THEMES_DIR:-$l/res/themes}"
+    export CAT_FONTS_DIR="${CAT_FONTS_DIR:-$l/res}"
+    export CAT_STATUS_ASSETS_DIR="${CAT_STATUS_ASSETS_DIR:-$l/res/assets}"
+    export JAWAKA_RUNTIME_DIR="${JAWAKA_RUNTIME_DIR:-$UMRK_RUNTIME_PATH}"
+    export JAWAKA_SDCARD_ROOT="${JAWAKA_SDCARD_ROOT:-$sd}"
+    export JAWAKA_RETROARCH_BIN="${JAWAKA_RETROARCH_BIN:-$UMRK_RETROARCH_BIN}"
+    export JAWAKA_RETROARCH_CORES_DIR="${JAWAKA_RETROARCH_CORES_DIR:-$CORES_PATH}"
+    # Owned by this session: always its own.
+    export UMRK_CLEAN_EXIT_SENTINEL="$STATE/clean-exit"
+    export UMRK_EXIT_TO_STOCK_SENTINEL="$STATE/exit-to-stock"
+    [ ! -d "$l/lib" ] || export LD_LIBRARY_PATH="$l/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    export PATH="${PATH:-/usr/sbin:/usr/bin:/sbin:/bin}"
+    LOG="${UMRK_LAUNCHER_LOG:-$LOGS_PATH/leaf-xylem-session.log}"
+    DAEMON="${LEAF_XYLEM_DAEMON:-$UMRK_BIN_PATH/jawakad}"
+    # A stock-staged bundle carries jawakad renamed.
+    if [ ! -x "$DAEMON" ] && [ -x "$UMRK_BIN_PATH/loong_pangu" ]; then
+        DAEMON="$UMRK_BIN_PATH/loong_pangu"
+    fi
+}
+
+preflight() {
+    for bin in "$DAEMON" "$UMRK_BIN_PATH/jawaka-launcher" "$UMRK_BIN_PATH/jawaka-menu"; do
+        [ -x "$bin" ] || { log_msg "launcher executable missing or not executable: $bin"; return 1; }
+    done
+    for res in res/font.ttf res/themes res/assets; do
+        [ -e "$UMRK_LAUNCHER_PATH/$res" ] || { log_msg "launcher resource missing: $UMRK_LAUNCHER_PATH/$res"; return 1; }
+    done
+    mkdir -p "$UMRK_RUNTIME_PATH" "$USERDATA_PATH" "$UMRK_INTERNAL_DATA_PATH" || {
+        log_msg "could not create the runtime and data directories"
+        return 1
+    }
+}
+
+wait_for_compositor() {
+    [ "$COMPOSITOR_WAIT_S" -gt 0 ] || return 0
+    case "$WAYLAND_DISPLAY" in
+        /*) sock="$WAYLAND_DISPLAY" ;;
+        *) sock="$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ;;
+    esac
+    polls=0
+    while [ ! -S "$sock" ]; do
+        if [ "$polls" -ge $((COMPOSITOR_WAIT_S * 10)) ]; then
+            log_msg "no compositor at $sock after ${COMPOSITOR_WAIT_S}s"
+            return 1
+        fi
+        sleep .1
+        polls=$((polls + 1))
+    done
+}
+
+# ── Processes ───────────────────────────────────────────────────────────────
+# Pids whose name (comm) is one of $1; zombies and this shell left out. One
+# awk over /proc: BusyBox awk would stop at the first file it cannot open.
+pids_named() {
+    awk -v names=" $1 " -v self="$$" 'BEGIN {
+        for (i = 1; i < ARGC; i++) {
+            if ((getline line < ARGV[i]) > 0 && match(line, /\(.*\)/)) {
+                comm = substr(line, RSTART + 1, RLENGTH - 2)
+                state = substr(line, RSTART + RLENGTH + 1, 1)
+                pid = substr(line, 1, RSTART - 2)
+                if (state != "Z" && pid != self && index(names, " " comm " "))
+                    printf "%s ", pid
+            }
+            close(ARGV[i])
+        }
+    }' "$PROC"/[0-9]*/stat 2>/dev/null
+}
+
+pids_alive() {
+    for p in "$@"; do
+        st="$(cat "$PROC/$p/stat" 2>/dev/null)" || continue
+        st="${st##*) }"
+        [ "${st%% *}" = Z ] || printf '%s ' "$p"
+    done
+}
+
+# stop_named "NAMES" SECONDS: TERM, then KILL what is left after SECONDS.
+stop_named() {
+    [ -n "$1" ] || return 0
+    pids="$(pids_named "$1")"
+    [ -n "$pids" ] || return 0
+    say "stopping $1: pids ${pids% }"
+    # shellcheck disable=SC2086
+    kill $pids 2>/dev/null
+    polls=0
+    # shellcheck disable=SC2086
+    while [ -n "$(pids_alive $pids)" ] && [ "$polls" -lt $(($2 * 10)) ]; do
+        sleep .1
+        polls=$((polls + 1))
+    done
+    # shellcheck disable=SC2086
+    left="$(pids_alive $pids)"
+    [ -n "$left" ] || return 0
+    say "forcing ${left% }"
+    # shellcheck disable=SC2086
+    kill -9 $left 2>/dev/null
+    return 0
+}
+
+# ── Session ─────────────────────────────────────────────────────────────────
+# Three crashes in CRASH_WINDOW_S trip the guard; a clean exit clears it.
+crash_guard() {
+    now="$(uptime_s)"
+    kept=""
+    n=0
+    for t in $CRASHES $now; do
+        [ $((now - t)) -le "$CRASH_WINDOW_S" ] || continue
+        kept="$kept $t"
+        n=$((n + 1))
+    done
+    CRASHES="$kept"
+    [ "$n" -lt "$CRASH_LIMIT" ]
+}
+
+# The barrier can call the kernel: offer the capability only then.
+power_available() {
+    (
+        IFS=:
+        for d in $POWER_PATH; do
+            [ -x "$d/busybox" ] && exit 0
+        done
+        exit 1
+    )
+}
+
+# One jawakad generation. A fresh private directory is the power capability
+# and the generation: an old request never reaches a new daemon.
+run_generation() {
+    cd "$UMRK_LAUNCHER_PATH" 2>/dev/null || cd / || return 1
+    rm -f "$UMRK_CLEAN_EXIT_SENTINEL" "$UMRK_EXIT_TO_STOCK_SENTINEL"
+    if ! request_dir="$(mktemp -d "$RUN_DIR/umrk-power.XXXXXX")" ||
+        ! chmod 700 "$request_dir"; then
+        log_msg "could not create a power request directory in $RUN_DIR"
+        return 1
+    fi
+    if power_available; then
+        printf '1\n' >"$request_dir/ready"
+    else
+        log_msg "no busybox on $POWER_PATH: power requests are refused"
+    fi
+    export UMRK_POWER_REQUEST_DIR="$request_dir"
+    log_msg "starting jawakad: $DAEMON (power handoff $request_dir)"
+    # In the foreground, so jawakad gets the signal dispositions an
+    # asynchronous list would change; the pid comes from the shell it execs.
+    # shellcheck disable=SC2016
+    sh -c 'echo "$$" >"$0"; exec "$@"' "$STATE/jawakad.pid" "$DAEMON" </dev/null >>"$LOG" 2>&1
+    status=$?
+    rm -f "$STATE/jawakad.pid"
+    unset UMRK_POWER_REQUEST_DIR
+    # Read after the process exit, not at the earlier clean-exit marker.
+    action="$(cat "$request_dir/request" 2>/dev/null)"
+    case "$action" in
+        poweroff|reboot) power_transition "$action" "$status" "$request_dir" ;;
+    esac
+    rm -rf "$request_dir"
+    log_msg "jawakad exited status=$status"
+    return 0
+}
+
+session_start() {
+    leaf_env
+    if ! mkdir -p "$STATE" || ! chmod 700 "$STATE"; then
+        echo "leaf-xylem-session: cannot create $STATE" >&2
+        exit 1
+    fi
+    pid="$(cat "$STATE/session.pid" 2>/dev/null)"
+    if [ -n "$pid" ] && [ "$pid" != $$ ] && kill -0 "$pid" 2>/dev/null; then
+        echo "leaf-xylem-session: already running (pid $pid)" >&2
+        exit 1
+    fi
+    echo $$ >"$STATE/session.pid"
+    rm -f "$STATE/stop" "$STATE/power-override" "$STATE/power-retry"
+    mkdir -p "${LOG%/*}" 2>/dev/null
+    [ ! -f "$LOG" ] || mv -f "$LOG" "$LOG.1" 2>/dev/null
+    log_msg "session start: $SDCARD_PATH (pid $$)"
+    rc=0
+    preflight || { rm -f "$STATE/session.pid"; exit 1; }
+    trap 'STOP_REQUESTED=1' HUP INT TERM
+    while :; do
+        if [ "$STOP_REQUESTED" = 1 ] || [ -e "$STATE/stop" ]; then
+            log_msg "session stopped"
+            break
+        fi
+        wait_for_compositor || { rc=1; break; }
+        run_generation || { rc=1; break; }
+        if [ "$STOP_REQUESTED" = 1 ] || [ -e "$STATE/stop" ]; then
+            log_msg "session stopped"
+            break
+        fi
+        if [ -e "$UMRK_EXIT_TO_STOCK_SENTINEL" ]; then
+            log_msg "exit to stock requested; xylem has no stock UI, so the session stops"
+            break
+        fi
+        if [ -e "$UMRK_CLEAN_EXIT_SENTINEL" ]; then
+            CRASHES=""
+        else
+            log_msg "unclean jawakad exit (status=$status)"
+            stop_named "$STRAGGLERS" 3
+            if ! crash_guard; then
+                log_msg "crash guard: $CRASH_LIMIT crashes in ${CRASH_WINDOW_S}s; the session stops"
+                printf 'leaf-xylem-session: crash guard tripped\n' >>"$KMSG" 2>/dev/null
+                rc=1
+                break
+            fi
+        fi
+        sleep "$RESTART_DELAY_S"
+    done
+    rm -f "$STATE/session.pid" "$STATE/stop"
+    exit "$rc"
+}
+
+session_stop() {
+    pid="$(cat "$STATE/session.pid" 2>/dev/null)"
+    if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
+        echo "leaf-xylem-session: not running" >&2
+        return 1
+    fi
+    : >"$STATE/stop"
+    jpid="$(cat "$STATE/jawakad.pid" 2>/dev/null)"
+    name="${LEAF_XYLEM_DAEMON:-jawakad}"
+    case "$(cat "$PROC/${jpid:-x}/comm" 2>/dev/null)" in
+        jawakad|loong_pangu|"${name##*/}") kill -TERM "$jpid" 2>/dev/null ;;
+    esac
+    # jawakad's own shutdown ceiling is about 15 s (the stock session's).
+    polls=0
+    while kill -0 "$pid" 2>/dev/null && [ "$polls" -lt 200 ]; do
+        sleep .1
+        polls=$((polls + 1))
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+        echo "leaf-xylem-session: still running after 20 s (pid $pid)" >&2
+        return 1
+    fi
+    echo "leaf-xylem-session: stopped"
+}
+
+session_status() {
+    pid="$(cat "$STATE/session.pid" 2>/dev/null)"
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+        echo "session: pid $pid"
+    else
+        echo "session: not running"
+    fi
+    jpid="$(cat "$STATE/jawakad.pid" 2>/dev/null)"
+    [ -z "$jpid" ] || echo "jawakad: pid $jpid"
+    if [ -s "$POWER_LOG" ]; then
+        echo "power log ($POWER_LOG):"
+        tail -n 5 "$POWER_LOG"
+    fi
+}
+
+# ── Power handoff ───────────────────────────────────────────────────────────
+# What jawakad could not prove stopped (its `incomplete` record): 0 all gone,
+# 1 something remains, 2 cannot be checked. Nothing here signals anything.
+incomplete_state() {
+    record="$1/incomplete"
+    [ -f "$record" ] || return 2
+    head -n 1 "$record" | grep -q '^reason=' || return 2
+    remaining=0
+    items=0
+    while read -r line; do
+        case "$line" in
+            reason=*) continue ;;
+            service=*)
+                items=$((items + 1))
+                pgid="${line#* pgid=}"; pgid="${pgid%% *}"
+                lease="${line#* lease=}"
+                case "$pgid" in ''|*[!0-9]*) return 2 ;; esac
+                if [ -f "$lease" ]; then
+                    # A group member keeps the generation lease locked.
+                    flock -n "$lease" true 2>/dev/null || remaining=1
+                elif [ "$pgid" -gt 0 ]; then
+                    awk -v g="$pgid" 'BEGIN {
+                        for (i = 1; i < ARGC; i++) {
+                            if ((getline line < ARGV[i]) > 0) {
+                                sub(/^.*\) /, "", line); split(line, f, " ")
+                                if (f[3] == g && f[1] != "Z") found = 1
+                            }
+                            close(ARGV[i])
+                        }
+                        exit found ? 0 : 1 }' "$PROC"/[0-9]*/stat 2>/dev/null && remaining=1
+                else
+                    return 2
+                fi
+                ;;
+            game\ pid=*)
+                items=$((items + 1))
+                gpid="${line#game pid=}"; gpid="${gpid%% *}"
+                start="${line#* start=}"
+                case "$gpid$start" in ''|*[!0-9]*) return 2 ;; esac
+                st="$(cat "$PROC/$gpid/stat" 2>/dev/null)" || continue
+                st="${st##*) }"
+                # shellcheck disable=SC2086
+                set -- $st
+                [ "$1" = Z ] && continue
+                # Field 22, the start time: a recycled pid is not the game.
+                [ "$start" = 0 ] || [ "${20}" = "$start" ] || continue
+                remaining=1
+                ;;
+            *) return 2 ;;
+        esac
+    done <"$record"
+    [ "$items" -gt 0 ] || return 2
+    return "$remaining"
+}
+
+# jawakad exited without `complete`. Wait until every recorded item is gone;
+# an operator can go on anyway (stock: a held power key after the pre-arm).
+power_pause() {
+    power_log "jawakad did not complete its shutdown: $(tr '\n' ' ' <"$1/incomplete" 2>/dev/null)"
+    power_log "waiting for the recorded items to stop; to go on anyway: touch $STATE/power-override"
+    last=""
+    while :; do
+        incomplete_state "$1"
+        s=$?
+        if [ "$s" -eq 0 ]; then
+            power_log "every recorded item is gone; continuing"
+            return 0
+        fi
+        if [ -e "$STATE/power-override" ]; then
+            rm -f "$STATE/power-override"
+            power_log "override: continuing past an unverified stop"
+            return 0
+        fi
+        if [ "$s" != "$last" ]; then
+            if [ "$s" -eq 1 ]; then
+                power_log "recorded items still running"
+            else
+                power_log "no record to check; waiting for the override"
+            fi
+            last="$s"
+        fi
+        sleep 1
+    done
+}
+
+# Terminal for the session: the request is kept, and nothing restarts.
+power_transition() {
+    action="$1"
+    reason="$(tr -cd 'a-z-' <"$3/reason" 2>/dev/null)"
+    log_msg "power: $action requested (reason=${reason:-none}, status=$2); closing storage, log in $POWER_LOG"
+    # From here nothing writes the root: the log is tmpfs and the kernel's.
+    IN_POWER=1
+    cd / || exit 1
+    exec </dev/null >>"$POWER_LOG" 2>&1
+    trap 'exit 1' HUP INT TERM
+    power_log "$action requested (reason=${reason:-none}); jawakad exited status=$2"
+    if [ "$2" -eq 0 ] && [ -f "$3/complete" ]; then
+        power_log "jawakad completed its shutdown"
+    else
+        power_pause "$3"
+    fi
+    # A fresh exec of this file with the rootfs's environment: the shell
+    # reading it keeps it open, and a copy re-pushed since (the old inode
+    # unlinked) would make the read-only remount busy.
+    if [ -r "$SELF" ]; then
+        exec env -i PATH="$POWER_PATH" HOME=/ LC_ALL=C \
+            LEAF_XYLEM_STATE_DIR="$STATE" LEAF_XYLEM_KMSG="$KMSG" \
+            LEAF_XYLEM_UPTIME="$UPTIME" LEAF_XYLEM_MOUNTINFO="$MOUNTINFO" \
+            LEAF_XYLEM_PROC="$PROC" LEAF_XYLEM_POWER_PATH="$POWER_PATH" \
+            LEAF_XYLEM_POWER_STOP="$POWER_STOP" \
+            LEAF_XYLEM_BARRIER_RETRY_S="$BARRIER_RETRY_S" \
+            /bin/sh "$SELF" power-barrier "$action"
+    fi
+    power_log "cannot read $SELF; closing storage from this shell"
+    unset LD_LIBRARY_PATH LD_PRELOAD
+    PATH="$POWER_PATH"
+    power_barrier "$action"
+}
+
+# ── Storage barrier (umrk-power-transition) ─────────────────────────────────
+fail() {
+    power_log "$*"
+    exit 1
+}
+
+# Major 0 is a kernel or virtual filesystem; persistent ones are
+# block-backed. Mount and superblock options are kept apart: a read-only
+# bind is not a read-only filesystem. Fields: id, dev, point, mount
+# options, superblock options.
+mounts() {
+    awk '$3 !~ /^0:/ {
+        for (i = 7; i <= NF; i++) if ($i == "-") {
+            print $1, $3, $5, $6, $(i + 3); break
+        }
+    }' "$MOUNTINFO"
+}
+
+verify_closed() {
+    after="$(mounts)" || fail "cannot read the final mount table"
+    [ -n "$after" ] || fail "the final mount table is empty"
+    [ "$(printf '%s\n' "$after" | awk '{print $1, $2, $3}')" = \
+      "$(printf '%s\n' "$before" | awk '{print $1, $2, $3}')" ] ||
+        fail "mount identity changed during shutdown"
+    [ -z "$(printf '%s\n' "$after" | awk '$4 ~ /(^|,)rw(,|$)/ || $5 ~ /(^|,)rw(,|$)/ { print $3 }')" ] ||
+        fail "a persistent mount or superblock is still writable"
+}
+
+# Exits 1 when storage could not be closed, 3 when the kernel's call
+# returned. Run in a subshell.
+close_storage() {
+    [ -r "$MOUNTINFO" ] || fail "mount table unavailable"
+    before="$(mounts)" || fail "cannot read the mount table"
+    [ -n "$before" ] || fail "no persistent mounts found"
+    # shellcheck disable=SC1003
+    case "$before" in *'\'*) fail "unsupported escaped mount path" ;; esac
+    # sync(2) waits for every filesystem; a slow card is never a reason to
+    # cut power.
+    sync || fail "flush failed"
+    # Descending mount ids visit later mounts before their parents; the root
+    # comes last.
+    for point in $(printf '%s\n' "$before" | sort -rn | awk '{print $3}'); do
+        mount -o remount,ro "$point" || fail "read-only remount failed: $point"
+    done
+    verify_closed
+    sync || fail "final flush failed"
+    verify_closed
+    power_log "filesystems closed; $1"
+    # BusyBox -f calls the kernel directly, not init.
+    busybox "$1" -f
+    power_log "the kernel's $1 returned"
+    exit 3
+}
+
+# Who holds a persistent mount writable: a descriptor open for writing
+# (fdinfo's mnt_id and access mode) or a shared writable mapping (maps'
+# device). For the log only.
+list_writers() {
+    m="$(mounts)"
+    ids=" $(printf '%s\n' "$m" | awk '{ printf "%s ", $1 }')"
+    devs=" $(printf '%s\n' "$m" | awk '{ split($2, d, ":"); printf "%02x:%02x ", d[1], d[2] }')"
+    awk -v ids="$ids" -v devs="$devs" 'BEGIN {
+        for (i = 1; i < ARGC; i++) {
+            f = ARGV[i]; n = split(f, p, "/")
+            if (p[n] == "maps") {
+                while ((getline line < f) > 0) {
+                    split(line, w, " ")
+                    if (w[2] ~ /^.w.s$/ && index(devs, " " w[4] " ")) {
+                        print p[n - 1], "map", w[6]; break
+                    }
+                }
+            } else {
+                flags = ""; mnt = ""
+                while ((getline line < f) > 0) {
+                    split(line, w, " ")
+                    if (w[1] == "flags:") flags = w[2]
+                    else if (w[1] == "mnt_id:") mnt = w[2]
+                }
+                if (mnt != "" && index(ids, " " mnt " ") && substr(flags, length(flags)) % 4)
+                    print p[n - 2], "fd", p[n]
+            }
+            close(f)
+        }
+    }' "$PROC"/[0-9]*/fdinfo/* "$PROC"/[0-9]*/maps 2>/dev/null |
+    while read -r wpid kind what; do
+        [ "$wpid" != $$ ] || continue
+        [ "$kind" != fd ] || what="$(readlink "$PROC/$wpid/fd/$what" 2>/dev/null)"
+        echo "pid=$wpid comm=$(cat "$PROC/$wpid/comm" 2>/dev/null) $kind $what"
+    done
+}
+
+# Retries until storage closes: by itself every BARRIER_RETRY_S, at once on
+# touch $STATE/power-retry. No deadline forces power.
+power_barrier() {
+    attempt=0
+    while :; do
+        attempt=$((attempt + 1))
+        stop_named "$POWER_STOP" 3
+        ( close_storage "$1" )
+        [ $? -ne 3 ] || exit 1
+        power_log "storage not closed (attempt $attempt); retrying in ${BARRIER_RETRY_S}s, or now: touch $STATE/power-retry"
+        list_writers | while read -r w; do power_log "writer: $w"; done
+        polls=0
+        while [ "$polls" -lt $((BARRIER_RETRY_S * 10)) ] && [ ! -e "$STATE/power-retry" ]; do
+            sleep .1
+            polls=$((polls + 1))
+        done
+        rm -f "$STATE/power-retry"
+    done
+}
+
+case "${1:-start}" in
+    start) session_start ;;
+    stop) session_stop ;;
+    status) session_status ;;
+    # Internal: the barrier's fresh exec (power_transition).
+    power-barrier)
+        IN_POWER=1
+        cd / || exit 1
+        trap 'exit 1' HUP INT TERM
+        case "${2:-}" in
+            poweroff|reboot) power_barrier "$2" ;;
+            *) exit 2 ;;
+        esac
+        ;;
+    *)
+        echo "usage: $0 [start|stop|status]" >&2
+        exit 2
+        ;;
+esac
