@@ -100,16 +100,57 @@ device-free ZIP build.
 
 ## xylem lab session (MLP1)
 
-`xylem/leaf-xylem-session` runs Leaf's `jawakad` on xylem, with Green Genes'
-MLP1 image as the lab. It is a small BusyBox `sh` port of the parts of the
+Leaf runs on xylem from the card, with Green Genes' MLP1 image as the lab.
+Once the payload is on the card's games partition, the unit boots straight
+into Leaf's launcher: the image's boot hook (`/etc/init.d/leaf`) starts Weston,
+then `xylem/leaf-xylem-session` from its fixed path on the card:
+
+```text
+/mnt/sdcard/.system/leaf/platforms/mlp1/launcher/leaf-xylem-session
+```
+
+### Staging the payload
+
+`make xylem-stage` builds the `OS=xylem` launcher and copies it to the unit
+over SSH (`xylem/stage-xylem.sh`). Jawaka and Catastrophe must be checked out
+on their `xylem` branches. Point at them if they aren't the sibling checkouts:
+
+```sh
+make xylem-stage JAWAKA_DIR=../.worktrees/jawaka-xylem \
+  CATASTROPHE_DIR=../.worktrees/catastrophe-xylem XYLEM_HOST=10.61.0.1
+```
+
+The SSH key comes from `LEAF_XYLEM_SSH_KEY` (or `GG_SSH_KEY`). The script:
+
+- checks that the unit has its games partition mounted and the libraries the
+  launcher links (SDL2_ttf, SDL2_image, libcurl with OpenSSL 3, SQLite with
+  FTS5), since the payload carries no `launcher/lib`;
+- stops Leaf on the unit, replaces the launcher and the platform files it
+  stages, and leaves everything else on the card (saves, the library, your
+  own themes) as it is;
+- lets the boot hook start Leaf again and waits for the launcher.
+
+The payload is the launcher only: the ten Jawaka binaries under their own
+names, `res/`, the switcher's `device/mlp1` defaults without the boot
+animation, compiled translations, `platform.d`, the bundled themes in
+`Themes/`, and empty public folders. No emulators or cores yet. The assembled
+tree is in `build/stage/mlp1-xylem/package`; `--assemble-only` stops there.
+
+### What the session does
+
+`xylem/leaf-xylem-session` is a small BusyBox `sh` port of the parts of the
 switcher's stock session (`umrk-leaf-session`, `umrk-power-transition`) that
 xylem needs:
 
 - It sets Leaf's runtime environment (`umrk-workspace` `docs/runtime-paths.md`)
-  for a layout under `/opt/leaf-xylem`, with Green Genes' Weston socket
-  (`/run/gg/xdg/wayland-1`).
+  for the card it sits on, with Green Genes' Weston socket
+  (`/run/gg/xdg/wayland-1`) and `/roms` as the second card. Run from anywhere
+  else, the card is `/mnt/sdcard` unless `LEAF_XYLEM_ROOT` says otherwise.
 - It starts `jawakad` and starts it again after a crash. Three crashes in
-  120 s stop the session, and the log says so.
+  120 s stop the session, and the log says so. The boot hook then waits longer
+  before each start that follows a short run.
+- It passes on `LEAF_XYLEM_READY_FILE`, which `jawakad` creates once the
+  launcher is up. The boot hook counts the boot as good then.
 - It serves Jawaka's power handoff (`UMRK_POWER_REQUEST_DIR`). Once `jawakad`
   completes a power-off or reboot, the session stops `jawaka-ledd`, Weston and
   PulseAudio, syncs, remounts every persistent mount read-only and runs
@@ -118,29 +159,16 @@ xylem needs:
   recorded processes to go. To go on anyway, run
   `touch /run/leaf-xylem/power-override`.
 - If storage won't close, it retries every 5 s and logs which processes hold
-  the root writable. To retry at once, run `touch /run/leaf-xylem/power-retry`.
+  a mount writable. To retry at once, run `touch /run/leaf-xylem/power-retry`.
 
-The layout is Jawaka's SD shape with `/opt/leaf-xylem` as the card root:
+On the unit, `/etc/init.d/leaf status` shows the session and `jawakad`,
+`/etc/init.d/leaf stop` stops Leaf until `/etc/init.d/leaf start`, and
+`/etc/init.d/leaf off` keeps it off across boots until
+`/etc/init.d/leaf on`. The session log is on the card in
+`.userdata/mlp1/logs/leaf-xylem-session.log`. Power steps go to
+`/run/leaf-xylem/power.log` and the kernel log.
 
-```text
-/opt/leaf-xylem/leaf-xylem-session
-/opt/leaf-xylem/.system/leaf/platforms/mlp1/launcher/bin/   # jawakad, jawaka-launcher, jawaka-menu
-/opt/leaf-xylem/.system/leaf/platforms/mlp1/launcher/res/   # font.ttf, themes/, assets/
-/opt/leaf-xylem/.umrk/mlp1/
-/opt/leaf-xylem/.userdata/mlp1/logs/leaf-xylem-session.log
-/opt/leaf-xylem/Roms/
-```
-
-Boot the unit in Green Genes' `weston` mode, then start the session over SSH:
-
-```sh
-setsid /opt/leaf-xylem/leaf-xylem-session </dev/null >/dev/null 2>&1 &
-```
-
-`leaf-xylem-session status` shows the session and `jawakad`, and
-`leaf-xylem-session stop` stops both. The session log is on the root. Power
-steps go to `/run/leaf-xylem/power.log` and the kernel log, which survives a
-warm reboot in `/sys/fs/pstore`.
+### Tests
 
 The handshake test needs Docker and the Jawaka sibling. It runs the session
 against a fake `jawakad` that writes the handoff with Jawaka's own
