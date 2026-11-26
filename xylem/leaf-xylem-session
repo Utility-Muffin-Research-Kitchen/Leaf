@@ -1,9 +1,19 @@
 #!/bin/sh
 # leaf-xylem-session: Leaf's session on xylem, for the lab (Green Genes' MLP1
-# image). It runs jawakad from a layout under /opt/leaf-xylem, starts it again
+# image). It runs jawakad from Leaf's payload on the card, starts it again
 # after a crash, and serves Jawaka's power handoff: once jawakad has finished
 # a power-off or reboot, it closes storage (sync, every persistent mount
 # read-only) and calls the kernel.
+#
+# It lives in the payload at one fixed path, which the OS's boot hook starts
+# (Green Genes: /etc/init.d/leaf, respawned by init):
+#
+#   <card>/.system/leaf/platforms/<platform>/launcher/leaf-xylem-session
+#
+# and takes the card root and the platform from that path. Run from anywhere
+# else, the card is /mnt/sdcard (xylem's games partition) and the platform
+# mlp1, unless LEAF_XYLEM_ROOT and PLATFORM say otherwise. xylem/stage-xylem.sh
+# stages it with the rest of the payload.
 #
 #   leaf-xylem-session [start]   run the session in the foreground
 #   leaf-xylem-session stop      stop jawakad, then the session
@@ -28,7 +38,19 @@
 
 set -u
 
-ROOT="${LEAF_XYLEM_ROOT:-/opt/leaf-xylem}"
+SELF="$(readlink -f "$0" 2>/dev/null || echo "$0")"
+case "$SELF" in
+    */.system/leaf/platforms/*/launcher/leaf-xylem-session)
+        SELF_ROOT="${SELF%/.system/leaf/platforms/*}"
+        SELF_PLATFORM="${SELF#"$SELF_ROOT"/.system/leaf/platforms/}"
+        SELF_PLATFORM="${SELF_PLATFORM%%/*}"
+        ;;
+    *)
+        SELF_ROOT=/mnt/sdcard
+        SELF_PLATFORM=mlp1
+        ;;
+esac
+ROOT="${LEAF_XYLEM_ROOT:-${SELF_ROOT:-/}}"
 # tmpfs: the power request directories and this session's state.
 RUN_DIR="${LEAF_XYLEM_RUN_DIR:-/run}"
 STATE="${LEAF_XYLEM_STATE_DIR:-$RUN_DIR/leaf-xylem}"
@@ -52,7 +74,6 @@ RESTART_DELAY_S="${LEAF_XYLEM_RESTART_DELAY_S:-1}"
 CRASH_WINDOW_S=120
 CRASH_LIMIT=3
 
-SELF="$(readlink -f "$0" 2>/dev/null || echo "$0")"
 LOG=""
 IN_POWER=0
 STOP_REQUESTED=0
@@ -88,7 +109,7 @@ say() {
 # it, rooted at $ROOT. Explicit variables win; Jawaka's own fallbacks would
 # point at /mnt/sdcard, so every one is set.
 leaf_env() {
-    export PLATFORM="${PLATFORM:-mlp1}"
+    export PLATFORM="${PLATFORM:-$SELF_PLATFORM}"
     export DEVICE="${DEVICE:-$PLATFORM}"
     export SDCARD_PATH="${SDCARD_PATH:-$ROOT}"
     sd="$SDCARD_PATH"

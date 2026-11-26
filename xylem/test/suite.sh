@@ -303,5 +303,42 @@ check "Jawaka sees no capability" has "$fx/events" 'capability refused'
 check "the session log says why" has "$LOGF" 'power requests are refused'
 check "exit to stock stops the session" has "$LOGF" 'xylem has no stock UI, so the session stops'
 
+# ── The card root from the session's own path ──────────────────────────────
+# Staged at its fixed path, as the OS's boot hook starts it: no
+# LEAF_XYLEM_ROOT, and the root and platform come from where it sits.
+setup own-path
+echo clean >"$fx/plan"
+echo exit-to-stock >>"$fx/plan"
+cp "$SESSION" "$l/leaf-xylem-session"
+env FIXTURE="$fx" TMPDIR="$fx/tmp" LEAF_XYLEM_RUN_DIR="$fx/run" \
+    LEAF_XYLEM_KMSG="$fx/kmsg" LEAF_XYLEM_UPTIME="$fx/uptime" \
+    LEAF_XYLEM_MOUNTINFO="$fx/mountinfo" LEAF_XYLEM_POWER_STOP="" \
+    LEAF_XYLEM_POWER_PATH="$fx/stub:/usr/sbin:/usr/bin:/sbin:/bin" \
+    LEAF_XYLEM_COMPOSITOR_WAIT_S=0 LEAF_XYLEM_RESTART_DELAY_S=0 \
+    timeout 60 /bin/sh "$l/leaf-xylem-session" start
+rc=$?
+check "the session ends cleanly" [ "$rc" -eq 0 ]
+check "the card root is the one the session sits on" has "$fx/env.1" "^SDCARD_PATH=$fx/root\$"
+check "the platform is the one in its path" has "$fx/env.1" '^PLATFORM=mlp1$'
+check "jawakad is the payload's" has "$LOGF" "starting jawakad: $l/bin/jawakad"
+check "no ready file unless the OS names one" lacks "$fx/env.1" '^LEAF_XYLEM_READY_FILE='
+
+setup own-path-ready
+echo exit-to-stock >"$fx/plan"
+cp "$SESSION" "$l/leaf-xylem-session"
+env FIXTURE="$fx" TMPDIR="$fx/tmp" LEAF_XYLEM_RUN_DIR="$fx/run" \
+    LEAF_XYLEM_KMSG="$fx/kmsg" LEAF_XYLEM_UPTIME="$fx/uptime" \
+    LEAF_XYLEM_MOUNTINFO="$fx/mountinfo" LEAF_XYLEM_POWER_STOP="" \
+    LEAF_XYLEM_POWER_PATH="$fx/stub:/usr/sbin:/usr/bin:/sbin:/bin" \
+    LEAF_XYLEM_COMPOSITOR_WAIT_S=0 LEAF_XYLEM_RESTART_DELAY_S=0 \
+    LEAF_XYLEM_READY_FILE="$fx/run/ready" \
+    timeout 60 /bin/sh "$l/leaf-xylem-session" start
+check "the OS's ready file is passed on to jawakad" has "$fx/env.1" "^LEAF_XYLEM_READY_FILE=$fx/run/ready\$"
+
+# Anywhere else, the card is xylem's games partition
+setup elsewhere
+check "elsewhere, the card is /mnt/sdcard" \
+    same "$(sed -n 's/^ROOT="\${LEAF_XYLEM_ROOT:-\${SELF_ROOT:-\/}}"$/ok/p' "$SESSION")$(grep -c 'SELF_ROOT=/mnt/sdcard' "$SESSION")" "ok1"
+
 echo "leaf-xylem-session: $passed passed, $failed failed"
 [ "$failed" -eq 0 ]
